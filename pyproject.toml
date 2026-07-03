@@ -1,0 +1,22 @@
+[project]
+name = "tiktok-automation-system"
+version = "0.1.0"
+description = "High-performance TikTok Automation System using Clean Architecture"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "sqlmodel>=0.0.16",
+    "websockets>=12.0",
+    "invisible-playwright @ git+https://github.com/feder-cr/invisible_playwright.git"
+]
+
+# Chuẩn mới của uv thay thế cho tool.uv.dev-dependencies
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "black>=24.0.0",
+]

@@ -1,0 +1,23 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+venv/
+ENV/
+env/
+.env
+
+# Databases (SQLite)
+*.db
+*.sqlite3
+
+# OS generated files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Invisible Playwright cache
+.cache/
