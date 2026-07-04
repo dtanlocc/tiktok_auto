@@ -3,26 +3,54 @@ import json
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body, status, UploadFile, File
-from app.domain.ports.repository import IAccountRepository
+from app.domain.ports.repository import IAccountRepository, IProxyRepository
 from app.domain.entities.account import TikTokAccount
-from app.interfaces.api.deps import get_account_repository
+from app.interfaces.api.deps import get_account_repository, get_proxy_repository
 from app.interfaces.dto.account_dto import AccountCreateIn, AccountOut
 from app.infrastructure.websocket.socket_manager import ws_manager
 
 logger = logging.getLogger("AccountsRouter")
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
+
+def _get_least_used_proxy_id(account_repo: IAccountRepository, proxy_repo: IProxyRepository) -> Optional[str]:
+    """
+    Thuật toán Least Connections:
+    Tìm kiếm và trả về ID của Proxy hiện đang liên kết với ít tài khoản nhất trong hệ thống.
+    """
+    proxies = proxy_repo.get_all()
+    if not proxies:
+        return None
+        
+    accounts = account_repo.get_all()
+    # Khởi tạo bộ đếm tải trọng cho từng Proxy
+    proxy_usage = {p.id: 0 for p in proxies}
+    for acc in accounts:
+        if acc.proxy_id in proxy_usage:
+            proxy_usage[acc.proxy_id] += 1
+            
+    # Tìm ra Proxy có bộ đếm nhỏ nhất (ít liên kết nhất)
+    best_proxy = min(proxies, key=lambda p: proxy_usage[p.id])
+    return best_proxy.id
+
+
 @router.post("/", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
 async def create_account(
     payload: AccountCreateIn,
-    account_repo: IAccountRepository = Depends(get_account_repository)
+    account_repo: IAccountRepository = Depends(get_account_repository),
+    proxy_repo: IProxyRepository = Depends(get_proxy_repository)
 ):
-    """API thêm tài khoản thủ công qua Form"""
+    """API thêm tài khoản thủ công qua Form (Tự động gán Proxy tải trọng nhẹ nếu không truyền proxy_id)"""
+    proxy_id = payload.proxy_id
+    if not proxy_id:
+        # Tự động tìm Proxy tốt nhất nếu trong DB đã có sẵn proxy
+        proxy_id = _get_least_used_proxy_id(account_repo, proxy_repo)
+
     new_account = TikTokAccount(
         id=str(uuid.uuid4()),
         username=payload.username,
         password=payload.password,
-        proxy_id=payload.proxy_id,
+        proxy_id=proxy_id,
         status="IDLE",
         current_step="Chưa kích hoạt"
     )
@@ -30,7 +58,6 @@ async def create_account(
     try:
         saved_account = account_repo.save(new_account)
         
-        # Phát WebSocket báo cho Web UI vẽ thêm hàng tài khoản mới
         await ws_manager.broadcast({
             "event": "ACCOUNT_ADDED",
             "data": {
@@ -78,18 +105,16 @@ async def list_accounts(
 @router.post("/import-raw", status_code=status.HTTP_201_CREATED)
 async def import_raw_account(
     raw_text: str = Body(..., media_type="text/plain"),
-    account_repo: IAccountRepository = Depends(get_account_repository)
+    account_repo: IAccountRepository = Depends(get_account_repository),
+    proxy_repo: IProxyRepository = Depends(get_proxy_repository)
 ):
-    """
-    API Phân tích cú pháp chuỗi text tài khoản dán trực tiếp
-    Định dạng dán: Username|Password|Email|EmailPassword|DeviceToken|UUID|CookiesJSON
-    """
+    """API Phân tích cú pháp chuỗi text dán (Tự động phân bổ Proxy tối ưu)"""
     try:
         parts = raw_text.strip().split("|")
         if len(parts) < 7:
             raise HTTPException(
                 status_code=400, 
-                detail="Định dạng dữ liệu không hợp lệ. Phải chứa ít nhất 7 trường phân tách bởi ký tự '|'."
+                detail="Định dạng dữ liệu không hợp lệ."
             )
 
         username = parts[0].strip()
@@ -100,16 +125,20 @@ async def import_raw_account(
         uuid_str = parts[5].strip()
         cookies_raw = parts[6].strip()
 
-        # Phân tích cú pháp cookies từ chuỗi JSON
         try:
             cookies = json.loads(cookies_raw)
         except json.JSONDecodeError:
-            raise HTTPException(
-                status_code=400, 
-                detail="Phần dữ liệu Cookies không đúng định dạng JSON."
-            )
+            cookies = []
 
-        # Tạo thực thể Domain hoàn chỉnh đầy đủ thông tin
+        # Chống ghi đè thông minh trùng UUID
+        if uuid_str:
+            existing = account_repo.get_by_id(uuid_str)
+            if existing and existing.username != username:
+                uuid_str = str(uuid.uuid4())
+
+        # TỰ ĐỘNG PHÂN BỔ PROXY TỐI ƯU
+        allocated_proxy_id = _get_least_used_proxy_id(account_repo, proxy_repo)
+
         account = TikTokAccount(
             id=uuid_str if uuid_str else str(uuid.uuid4()),
             username=username,
@@ -119,12 +148,12 @@ async def import_raw_account(
             device_token=device_token,
             cookies=cookies,
             status="IDLE",
-            current_step="Chưa kích hoạt"
+            current_step="Chưa kích hoạt",
+            proxy_id=allocated_proxy_id  # <-- Gán Proxy tự động
         )
 
         saved_account = account_repo.save(account)
 
-        # Phát WebSocket báo cho Web UI vẽ thêm hàng tài khoản mới
         await ws_manager.broadcast({
             "event": "ACCOUNT_ADDED",
             "data": {
@@ -144,64 +173,74 @@ async def import_raw_account(
         raise HTTPException(status_code=400, detail=f"Không thể xử lý dữ liệu: {str(e)}")
 
 @router.post("/import-file", status_code=status.HTTP_201_CREATED)
-async def import_accounts_from_file(
-    file: UploadFile = File(...),
-    account_repo: IAccountRepository = Depends(get_account_repository)
+async def import_accounts_from_files(
+    files: List[UploadFile] = File(...),
+    account_repo: IAccountRepository = Depends(get_account_repository),
+    proxy_repo: IProxyRepository = Depends(get_proxy_repository)
 ):
-    """API Nhập hàng loạt tài khoản bằng cách tải lên file .txt phân tách bằng ký tự đứng |"""
+    """API Nhập hàng loạt tài khoản từ nhiều file cùng lúc (Tự động phân bổ Proxy tải trọng nhẹ cho từng file)"""
     try:
-        content = await file.read()
-        lines = content.decode("utf-8").splitlines()
         imported_count = 0
+        for file in files:
+            content = await file.read()
+            lines = content.decode("utf-8").splitlines()
 
-        for line in lines:
-            if not line.strip():
-                continue
-            parts = line.strip().split("|")
-            if len(parts) < 7:
-                continue
+            for line in lines:
+                if not line.strip():
+                    continue
+                parts = line.strip().split("|")
+                if len(parts) < 7:
+                    continue
 
-            username = parts[0].strip()
-            password = parts[1].strip()
-            email = parts[2].strip()
-            email_password = parts[3].strip()
-            device_token = parts[4].strip()
-            uuid_str = parts[5].strip()
-            cookies_raw = parts[6].strip()
+                username = parts[0].strip()
+                password = parts[1].strip()
+                email = parts[2].strip()
+                email_password = parts[3].strip()
+                device_token = parts[4].strip()
+                uuid_str = parts[5].strip()
+                cookies_raw = parts[6].strip()
 
-            try:
-                cookies = json.loads(cookies_raw)
-            except json.JSONDecodeError:
-                cookies = []
+                try:
+                    cookies = json.loads(cookies_raw)
+                except json.JSONDecodeError:
+                    cookies = []
 
-            account = TikTokAccount(
-                id=uuid_str if uuid_str else str(uuid.uuid4()),
-                username=username,
-                password=password,
-                email=email,
-                email_password=email_password,
-                device_token=device_token,
-                cookies=cookies,
-                status="IDLE",
-                current_step="Chưa kích hoạt"
-            )
-            account_repo.save(account)
-            imported_count += 1
+                if uuid_str:
+                    existing = account_repo.get_by_id(uuid_str)
+                    if existing and existing.username != username:
+                        uuid_str = str(uuid.uuid4())
 
-            # Phát WebSocket thông báo tài khoản mới được nạp thành công
-            await ws_manager.broadcast({
-                "event": "ACCOUNT_ADDED",
-                "data": {
-                    "id": account.id,
-                    "username": account.username,
-                    "status": account.status,
-                    "proxy_id": account.proxy_id,
-                    "has_cookies": len(account.cookies) > 0,
-                    "current_step": account.current_step
-                }
-            })
+                # TỰ ĐỘNG PHÂN BỔ PROXY TẢI TRỌNG THẤP NHẤT
+                allocated_proxy_id = _allocate_next_proxy(proxy_repo, account_repo)
 
-        return {"status": "SUCCESS", "message": f"Đã nhập thành công {imported_count} tài khoản."}
+                account = TikTokAccount(
+                    id=uuid_str if uuid_str else str(uuid.uuid4()),
+                    username=username,
+                    password=password,
+                    email=email,
+                    email_password=email_password,
+                    device_token=device_token,
+                    cookies=cookies,
+                    status="IDLE",
+                    current_step="Chưa kích hoạt",
+                    proxy_id=allocated_proxy_id
+                )
+                account_repo.save(account)
+                imported_count += 1
+
+                await ws_manager.broadcast({
+                    "event": "ACCOUNT_ADDED",
+                    "data": {
+                        "id": account.id,
+                        "username": account.username,
+                        "status": account.status,
+                        "proxy_id": account.proxy_id,
+                        "has_cookies": len(account.cookies) > 0,
+                        "current_step": account.current_step
+                    }
+                })
+
+        return {"status": "SUCCESS", "message": f"Đã nhập thành công {imported_count} tài khoản từ {len(files)} tệp tin."}
     except Exception as e:
         logger.error(f"Lỗi đọc file tài khoản: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Không thể xử lý tệp: {str(e)}")
@@ -220,7 +259,6 @@ async def bind_proxy_to_account(
     account.proxy_id = proxy_id
     saved = account_repo.save(account)
 
-    # Phát tín hiệu báo cho Frontend biết tài khoản đã đổi IP Proxy
     await ws_manager.broadcast({
         "event": "ACCOUNT_PROXY_CHANGED",
         "data": {
@@ -237,3 +275,61 @@ async def bind_proxy_to_account(
         proxy_id=saved.proxy_id,
         has_cookies=len(saved.cookies) > 0
     )
+
+@router.post("/auto-allocate-proxies")
+async def auto_allocate_proxies_endpoint(
+    account_ids: List[str] = Body(..., embed=True),
+    account_repo: IAccountRepository = Depends(get_account_repository),
+    proxy_repo: IProxyRepository = Depends(get_proxy_repository)
+):
+    """API chuột phải: Tự động phân bổ đều danh sách Proxy cho các tài khoản đã chọn"""
+    proxies = proxy_repo.get_all()
+    if not proxies:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Kho lưu trữ chưa có Proxy nào. Vui lòng nạp Proxy trước."
+        )
+
+    # 1. Thống kê tải trọng sử dụng thực tế của từng Proxy hiện tại
+    accounts = account_repo.get_all()
+    proxy_usage = {p.id: 0 for p in proxies}
+    for acc in accounts:
+        if acc.proxy_id in proxy_usage:
+            proxy_usage[acc.proxy_id] += 1
+
+    allocated_count = 0
+    for acc_id in account_ids:
+        account = account_repo.get_by_id(acc_id)
+        if not account:
+            continue
+        
+        # Thuật toán Least Connections: Tìm Proxy đang gánh ít tài khoản nhất
+        best_proxy_id = min(proxies, key=lambda p: proxy_usage[p.id]).id
+        
+        # Gán Proxy và cập nhật tải trọng tức thời để gán cho tài khoản tiếp theo
+        account.proxy_id = best_proxy_id
+        proxy_usage[best_proxy_id] += 1
+        
+        account_repo.save(account)
+        allocated_count += 1
+
+        # Bắn tín hiệu WebSocket báo cho Web UI cập nhật lại bảng gán Proxy ngay lập tức
+        await ws_manager.broadcast({
+            "event": "ACCOUNT_PROXY_CHANGED",
+            "data": {
+                "id": acc_id,
+                "proxy_id": best_proxy_id
+            }
+        })
+
+    return {
+        "status": "SUCCESS", 
+        "message": f"Đã tự động phân bổ đều Proxy khả dụng cho {allocated_count} tài khoản."
+    }
+
+def _allocate_next_proxy(proxy_repo: IProxyRepository, account_repo: IAccountRepository) -> Optional[str]:
+    """Helper phân bổ Proxy tải trọng nhẹ nhất"""
+    try:
+        return _get_least_used_proxy_id(account_repo, proxy_repo)
+    except Exception:
+        return None

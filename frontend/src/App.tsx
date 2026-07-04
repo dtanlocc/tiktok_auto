@@ -1,7 +1,26 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAppStore, Account, Proxy } from './store/useAppStore';
 import { initWebSocket } from './services/websocket';
-import { Play, Users, CloudLightning, Plus, ShieldAlert, MonitorPlay, FileInput, Terminal as TerminalIcon, Globe, Settings, CheckSquare, Square } from 'lucide-react';
+import { 
+  Play, 
+  Users, 
+  CloudLightning, 
+  Plus, 
+  ShieldAlert, 
+  MonitorPlay, 
+  FileInput, 
+  Terminal as TerminalIcon, 
+  Globe, 
+  CheckSquare, 
+  Square, 
+  RefreshCw, 
+  Key, 
+  Video, 
+  Trash2, 
+  Wifi, 
+  WifiOff, 
+  ShieldCheck 
+} from 'lucide-react';
 
 interface LogMessage {
   time: string;
@@ -13,18 +32,21 @@ export default function App() {
   const { accounts, proxies, wsConnected, setAccounts, setProxies } = useAppStore();
   const [activeTab, setActiveTab] = useState<'accounts' | 'proxies'>('accounts');
   
-  // Các cấu hình điều khiển trung tâm (Control Panel)
-  const [concurrency, setConcurrency] = useState(settings_concurrency => 4);
-  const [avatarFolder, setAvatarFolder] = useState('');
+  // Bộ điều khiển trung tâm (Control Panel)
+  const [concurrency, setConcurrency] = useState<number>(4);
+  const [avatarFolder, setAvatarFolder] = useState<string>('');
   
-  // Tích chọn tài khoản (Checkbox Selection)
+  // Danh sách ID tài khoản được chọn (Checkbox Selection)
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  
+  // Trạng thái menu chuột phải (Context Menu)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; visible: boolean } | null>(null);
 
   const [logs, setLogs] = useState<LogMessage[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
-  // 1. Đồng bộ kết nối và tải dữ liệu ban đầu
+  // 1. Khởi động WebSockets, tải dữ liệu ban đầu và lắng nghe sự kiện đóng menu chuột phải
   useEffect(() => {
     initWebSocket();
 
@@ -51,39 +73,67 @@ export default function App() {
       }
     };
 
-    const ws = new ErrorWebSocketFake(); // Giả kết nối độc lập hoặc dùng chung
     const activeWs = new WebSocket('ws://127.0.0.1:8000/ws');
     activeWs.onmessage = handleWsEvents;
 
-    // Load dữ liệu
+    // Tải dữ liệu ban đầu
     loadData();
 
-    return () => activeWs.close();
+    // Đóng Menu chuột phải tự động khi click chuột trái ra ngoài màn hình
+    const closeMenu = () => setContextMenu(null);
+    document.addEventListener('click', closeMenu);
+
+    return () => {
+      activeWs.close();
+      document.removeEventListener('click', closeMenu);
+    };
   }, [setAccounts, setProxies]);
 
-  const loadData = () => {
-    fetch('http://127.0.0.1:8000/api/v1/accounts/')
-      .then((res) => res.json())
-      .then((data) => setAccounts(data))
-      .catch((err) => console.error(err));
-
-    fetch('http://127.0.0.1:8000/api/v1/proxies/')
-      .then((res) => res.json())
-      .then((data) => setProxies(data))
-      .catch((err) => console.error(err));
-  };
-
+  // Cuộn Terminal xuống cuối khi nhận log mới
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  // 2. Xử lý tải File .txt hàng loạt tài khoản hoặc proxy lên Server
+  // Hàm tải dữ liệu từ API Backend
+  const loadData = () => {
+    fetch('http://127.0.0.1:8000/api/v1/accounts/')
+      .then((res) => res.json())
+      .then((data) => setAccounts(data))
+      .catch((err) => console.error('Lỗi tải danh sách tài khoản:', err));
+
+    fetch('http://127.0.0.1:8000/api/v1/proxies/')
+      .then((res) => res.json())
+      .then((data) => setProxies(data))
+      .catch((err) => console.error('Lỗi tải danh sách proxy:', err));
+  };
+
+  // 2. Kích hoạt Custom Context Menu khi người dùng click chuột phải lên hàng tài khoản
+  const handleRowContextMenu = (e: React.MouseEvent, accountId: string) => {
+    e.preventDefault(); // Chặn menu gốc của trình duyệt
+
+    // Nếu dòng được click chưa nằm trong danh sách được tích chọn, tự động chuyển sang tích chọn duy nhất dòng này
+    if (!selectedAccountIds.includes(accountId)) {
+      setSelectedAccountIds([accountId]);
+    }
+
+    // Mở menu tại đúng tọa độ con trỏ chuột của người dùng
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      visible: true
+    });
+  };
+
+  // 3. Xử lý tải File .txt hàng loạt tài khoản hoặc proxy lên Server
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'accounts' | 'proxies') => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const fileList = event.target.files;
+    if (!fileList || fileList.length === 0) return;
 
     const formData = new FormData();
-    formData.append('file', file);
+    // Đóng gói mảng files tải lên dưới cùng 1 trường 'files' gửi lên FastAPI
+    for (let i = 0; i < fileList.length; i++) {
+      formData.append('files', fileList[i]);
+    }
     setLoading(true);
 
     const url = type === 'accounts' 
@@ -101,7 +151,7 @@ export default function App() {
         alert(result.message);
         loadData();
       } else {
-        alert('Lỗi khi tải file lên');
+        alert('Lỗi trong quá trình import tệp tin.');
       }
     } catch (err) {
       console.error(err);
@@ -110,7 +160,7 @@ export default function App() {
     }
   };
 
-  // 3. Tích chọn / Huỷ chọn tài khoản hàng loạt
+  // 4. Các nút tích chọn thủ công từng hàng và tích chọn tất cả
   const toggleSelectAccount = (id: string) => {
     setSelectedAccountIds((prev) => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
@@ -125,10 +175,10 @@ export default function App() {
     }
   };
 
-  // 4. Kích hoạt luồng chạy HÀNG LOẠT cho các tài khoản đã tích chọn
+  // 5. Kích hoạt luồng chạy ĐỒNG BỘ ĐỔI AVATAR & BIO HÀNG LOẠT (Gọi API bulk-start)
   const handleBulkStart = async (method: 'COOKIE' | 'CREDENTIAL') => {
     if (selectedAccountIds.length === 0) {
-      alert("Vui lòng chọn ít nhất một tài khoản trên bảng để chạy.");
+      alert("Vui lòng tích chọn ít nhất một tài khoản trên bảng trước khi chạy.");
       return;
     }
 
@@ -145,17 +195,46 @@ export default function App() {
       });
 
       if (response.ok) {
-        const result = await response.json();
-        setSelectedAccountIds([]); // Reset tích chọn sau khi đưa vào hàng đợi
+        setSelectedAccountIds([]); // Reset tích chọn sau khi đẩy vào hàng đợi thành công
+        setContextMenu(null); // Đóng menu chuột phải
       } else {
         const err = await response.json();
-        alert(`Lỗi kích hoạt: ${err.detail}`);
+        alert(`Lỗi kích hoạt luồng chạy: ${err.detail}`);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Lỗi gọi API bulk-start:', err);
     }
   };
 
+  // 6. Kích hoạt TỰ ĐỘNG PHÂN BỔ PROXY tối ưu tải trọng từ Menu chuột phải
+  const handleAutoAllocateProxies = async () => {
+    if (selectedAccountIds.length === 0) return;
+    setLoading(true);
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/v1/accounts/auto-allocate-proxies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_ids: selectedAccountIds }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(result.message);
+        loadData(); // Tải lại bảng để đồng bộ IP Proxy mới gán
+        setContextMenu(null); // Đóng menu chuột phải
+      } else {
+        const err = await response.json();
+        alert(`Lỗi phân bổ: ${err.detail}`);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Gán Proxy thủ công qua Dropdown
   const handleBindProxy = async (accountId: string, proxyId: string) => {
     try {
       const targetProxyId = proxyId === 'none' ? null : proxyId;
@@ -177,7 +256,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070b15] p-6 text-slate-100 flex flex-col gap-5">
+    <div className="min-h-screen bg-[#070b15] p-6 text-slate-100 flex flex-col gap-5 select-none">
       
       {/* HEADER BAR */}
       <div className="flex justify-between items-center border-b border-slate-800 pb-4">
@@ -185,7 +264,7 @@ export default function App() {
           <h1 className="text-2xl font-bold bg-gradient-to-r from-teal-400 to-blue-500 bg-clip-text text-transparent">
             TikTok Professional Multi-Thread Console
           </h1>
-          <p className="text-slate-400 text-sm">Bộ quản trị đa luồng tàng hình phân bổ IP & Thư mục ảnh đại diện</p>
+          <p className="text-slate-400 text-sm">Bộ quản trị đa luồng tàng hình kết nối chuột phải và phân bổ IP thông minh</p>
         </div>
         
         {/* Tab Selection */}
@@ -205,7 +284,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* CONTROL PANEL TRUNG TÂM (Thanh đặt số luồng và thư mục) */}
+      {/* CONTROL PANEL TRUNG TÂM (Đồng bộ số luồng và thư mục) */}
       <div className="bg-[#0e1424] p-4 rounded-2xl border border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
         <div>
           <label className="text-xs text-slate-400 block mb-1 font-semibold">Cấu hình số luồng chạy song song (Threads):</label>
@@ -232,7 +311,7 @@ export default function App() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1">
         
-        {/* PANEL TRÁI: TẢI FILE .TXT HOẶC PROXY */}
+        {/* PANEL TRÁI: KHU VỰC CHỌN VÀ IMPORT FILE .TXT HÀNG LOẠT */}
         <div className="bg-[#0e1424] p-5 rounded-2xl border border-slate-800 h-fit flex flex-col gap-4">
           <div className="flex items-center gap-2">
             <FileInput className="text-teal-400 w-5 h-5" />
@@ -242,14 +321,15 @@ export default function App() {
           {activeTab === 'accounts' ? (
             <div className="space-y-4">
               <p className="text-xs text-slate-400 leading-relaxed">
-                Tải lên tệp tin `.txt` chứa danh sách tài khoản TikTok phân tách bằng dấu đứng `|`.
+                Nhấp nút dưới để chọn tải lên hàng loạt tệp tài khoản `.txt` cùng lúc (cho phép giữ Ctrl để chọn nhiều tệp).
               </p>
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-xl p-6 cursor-pointer hover:border-teal-400 transition-colors bg-[#182032]/50">
                 <Plus className="text-slate-400 w-6 h-6 mb-2" />
-                <span className="text-xs font-semibold text-slate-300">Chọn file accounts.txt</span>
+                <span className="text-xs font-semibold text-slate-300">Chọn các file accounts.txt</span>
                 <input
                   type="file"
                   accept=".txt"
+                  multiple={true} // Cho phép chọn nhiều file cùng lúc
                   disabled={loading}
                   onChange={(e) => handleFileUpload(e, 'accounts')}
                   className="hidden"
@@ -259,14 +339,15 @@ export default function App() {
           ) : (
             <div className="space-y-4">
               <p className="text-xs text-slate-400 leading-relaxed">
-                Tải lên tệp tin `.txt` chứa danh sách Proxy. Hỗ trợ định dạng `protocol://host:port` hoặc định dạng dấu đứng `|`.
+                Nhấp nút dưới để chọn tải lên hàng loạt tệp Proxy `.txt` cùng lúc.
               </p>
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-xl p-6 cursor-pointer hover:border-teal-400 transition-colors bg-[#182032]/50">
                 <Plus className="text-slate-400 w-6 h-6 mb-2" />
-                <span className="text-xs font-semibold text-slate-300">Chọn file proxies.txt</span>
+                <span className="text-xs font-semibold text-slate-300">Chọn các file proxies.txt</span>
                 <input
                   type="file"
                   accept=".txt"
+                  multiple={true} // Cho phép chọn nhiều file cùng lúc
                   disabled={loading}
                   onChange={(e) => handleFileUpload(e, 'proxies')}
                   className="hidden"
@@ -318,15 +399,9 @@ export default function App() {
                     </button>
                   </div>
                   
-                  {/* Các nút bấm kích hoạt hàng loạt cho các tài khoản được tích */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleBulkStart('COOKIE')}
-                      disabled={selectedAccountIds.length === 0}
-                      className="inline-flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 transition-all shadow-md"
-                    >
-                      <Play className="w-3.5 h-3.5" /> Chạy đổi Avatar & Bio hàng loạt
-                    </button>
+                  {/* Hướng dẫn thao tác Chuột phải trực quan cho người dùng */}
+                  <div className="text-xs text-slate-400 italic">
+                    💡 Click <span className="text-teal-400 font-bold">Chuột phải</span> lên hàng tài khoản đã chọn để mở Menu nâng cao
                   </div>
                 </div>
 
@@ -345,12 +420,16 @@ export default function App() {
                       {accounts.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="p-8 text-center text-slate-500 font-semibold">
-                            Chưa có tài khoản nào. Vui lòng tải lên file .txt để nhập hàng loạt.
+                            Chưa có tài khoản nào. Vui lòng tải các file .txt lên để nhập hàng loạt.
                           </td>
                         </tr>
                       ) : (
                         accounts.map((acc: Account) => (
-                          <tr key={acc.id} className={`hover:bg-slate-900/40 transition-colors ${selectedAccountIds.includes(acc.id) ? 'bg-slate-900/20' : ''}`}>
+                          <tr 
+                            key={acc.id} 
+                            onContextMenu={(e) => handleRowContextMenu(e, acc.id)} // Lắng nghe sự kiện click chuột phải
+                            className={`hover:bg-slate-900/40 cursor-context-menu transition-colors ${selectedAccountIds.includes(acc.id) ? 'bg-slate-900/20' : ''}`}
+                          >
                             <td className="p-4 text-center">
                               <button onClick={() => toggleSelectAccount(acc.id)} className="text-slate-400 hover:text-teal-400">
                                 {selectedAccountIds.includes(acc.id) ? (
@@ -389,7 +468,6 @@ export default function App() {
                                 {acc.status}
                               </span>
                             </td>
-                            {/* Cột Tiến trình chạy ngắn gọn gọn gàng */}
                             <td className="p-4 font-mono font-bold text-slate-300">
                               {acc.status === 'RUNNING' ? (
                                 <span className="flex items-center gap-1 text-amber-400">
@@ -449,7 +527,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* TERMINAL CONSOLE REALTIME CHUYÊN NGHIỆP */}
+      {/* TERMINAL CONSOLE REALTIME */}
       <div className="bg-[#050811] border border-slate-800 rounded-2xl overflow-hidden flex flex-col h-[180px]">
         <div className="bg-[#0e1424] px-4 py-2 border-b border-slate-800 flex justify-between items-center">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
@@ -469,13 +547,54 @@ export default function App() {
           <div ref={terminalEndRef} />
         </div>
       </div>
+
+      {/* ==================== CUSTOM CONTEXT MENU (MENU CHUỘT PHẢI) ==================== */}
+      {contextMenu && contextMenu.visible && (
+        <div 
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed bg-[#10172a] border border-slate-800 rounded-xl shadow-2xl p-1.5 z-50 min-w-[220px] text-xs font-semibold text-slate-300 flex flex-col gap-1 border-b-2 border-b-teal-500"
+        >
+          <div className="px-3 py-1.5 text-[10px] text-slate-500 uppercase tracking-wider border-b border-slate-800/60 mb-1">
+            Thao tác hàng loạt ({selectedAccountIds.length} Acc)
+          </div>
+
+          {/* HÀNH ĐỘNG 1: ĐỒNG BỘ ĐỔI AVATAR & BIO */}
+          <button 
+            onClick={() => handleBulkStart('COOKIE')}
+            className="w-full text-left px-3 py-2 hover:bg-teal-500 hover:text-slate-950 rounded-lg flex items-center gap-2 transition-colors duration-100 font-bold text-slate-200"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-teal-400" />
+            <span>Đồng bộ Đổi Avatar & Bio</span>
+          </button>
+
+          {/* HÀNH ĐỘNG 2: TỰ ĐỘNG GÁN PROXY KHẢ DỤNG */}
+          <button 
+            onClick={handleAutoAllocateProxies}
+            className="w-full text-left px-3 py-2 hover:bg-teal-500 hover:text-slate-950 rounded-lg flex items-center gap-2 transition-colors duration-100 font-bold text-slate-200"
+          >
+            <Globe className="w-3.5 h-3.5 text-teal-400" />
+            <span>Tự động gán Proxy khả dụng</span>
+          </button>
+
+          <div className="border-t border-slate-800/80 my-1"></div>
+          
+          <button disabled className="w-full text-left px-3 py-2 text-slate-600 rounded-lg flex items-center gap-2 cursor-not-allowed">
+            <Key className="w-3.5 h-3.5 text-slate-600" />
+            <span>Đổi Password (Sắp có)</span>
+          </button>
+
+          <button disabled className="w-full text-left px-3 py-2 text-slate-600 rounded-lg flex items-center gap-2 cursor-not-allowed">
+            <Video className="w-3.5 h-3.5 text-slate-600" />
+            <span>Đăng Video hàng loạt (Sắp có)</span>
+          </button>
+
+          <button disabled className="w-full text-left px-3 py-2 text-slate-600 rounded-lg flex items-center gap-2 cursor-not-allowed">
+            <Trash2 className="w-3.5 h-3.5 text-slate-600" />
+            <span>Xoá tài khoản (Sắp có)</span>
+          </button>
+        </div>
+      )}
+
     </div>
   );
-}
-
-// Biến giả lập phòng ngừa lỗi khai báo trong React
-const settings_concurrency = 4;
-class ErrorWebSocketFake {
-  onmessage() {}
-  close() {}
 }
