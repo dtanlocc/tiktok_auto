@@ -1,5 +1,8 @@
-import logging
 import asyncio
+import logging
+import shutil
+import os
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from invisible_playwright.async_api import InvisiblePlaywright
 from app.domain.ports.browser import IBrowserService
@@ -15,15 +18,22 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
     async def initialize(self, proxy_config: Optional[Dict[str, Any]] = None) -> None:
         try:
+            # Ánh xạ cấu hình Proxy theo đúng định dạng của Playwright
             proxy_opts = None
             if proxy_config:
                 proxy_opts = {
-                    "server": proxy_config.get("server"),
+                    "server": proxy_config.get("server"),  # socks5://... hoặc http://...
                     "username": proxy_config.get("username"),
                     "password": proxy_config.get("password")
                 }
+
+            # Khởi chạy trình duyệt tàng hình theo cấu hình Headless linh hoạt
             self._invisible_pw = InvisiblePlaywright(proxy=proxy_opts, headless=settings.BROWSER_HEADLESS)
+            
+            # Kích hoạt thủ công Async Context Manager để kiểm soát vòng đời đối tượng
             self._browser = await self._invisible_pw.__aenter__()
+            
+            # Tạo trang mới
             self._page = await self._browser.new_page()
             logger.info("[+] Khởi tạo Invisible Firefox-13 thành công.")
         except Exception as e:
@@ -39,6 +49,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
     async def inject_cookies(self, cookies: List[Dict[str, Any]]) -> None:
         if not self._browser:
             raise RuntimeError("Trình duyệt chưa được khởi tạo.")
+        
         contexts = getattr(self._browser, "contexts", [])
         if contexts:
             await contexts[0].add_cookies(cookies)
@@ -48,6 +59,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
     async def extract_cookies(self) -> List[Dict[str, Any]]:
         if not self._browser:
             return []
+        
         contexts = getattr(self._browser, "contexts", [])
         if contexts:
             return await contexts[0].cookies()
@@ -91,7 +103,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         logger.warning("[-] Quá thời gian chờ (Timeout) nhưng không thể xác minh trạng thái đăng nhập.")
         return False
 
-    # Cập nhật signature nhận thêm step_logger
     async def update_profile(
         self, 
         avatar_path: Optional[str] = None, 
@@ -124,62 +135,115 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             await avatar_wrapper.first.wait_for(state="visible", timeout=15000)
             await asyncio.sleep(2)
 
-            # 3. THAY ĐỔI AVATAR
+            # 3. THAY ĐỔI AVATAR (Phương pháp JS Base64 Injection tột đỉnh của bạn)
             if avatar_path:
-                if step_logger:
-                    await step_logger("Đang kích hoạt hộp thoại chọn file ảnh...")
-                
-                # Định vị nút Edit Icon bằng thuộc tính data-e2e bền vững của TikTok
-                avatar_edit_btn = self._page.locator('[data-e2e="edit-profile-avatar-edit-icon"], .e1lwtbhx20')
-                await avatar_edit_btn.first.wait_for(state="visible", timeout=10000)
-                
-                # Bắt hộp thoại chọn file của hệ điều hành ngay khi click
-                async with self._page.expect_file_chooser() as fc_info:
-                    await avatar_edit_btn.first.click() # Click mở hộp thoại Gtk
-                
-                file_chooser = await fc_info.value
-                
-                # Nạp đường dẫn file ảnh từ thư mục tạm /tmp (Thành công 100% vì không bị Sandbox chặn)
-                await file_chooser.set_files(avatar_path)
-                logger.info("[+] Đã nạp file ảnh thành công vào trình duyệt.")
-                
-                if step_logger:
-                    await step_logger("Đang giải phóng hộp thoại chọn file hệ thống để tránh treo luồng...")
-                # Nhấn Escape để tắt cửa sổ Gtk của Pop!_OS
-                await self._page.keyboard.press("Escape")
-                await asyncio.sleep(4) # Đợi Crop Modal hiển thị
+                try:
+                    abs_origin_path = os.path.abspath(os.path.expanduser(avatar_path))
+                    if not os.path.exists(abs_origin_path):
+                        raise FileNotFoundError(f"Không tìm thấy file: {abs_origin_path}")
 
-                # Nhấp nút "Apply" bằng class tĩnh 'ef1kawg9' chuẩn xác bạn cung cấp
-                apply_btn = self._page.locator('button.ef1kawg9, button:has-text("Apply")')
-                await apply_btn.first.wait_for(state="visible", timeout=10000)
-                
-                if step_logger:
-                    await step_logger("Đang nhấn Apply để xác nhận cắt ảnh đại diện...")
-                await apply_btn.first.click() # Click xác nhận cắt ảnh
-                await asyncio.sleep(4) # Đợi ảnh preview nạp vào form chính
+                    if step_logger:
+                        await step_logger("Đang nạp ảnh avatar...")
 
-            # 4. THAY ĐỔI BIO
+                    import base64
+                    with open(abs_origin_path, "rb") as f:
+                        file_bytes = f.read()
+                    file_b64 = base64.b64encode(file_bytes).decode("utf-8")
+                    file_name = os.path.basename(abs_origin_path)  # Dùng tên file gốc được truyền sang
+                    
+                    ext = file_name.lower().split('.')[-1]
+                    mime_map = {
+                        'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                        'png': 'image/png', 'webp': 'image/webp',
+                        'heic': 'image/heic', 'tiff': 'image/tiff'
+                    }
+                    mime_type = mime_map.get(ext, 'image/jpeg')
+
+                    logger.info(f"[*] Inject file: {file_name} ({mime_type}), size: {len(file_bytes)} bytes")
+
+                    # Thực thi tiêm mảng byte ảnh trực tiếp vào DOM của TikTok
+                    injected = await self._page.evaluate(f"""
+                        () => {{
+                            const input = document.querySelector(
+                                '[data-e2e="edit-profile-avatar-edit-icon"] input[type="file"]'
+                            );
+                            if (!input) return false;
+                            
+                            const byteString = atob('{file_b64}');
+                            const ab = new ArrayBuffer(byteString.length);
+                            const ia = new Uint8Array(ab);
+                            for (let i = 0; i < byteString.length; i++) {{
+                                ia[i] = byteString.charCodeAt(i);
+                            }}
+                            const blob = new Blob([ab], {{ type: '{mime_type}' }});
+                            const file = new File([blob], '{file_name}', {{ type: '{mime_type}' }});
+                            
+                            const dt = new DataTransfer();
+                            dt.items.add(file);
+                            input.files = dt.files;
+                            
+                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            
+                            return true;
+                        }}
+                    """)
+
+                    if not injected:
+                        raise Exception("Không tìm thấy input[type='file'] trong DOM")
+
+                    logger.info("[+] Đã inject file avatar thành công.")
+
+                    if step_logger:
+                        await step_logger("Đợi Crop Modal hiển thị...")
+                    await asyncio.sleep(4) # Tăng nhẹ thời gian chờ cho React ổn định khung cắt ảnh
+
+                    # NÂNG CẤP BẤM NÚT APPLY (Class ef1kawg9 chuẩn xác)
+                    apply_btn = self._page.locator('button.ef1kawg9, button:has-text("Apply"), button:has-text("Áp dụng")')
+                    await apply_btn.first.wait_for(state="visible", timeout=15000)
+
+                    if step_logger:
+                        await step_logger("Đang nhấn Apply xác nhận cắt ảnh...")
+                    
+                    # Thử nhấp mạnh (force=True) để vượt hiệu ứng che khuất của animation
+                    try:
+                        await apply_btn.first.click(force=True, timeout=5000)
+                        logger.info("[+] Đã click Apply thành công bằng force=True.")
+                    except Exception:
+                        # Phương án dự phòng: Bắn trực tiếp sự kiện click DOM để ép nạp ảnh
+                        await apply_btn.first.dispatch_event("click")
+                        logger.info("[+] Đã click Apply thành công bằng dispatch_event.")
+                    
+                    await asyncio.sleep(4) # Đợi Crop Modal đóng và ảnh preview đồng bộ
+                    logger.info("[+] Đã cập nhật avatar thành công.")
+
+                except Exception as e3:
+                    logger.error(f"[-] Lỗi Bước 3 (Avatar): {str(e3)}")
+                    if step_logger:
+                        await step_logger(f"[-] Lỗi thay avatar: {str(e3)}")
+                    raise e3
+
+            # 4. THAY ĐỔI BIO (Thực thi SAU KHI Avatar đã đổi xong hoàn toàn)
             if bio is not None:
                 if step_logger:
-                    await step_logger(f"Đang tự động cập nhật Bio mới: '{bio}'...")
+                    await step_logger(f"Đang cập nhật Bio: '{bio}'...")
                 bio_input = self._page.locator('[data-e2e="edit-profile-bio-input"]')
                 await bio_input.first.wait_for(state="visible", timeout=10000)
                 await bio_input.first.click()
-                
                 await self._page.keyboard.press("Control+A")
                 await self._page.keyboard.press("Backspace")
                 await bio_input.first.fill(bio)
                 await asyncio.sleep(2)
 
-            # 5. Nhấp nút "Save" tổng thể để hoàn tất
+            # 5. Nhấp nút "Save" tổng thể để hoàn tất lưu thay đổi
             if step_logger:
-                await step_logger("Đang nhấn Save để lưu vĩnh viễn thay đổi lên TikTok...")
+                await step_logger("Đang nhấn Save lưu toàn bộ thay đổi...")
             save_btn = self._page.locator('[data-e2e="edit-profile-save"]')
             await save_btn.first.wait_for(state="visible", timeout=10000)
             await save_btn.first.click()
-            
+
             if step_logger:
-                await step_logger("Đã lưu thành công! Đang dọn dẹp trình duyệt...")
+                await step_logger("Đã lưu thành công!")
             await asyncio.sleep(5)
             return True
 

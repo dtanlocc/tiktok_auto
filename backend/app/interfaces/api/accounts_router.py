@@ -2,25 +2,22 @@ import uuid
 import json
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Body, status
+from fastapi import APIRouter, Depends, HTTPException, Body, status, UploadFile, File
 from app.domain.ports.repository import IAccountRepository
 from app.domain.entities.account import TikTokAccount
 from app.interfaces.api.deps import get_account_repository
 from app.interfaces.dto.account_dto import AccountCreateIn, AccountOut
 from app.infrastructure.websocket.socket_manager import ws_manager
-from fastapi import Body
 
 logger = logging.getLogger("AccountsRouter")
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
-
-
 
 @router.post("/", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
 async def create_account(
     payload: AccountCreateIn,
     account_repo: IAccountRepository = Depends(get_account_repository)
 ):
-    """API thêm tài khoản thủ công"""
+    """API thêm tài khoản thủ công qua Form"""
     new_account = TikTokAccount(
         id=str(uuid.uuid4()),
         username=payload.username,
@@ -84,8 +81,8 @@ async def import_raw_account(
     account_repo: IAccountRepository = Depends(get_account_repository)
 ):
     """
-    API Phân tích cú pháp tệp .txt phân tách bằng ký tự | (pipe)
-    Định dạng: Username|Password|Email|EmailPassword|DeviceToken|UUID|CookiesJSON
+    API Phân tích cú pháp chuỗi text tài khoản dán trực tiếp
+    Định dạng dán: Username|Password|Email|EmailPassword|DeviceToken|UUID|CookiesJSON
     """
     try:
         parts = raw_text.strip().split("|")
@@ -112,9 +109,9 @@ async def import_raw_account(
                 detail="Phần dữ liệu Cookies không đúng định dạng JSON."
             )
 
-        # Tạo thực thể Domain
+        # Tạo thực thể Domain hoàn chỉnh đầy đủ thông tin
         account = TikTokAccount(
-            id=uuid_str,
+            id=uuid_str if uuid_str else str(uuid.uuid4()),
             username=username,
             password=password,
             email=email,
@@ -145,6 +142,69 @@ async def import_raw_account(
     except Exception as e:
         logger.error(f"Lỗi import tài khoản: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Không thể xử lý dữ liệu: {str(e)}")
+
+@router.post("/import-file", status_code=status.HTTP_201_CREATED)
+async def import_accounts_from_file(
+    file: UploadFile = File(...),
+    account_repo: IAccountRepository = Depends(get_account_repository)
+):
+    """API Nhập hàng loạt tài khoản bằng cách tải lên file .txt phân tách bằng ký tự đứng |"""
+    try:
+        content = await file.read()
+        lines = content.decode("utf-8").splitlines()
+        imported_count = 0
+
+        for line in lines:
+            if not line.strip():
+                continue
+            parts = line.strip().split("|")
+            if len(parts) < 7:
+                continue
+
+            username = parts[0].strip()
+            password = parts[1].strip()
+            email = parts[2].strip()
+            email_password = parts[3].strip()
+            device_token = parts[4].strip()
+            uuid_str = parts[5].strip()
+            cookies_raw = parts[6].strip()
+
+            try:
+                cookies = json.loads(cookies_raw)
+            except json.JSONDecodeError:
+                cookies = []
+
+            account = TikTokAccount(
+                id=uuid_str if uuid_str else str(uuid.uuid4()),
+                username=username,
+                password=password,
+                email=email,
+                email_password=email_password,
+                device_token=device_token,
+                cookies=cookies,
+                status="IDLE",
+                current_step="Chưa kích hoạt"
+            )
+            account_repo.save(account)
+            imported_count += 1
+
+            # Phát WebSocket thông báo tài khoản mới được nạp thành công
+            await ws_manager.broadcast({
+                "event": "ACCOUNT_ADDED",
+                "data": {
+                    "id": account.id,
+                    "username": account.username,
+                    "status": account.status,
+                    "proxy_id": account.proxy_id,
+                    "has_cookies": len(account.cookies) > 0,
+                    "current_step": account.current_step
+                }
+            })
+
+        return {"status": "SUCCESS", "message": f"Đã nhập thành công {imported_count} tài khoản."}
+    except Exception as e:
+        logger.error(f"Lỗi đọc file tài khoản: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Không thể xử lý tệp: {str(e)}")
 
 @router.put("/{account_id}/proxy", response_model=AccountOut)
 async def bind_proxy_to_account(

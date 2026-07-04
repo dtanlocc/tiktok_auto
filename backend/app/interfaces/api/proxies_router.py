@@ -1,40 +1,12 @@
 import uuid
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from app.domain.ports.repository import IProxyRepository
 from app.domain.entities.proxy import Proxy
 from app.interfaces.api.deps import get_proxy_repository
-from app.interfaces.dto.proxy_dto import ProxyCreateIn, ProxyOut
+from app.interfaces.dto.proxy_dto import ProxyOut
 
 router = APIRouter(prefix="/proxies", tags=["Proxies"])
-
-@router.post("/", response_model=ProxyOut, status_code=status.HTTP_201_CREATED)
-async def create_proxy(
-    payload: ProxyCreateIn,
-    proxy_repo: IProxyRepository = Depends(get_proxy_repository)
-):
-    new_proxy = Proxy(
-        id=str(uuid.uuid4()),
-        host=payload.host,
-        port=payload.port,
-        username=payload.username,
-        password=payload.password,
-        protocol=payload.protocol
-    )
-    try:
-        saved = proxy_repo.save(new_proxy)
-        return ProxyOut(
-            id=saved.id,
-            host=saved.host,
-            port=saved.port,
-            username=saved.username,
-            protocol=saved.protocol
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Không thể lưu Proxy: {str(e)}"
-        )
 
 @router.get("/", response_model=List[ProxyOut])
 async def list_proxies(
@@ -51,3 +23,62 @@ async def list_proxies(
         )
         for p in proxies
     ]
+
+@router.post("/import-file", status_code=status.HTTP_201_CREATED)
+async def import_proxies_from_file(
+    file: UploadFile = File(...),
+    proxy_repo: IProxyRepository = Depends(get_proxy_repository)
+):
+    """
+    API Nhập hàng loạt Proxy bằng file .txt
+    Định dạng mỗi dòng trong file: protocol://host:port hoặc protocol://username:password@host:port
+    Hoặc định dạng đơn giản: host|port|protocol|username|password
+    """
+    try:
+        content = await file.read()
+        lines = content.decode("utf-8").splitlines()
+        imported_count = 0
+
+        for line in lines:
+            if not line.strip():
+                continue
+            
+            # Phân tách theo định dạng pipe-delimited |
+            parts = line.strip().split("|")
+            if len(parts) >= 3:
+                host = parts[0].strip()
+                port = int(parts[1].strip())
+                protocol = parts[2].strip()
+                username = parts[3].strip() if len(parts) > 3 else None
+                password = parts[4].strip() if len(parts) > 4 else None
+            else:
+                # Phân tách theo chuỗi URL chuẩn
+                # socks5://username:password@host:port
+                raw_line = line.strip()
+                try:
+                    protocol, rest = raw_line.split("://")
+                    if "@" in rest:
+                        creds, address = rest.split("@")
+                        username, password = creds.split(":")
+                        host, port = address.split(":")
+                    else:
+                        username, password = None, None
+                        host, port = rest.split(":")
+                    port = int(port)
+                except Exception:
+                    continue
+
+            new_proxy = Proxy(
+                id=str(uuid.uuid4()),
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                protocol=protocol
+            )
+            proxy_repo.save(new_proxy)
+            imported_count += 1
+
+        return {"status": "SUCCESS", "message": f"Đã nhập thành công {imported_count} Proxy."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Không thể xử lý tệp Proxy: {str(e)}")

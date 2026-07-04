@@ -73,10 +73,20 @@ class SQLiteAccountRepository(IAccountRepository):
     def save(self, account: TikTokAccount) -> TikTokAccount:
         db_row = self.session.get(AccountDbTable, account.id) if account.id else None
         if not db_row:
-            db_row = AccountDbTable(id=account.id, username=account.username)
+            db_row = AccountDbTable(
+                id=account.id, 
+                username=account.username
+            )
+        else:
+            db_row.username = account.username
 
+        # SỬA LỖI: Đồng bộ ghi nhận toàn bộ các trường thông tin mới xuống SQLite
         db_row.password = account.password
+        db_row.email = account.email                         # <-- Bổ sung ghi email
+        db_row.email_password = account.email_password       # <-- Bổ sung ghi email password
+        db_row.device_token = account.device_token           # <-- Bổ sung ghi device token
         db_row.status = account.status
+        db_row.current_step = account.current_step           # <-- Bổ sung ghi bước chạy
         db_row.proxy_id = account.proxy_id
         db_row.cookies_json = json.dumps(account.cookies)
 
@@ -96,11 +106,16 @@ class SQLiteAccountRepository(IAccountRepository):
 
     def _to_domain(self, db_row: AccountDbTable) -> TikTokAccount:
         """Hàm helper chuyển đổi Database Table Model sang Domain Entity thuần túy"""
+        # SỬA LỖI: Đồng bộ đọc ngược toàn bộ các trường thông tin mới từ SQLite lên Domain Entity
         return TikTokAccount(
             id=db_row.id,
             username=db_row.username,
             password=db_row.password,
+            email=db_row.email,                              # <-- Bổ sung đọc email
+            email_password=db_row.email_password,           # <-- Bổ sung đọc email password
+            device_token=db_row.device_token,               # <-- Bổ sung đọc device token
             cookies=json.loads(db_row.cookies_json or "[]"),
             status=db_row.status,
+            current_step=db_row.current_step,                # <-- Bổ sung đọc bước chạy
             proxy_id=db_row.proxy_id
         )

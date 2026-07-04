@@ -11,7 +11,8 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     "sqlmodel>=0.0.16",
     "websockets>=12.0",
-    "invisible-playwright @ git+https://github.com/feder-cr/invisible_playwright.git"
+    "invisible-playwright @ git+https://github.com/feder-cr/invisible_playwright.git",
+    "python-multipart>=0.0.32",
 ]
 
 # Chuẩn mới của uv thay thế cho tool.uv.dev-dependencies

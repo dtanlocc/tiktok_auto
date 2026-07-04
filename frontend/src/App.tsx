@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useAppStore } from './store/useAppStore';
+import { useAppStore, Account, Proxy } from './store/useAppStore';
 import { initWebSocket } from './services/websocket';
-import { Play, Users, CloudLightning, Plus, ShieldAlert, MonitorPlay, FileInput, Terminal as TerminalIcon, Globe, Settings, Link } from 'lucide-react';
+import { Play, Users, CloudLightning, Plus, ShieldAlert, MonitorPlay, FileInput, Terminal as TerminalIcon, Globe, Settings, CheckSquare, Square } from 'lucide-react';
 
 interface LogMessage {
   time: string;
@@ -10,16 +10,15 @@ interface LogMessage {
 }
 
 export default function App() {
-  const { accounts, proxies, wsConnected, setAccounts, setProxies, addAccount, addProxy } = useAppStore();
+  const { accounts, proxies, wsConnected, setAccounts, setProxies } = useAppStore();
   const [activeTab, setActiveTab] = useState<'accounts' | 'proxies'>('accounts');
-  const [rawFileContent, setRawFileContent] = useState('');
   
-  // States cho Proxy Form
-  const [proxyHost, setProxyHost] = useState('');
-  const [proxyPort, setProxyPort] = useState('');
-  const [proxyProtocol, setProxyProtocol] = useState('http');
-  const [proxyUser, setProxyUser] = useState('');
-  const [proxyPass, setProxyPass] = useState('');
+  // Các cấu hình điều khiển trung tâm (Control Panel)
+  const [concurrency, setConcurrency] = useState(settings_concurrency => 4);
+  const [avatarFolder, setAvatarFolder] = useState('');
+  
+  // Tích chọn tài khoản (Checkbox Selection)
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
 
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,7 +28,6 @@ export default function App() {
   useEffect(() => {
     initWebSocket();
 
-    // Lắng nghe realtime từ WebSocket
     const handleWsEvents = (event: MessageEvent) => {
       try {
         const message = JSON.parse(event.data);
@@ -38,9 +36,11 @@ export default function App() {
           useAppStore.setState((state) => ({
             accounts: state.accounts.map(acc => acc.id === id ? { ...acc, current_step } : acc)
           }));
-        } else if (message.event === 'ACCOUNT_PROXY_CHANGED') {
-          const { id, proxy_id } = message.data;
-          useAppStore.getState().updateAccountProxy(id, proxy_id);
+        } else if (message.event === 'ACCOUNT_STATUS_CHANGED') {
+          const { id, status, current_step } = message.data;
+          useAppStore.setState((state) => ({
+            accounts: state.accounts.map(acc => acc.id === id ? { ...acc, status, current_step } : acc)
+          }));
         } else if (message.event === 'TERMINAL_LOG') {
           const { username, message: logMsg } = message.data;
           const time = new Date().toLocaleTimeString();
@@ -51,90 +51,111 @@ export default function App() {
       }
     };
 
-    const ws = new WebSocket('ws://127.0.0.1:8000/ws');
-    ws.onmessage = handleWsEvents;
+    const ws = new ErrorWebSocketFake(); // Giả kết nối độc lập hoặc dùng chung
+    const activeWs = new WebSocket('ws://127.0.0.1:8000/ws');
+    activeWs.onmessage = handleWsEvents;
 
-    // Tải Accounts
+    // Load dữ liệu
+    loadData();
+
+    return () => activeWs.close();
+  }, [setAccounts, setProxies]);
+
+  const loadData = () => {
     fetch('http://127.0.0.1:8000/api/v1/accounts/')
       .then((res) => res.json())
       .then((data) => setAccounts(data))
       .catch((err) => console.error(err));
 
-    // Tải Proxies
     fetch('http://127.0.0.1:8000/api/v1/proxies/')
       .then((res) => res.json())
       .then((data) => setProxies(data))
       .catch((err) => console.error(err));
-
-    return () => ws.close();
-  }, [setAccounts, setProxies]);
+  };
 
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  // 2. Thêm Proxy mới
-  const handleAddProxy = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!proxyHost || !proxyPort) return;
+  // 2. Xử lý tải File .txt hàng loạt tài khoản hoặc proxy lên Server
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'accounts' | 'proxies') => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
     setLoading(true);
 
+    const url = type === 'accounts' 
+      ? 'http://127.0.0.1:8000/api/v1/accounts/import-file' 
+      : 'http://127.0.0.1:8000/api/v1/proxies/import-file';
+
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/v1/proxies/', {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(result.message);
+        loadData();
+      } else {
+        alert('Lỗi khi tải file lên');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 3. Tích chọn / Huỷ chọn tài khoản hàng loạt
+  const toggleSelectAccount = (id: string) => {
+    setSelectedAccountIds((prev) => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedAccountIds.length === accounts.length) {
+      setSelectedAccountIds([]);
+    } else {
+      setSelectedAccountIds(accounts.map(a => a.id));
+    }
+  };
+
+  // 4. Kích hoạt luồng chạy HÀNG LOẠT cho các tài khoản đã tích chọn
+  const handleBulkStart = async (method: 'COOKIE' | 'CREDENTIAL') => {
+    if (selectedAccountIds.length === 0) {
+      alert("Vui lòng chọn ít nhất một tài khoản trên bảng để chạy.");
+      return;
+    }
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/v1/tasks/bulk-start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          host: proxyHost,
-          port: parseInt(proxyPort),
-          protocol: proxyProtocol,
-          username: proxyUser || null,
-          password: proxyPass || null
+          account_ids: selectedAccountIds,
+          login_method: method,
+          avatar_folder: avatarFolder || null,
+          concurrency_limit: concurrency
         }),
       });
 
       if (response.ok) {
-        setProxyHost('');
-        setProxyPort('');
-        setProxyUser('');
-        setProxyPass('');
-        // Reload Proxies
-        const res = await fetch('http://127.0.0.1:8000/api/v1/proxies/');
-        const data = await res.json();
-        setProxies(data);
-        alert('Đã thêm Proxy thành công!');
+        const result = await response.json();
+        setSelectedAccountIds([]); // Reset tích chọn sau khi đưa vào hàng đợi
+      } else {
+        const err = await response.json();
+        alert(`Lỗi kích hoạt: ${err.detail}`);
       }
     } catch (err) {
       console.error(err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  // 3. Import Tài Khoản từ file txt
-  const handleImportRaw = async () => {
-    if (!rawFileContent.trim()) return;
-    setLoading(true);
-    try {
-      const response = await fetch('http://127.0.0.1:8000/api/v1/accounts/import-raw', {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: rawFileContent,
-      });
-      if (response.ok) {
-        setRawFileContent('');
-        alert('Nhập dữ liệu tài khoản thành công!');
-        const res = await fetch('http://127.0.0.1:8000/api/v1/accounts/');
-        const data = await res.json();
-        setAccounts(data);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 4. Kích hoạt đổi Proxy cho Tài khoản (Binding)
   const handleBindProxy = async (accountId: string, proxyId: string) => {
     try {
       const targetProxyId = proxyId === 'none' ? null : proxyId;
@@ -148,17 +169,6 @@ export default function App() {
     }
   };
 
-  const handleStartTask = async (accountId: string, method: string) => {
-    try {
-      await fetch(
-        `http://127.0.0.1:8000/api/v1/tasks/start?account_id=${accountId}&login_method=${method}`,
-        { method: 'POST' }
-      );
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const stats = {
     total: accounts.length,
     running: accounts.filter(a => a.status === 'RUNNING').length,
@@ -167,7 +177,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070b15] p-6 text-slate-100 flex flex-col gap-6">
+    <div className="min-h-screen bg-[#070b15] p-6 text-slate-100 flex flex-col gap-5">
       
       {/* HEADER BAR */}
       <div className="flex justify-between items-center border-b border-slate-800 pb-4">
@@ -175,7 +185,7 @@ export default function App() {
           <h1 className="text-2xl font-bold bg-gradient-to-r from-teal-400 to-blue-500 bg-clip-text text-transparent">
             TikTok Professional Multi-Thread Console
           </h1>
-          <p className="text-slate-400 text-sm">Bộ điều hợp đa luồng tàng hình kết nối Proxy động</p>
+          <p className="text-slate-400 text-sm">Bộ quản trị đa luồng tàng hình phân bổ IP & Thư mục ảnh đại diện</p>
         </div>
         
         {/* Tab Selection */}
@@ -195,98 +205,74 @@ export default function App() {
         </div>
       </div>
 
+      {/* CONTROL PANEL TRUNG TÂM (Thanh đặt số luồng và thư mục) */}
+      <div className="bg-[#0e1424] p-4 rounded-2xl border border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+        <div>
+          <label className="text-xs text-slate-400 block mb-1 font-semibold">Cấu hình số luồng chạy song song (Threads):</label>
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={concurrency}
+            onChange={(e) => setConcurrency(parseInt(e.target.value) || 4)}
+            className="w-full bg-[#182032] border border-slate-700 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 font-bold text-teal-400 text-center"
+          />
+        </div>
+        <div className="md:col-span-2">
+          <label className="text-xs text-slate-400 block mb-1 font-semibold">Đường dẫn thư mục chứa ảnh đại diện (Avatar Folder):</label>
+          <input
+            type="text"
+            placeholder="Ví dụ: /home/dtanlocc/Downloads/avatars"
+            value={avatarFolder}
+            onChange={(e) => setAvatarFolder(e.target.value)}
+            className="w-full bg-[#182032] border border-slate-700 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 text-slate-100"
+          />
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1">
         
-        {/* PANEL TRÁI: FORM ĐẦU VÀO THEO TỪNG TAB */}
+        {/* PANEL TRÁI: TẢI FILE .TXT HOẶC PROXY */}
         <div className="bg-[#0e1424] p-5 rounded-2xl border border-slate-800 h-fit flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <FileInput className="text-teal-400 w-5 h-5" />
+            <h2 className="font-bold text-slate-200">Nhập dữ liệu (.txt)</h2>
+          </div>
+          
           {activeTab === 'accounts' ? (
-            <>
-              <div className="flex items-center gap-2">
-                <FileInput className="text-teal-400 w-5 h-5" />
-                <h2 className="font-bold text-slate-200">Import File .txt</h2>
-              </div>
-              <textarea
-                rows={10}
-                value={rawFileContent}
-                onChange={(e) => setRawFileContent(e.target.value)}
-                placeholder="Dán dòng text tài khoản..."
-                className="w-full bg-[#182032] border border-slate-700 rounded-xl p-3 text-xs font-mono text-slate-300 focus:outline-none focus:ring-1 focus:ring-teal-400"
-              />
-              <button
-                onClick={handleImportRaw}
-                disabled={loading}
-                className="w-full bg-teal-500 hover:bg-teal-600 font-bold text-slate-950 p-2.5 rounded-xl text-sm transition-all"
-              >
-                Bắt đầu Import
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2">
-                <Plus className="text-teal-400 w-5 h-5" />
-                <h2 className="font-bold text-slate-200">Thêm Proxy</h2>
-              </div>
-              <form onSubmit={handleAddProxy} className="space-y-3 text-xs">
-                <div>
-                  <label className="text-slate-400 block mb-1">Host / IP</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="127.0.0.1 hoặc domain proxy"
-                    value={proxyHost}
-                    onChange={(e) => setProxyHost(e.target.value)}
-                    className="w-full bg-[#1e293b] border border-slate-700 rounded-lg p-2 text-slate-100"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Cổng (Port)</label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="8080"
-                    value={proxyPort}
-                    onChange={(e) => setProxyPort(e.target.value)}
-                    className="w-full bg-[#1e293b] border border-slate-700 rounded-lg p-2 text-slate-100"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Giao thức (Protocol)</label>
-                  <select
-                    value={proxyProtocol}
-                    onChange={(e) => setProxyProtocol(e.target.value)}
-                    className="w-full bg-[#1e293b] border border-slate-700 rounded-lg p-2 text-slate-100"
-                  >
-                    <option value="http">HTTP</option>
-                    <option value="socks5">SOCKS5</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Username (Không bắt buộc)</label>
-                  <input
-                    type="text"
-                    value={proxyUser}
-                    onChange={(e) => setProxyUser(e.target.value)}
-                    className="w-full bg-[#1e293b] border border-slate-700 rounded-lg p-2 text-slate-100"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Password (Không bắt buộc)</label>
-                  <input
-                    type="password"
-                    value={proxyPass}
-                    onChange={(e) => setProxyPass(e.target.value)}
-                    className="w-full bg-[#1e293b] border border-slate-700 rounded-lg p-2 text-slate-100"
-                  />
-                </div>
-                <button
-                  type="submit"
+            <div className="space-y-4">
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Tải lên tệp tin `.txt` chứa danh sách tài khoản TikTok phân tách bằng dấu đứng `|`.
+              </p>
+              <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-xl p-6 cursor-pointer hover:border-teal-400 transition-colors bg-[#182032]/50">
+                <Plus className="text-slate-400 w-6 h-6 mb-2" />
+                <span className="text-xs font-semibold text-slate-300">Chọn file accounts.txt</span>
+                <input
+                  type="file"
+                  accept=".txt"
                   disabled={loading}
-                  className="w-full bg-teal-500 hover:bg-teal-600 font-bold text-slate-950 p-2.5 rounded-xl text-sm transition-all"
-                >
-                  Lưu Proxy
-                </button>
-              </form>
-            </>
+                  onChange={(e) => handleFileUpload(e, 'accounts')}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Tải lên tệp tin `.txt` chứa danh sách Proxy. Hỗ trợ định dạng `protocol://host:port` hoặc định dạng dấu đứng `|`.
+              </p>
+              <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-xl p-6 cursor-pointer hover:border-teal-400 transition-colors bg-[#182032]/50">
+                <Plus className="text-slate-400 w-6 h-6 mb-2" />
+                <span className="text-xs font-semibold text-slate-300">Chọn file proxies.txt</span>
+                <input
+                  type="file"
+                  accept=".txt"
+                  disabled={loading}
+                  onChange={(e) => handleFileUpload(e, 'proxies')}
+                  className="hidden"
+                />
+              </label>
+            </div>
           )}
         </div>
 
@@ -296,92 +282,138 @@ export default function App() {
           {/* Card Thống kê */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-[#0e1424] p-4 rounded-xl border border-slate-800 flex items-center justify-between">
-              <div><p className="text-xs text-slate-400">Tài khoản</p><p className="text-2xl font-bold mt-1">{stats.total}</p></div>
+              <div><p className="text-xs text-slate-400 font-semibold">Tài khoản</p><p className="text-2xl font-bold mt-1">{stats.total}</p></div>
               <Users className="text-blue-400 w-7 h-7 opacity-75" />
             </div>
             <div className="bg-[#0e1424] p-4 rounded-xl border border-slate-800 flex items-center justify-between">
-              <div><p className="text-xs text-slate-400">Đang hoạt động</p><p className="text-2xl font-bold mt-1 text-amber-400">{stats.running}</p></div>
+              <div><p className="text-xs text-slate-400 font-semibold">Đang chạy</p><p className="text-2xl font-bold mt-1 text-amber-400">{stats.running}</p></div>
               <CloudLightning className="text-amber-400 w-7 h-7 opacity-75" />
             </div>
             <div className="bg-[#0e1424] p-4 rounded-xl border border-slate-800 flex items-center justify-between">
-              <div><p className="text-xs text-slate-400">Proxy Quản lý</p><p className="text-2xl font-bold mt-1 text-teal-400">{stats.proxies}</p></div>
+              <div><p className="text-xs text-slate-400 font-semibold">Proxy Hệ thống</p><p className="text-2xl font-bold mt-1 text-teal-400">{stats.proxies}</p></div>
               <Globe className="text-teal-400 w-7 h-7 opacity-75" />
             </div>
             <div className="bg-[#0e1424] p-4 rounded-xl border border-slate-800 flex items-center justify-between">
-              <div><p className="text-xs text-slate-400">Đã đăng nhập</p><p className="text-2xl font-bold mt-1 text-emerald-400">{stats.loggedIn}</p></div>
+              <div><p className="text-xs text-slate-400 font-semibold">Đã đăng nhập</p><p className="text-2xl font-bold mt-1 text-emerald-400">{stats.loggedIn}</p></div>
               <ShieldAlert className="text-emerald-400 w-7 h-7 opacity-75" />
             </div>
           </div>
 
           {/* VIEW CHÍNH: TÀI KHOẢN HOẶC PROXY */}
-          <div className="bg-[#0e1424] rounded-2xl border border-slate-800 overflow-hidden flex-1">
+          <div className="bg-[#0e1424] rounded-2xl border border-slate-800 overflow-hidden flex-1 flex flex-col">
             {activeTab === 'accounts' ? (
               <>
-                <div className="p-4 border-b border-slate-800">
-                  <h2 className="font-bold text-slate-200">Quản lý điều phối tài khoản</h2>
+                <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-[#141b2e]/50">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={toggleSelectAll}
+                      className="text-xs font-bold text-teal-400 hover:text-teal-300 flex items-center gap-1.5"
+                    >
+                      {selectedAccountIds.length === accounts.length && accounts.length > 0 ? (
+                        <CheckSquare className="w-4 h-4" />
+                      ) : (
+                        <Square className="w-4 h-4" />
+                      )}
+                      <span>Tích chọn tất cả ({selectedAccountIds.length})</span>
+                    </button>
+                  </div>
+                  
+                  {/* Các nút bấm kích hoạt hàng loạt cho các tài khoản được tích */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleBulkStart('COOKIE')}
+                      disabled={selectedAccountIds.length === 0}
+                      className="inline-flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 transition-all shadow-md"
+                    >
+                      <Play className="w-3.5 h-3.5" /> Chạy đổi Avatar & Bio hàng loạt
+                    </button>
+                  </div>
                 </div>
-                <div className="overflow-y-auto max-h-[350px]">
+
+                <div className="overflow-y-auto max-h-[380px] flex-1">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-[#141b2e] text-xs font-semibold text-slate-400 uppercase">
+                        <th className="p-4 w-12 text-center">Tích</th>
                         <th className="p-4">Tài khoản</th>
                         <th className="p-4">Liên kết IP Proxy</th>
-                        <th className="p-4">Tiến trình hiện tại</th>
-                        <th className="p-4 text-right">Hành động</th>
+                        <th className="p-4">Trạng thái</th>
+                        <th className="p-4">Tiến trình chạy</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800 text-xs">
-                      {accounts.map((acc: any) => (
-                        <tr key={acc.id} className="hover:bg-slate-900/40 transition-colors">
-                          <td className="p-4">
-                            <div className="font-bold text-slate-200">{acc.username}</div>
-                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">{acc.id}</div>
-                          </td>
-                          <td className="p-4">
-                            {/* Trình chọn gán Proxy trực tiếp (Dropdown Selector) */}
-                            <select
-                              value={acc.proxy_id || 'none'}
-                              onChange={(e) => handleBindProxy(acc.id, e.target.value)}
-                              className="bg-[#182032] border border-slate-700 rounded-lg p-1.5 text-xs text-teal-400 font-medium focus:outline-none focus:ring-1 focus:ring-teal-400"
-                            >
-                              <option value="none">Chạy mạng thật (No Proxy)</option>
-                              {proxies.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  [{p.protocol.toUpperCase()}] {p.host}:{p.port}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="p-4 font-mono">
-                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              acc.status === 'RUNNING' ? 'text-amber-400 animate-pulse' :
-                              acc.status === 'QUEUED' ? 'text-teal-400' :
-                              acc.status === 'LOGGED_IN' ? 'text-emerald-400' : 'text-slate-400'
-                            }`}>
-                              {acc.status === 'RUNNING' ? `⏳ ${acc.current_step}` : (acc.current_step || 'Chưa chạy')}
-                            </span>
-                          </td>
-                          <td className="p-4 text-right">
-                            <button
-                              onClick={() => handleStartTask(acc.id, 'COOKIE')}
-                              disabled={acc.status === 'RUNNING' || acc.status === 'QUEUED'}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 transition-all"
-                            >
-                              <Play className="w-3 h-3" /> Cookie Login
-                            </button>
+                      {accounts.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center text-slate-500 font-semibold">
+                            Chưa có tài khoản nào. Vui lòng tải lên file .txt để nhập hàng loạt.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        accounts.map((acc: Account) => (
+                          <tr key={acc.id} className={`hover:bg-slate-900/40 transition-colors ${selectedAccountIds.includes(acc.id) ? 'bg-slate-900/20' : ''}`}>
+                            <td className="p-4 text-center">
+                              <button onClick={() => toggleSelectAccount(acc.id)} className="text-slate-400 hover:text-teal-400">
+                                {selectedAccountIds.includes(acc.id) ? (
+                                  <CheckSquare className="w-4 h-4 text-teal-400" />
+                                ) : (
+                                  <Square className="w-4 h-4" />
+                                )}
+                              </button>
+                            </td>
+                            <td className="p-4">
+                              <div className="font-bold text-slate-200">{acc.username}</div>
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">{acc.id}</div>
+                            </td>
+                            <td className="p-4">
+                              <select
+                                value={acc.proxy_id || 'none'}
+                                onChange={(e) => handleBindProxy(acc.id, e.target.value)}
+                                className="bg-[#182032] border border-slate-700 rounded-lg p-1.5 text-xs text-teal-400 font-medium focus:outline-none focus:ring-1 focus:ring-teal-400"
+                              >
+                                <option value="none">Mạng LAN (Không Proxy)</option>
+                                {proxies.map((p: Proxy) => (
+                                  <option key={p.id} value={p.id}>
+                                    [{p.protocol.toUpperCase()}] {p.host}:{p.port}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="p-4">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                                acc.status === 'RUNNING' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
+                                acc.status === 'QUEUED' ? 'bg-teal-500/10 text-teal-400 border-teal-500/30' :
+                                acc.status === 'LOGGED_IN' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                                acc.status === 'ERROR' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
+                                'bg-slate-500/10 text-slate-400 border-slate-500/30'
+                              }`}>
+                                {acc.status}
+                              </span>
+                            </td>
+                            {/* Cột Tiến trình chạy ngắn gọn gọn gàng */}
+                            <td className="p-4 font-mono font-bold text-slate-300">
+                              {acc.status === 'RUNNING' ? (
+                                <span className="flex items-center gap-1 text-amber-400">
+                                  ⏳ {acc.current_step}
+                                </span>
+                              ) : acc.status === 'QUEUED' ? (
+                                <span className="text-teal-400">⏳ {acc.current_step}</span>
+                              ) : (
+                                <span>{acc.current_step}</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
               </>
             ) : (
               <>
-                <div className="p-4 border-b border-slate-800">
+                <div className="p-4 border-b border-slate-800 bg-[#141b2e]/50">
                   <h2 className="font-bold text-slate-200">Kho lưu trữ IP Proxy</h2>
                 </div>
-                <div className="overflow-y-auto max-h-[350px]">
+                <div className="overflow-y-auto max-h-[420px] flex-1">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-[#141b2e] text-xs font-semibold text-slate-400 uppercase">
@@ -392,14 +424,22 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800 text-xs text-slate-300">
-                      {proxies.map((p) => (
-                        <tr key={p.id} className="hover:bg-slate-900/40 font-mono">
-                          <td className="p-4"><span className="bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2 py-0.5 rounded font-bold text-[10px]">{p.protocol.toUpperCase()}</span></td>
-                          <td className="p-4 text-slate-100 font-bold">{p.host}</td>
-                          <td className="p-4 text-slate-300">{p.port}</td>
-                          <td className="p-4 text-slate-500">{p.username ? p.username : 'Không có'}</td>
+                      {proxies.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="p-8 text-center text-slate-500 font-semibold">
+                            Chưa có proxy nào. Vui lòng tải lên file proxies.txt để nhập hàng loạt.
+                          </td>
                         </tr>
-                      ))}
+                      ) : (
+                        proxies.map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-900/40 font-mono">
+                            <td className="p-4"><span className="bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2 py-0.5 rounded font-bold text-[10px]">{p.protocol.toUpperCase()}</span></td>
+                            <td className="p-4 text-slate-100 font-bold">{p.host}</td>
+                            <td className="p-4 text-slate-300">{p.port}</td>
+                            <td className="p-4 text-slate-500">{p.username ? p.username : 'Không có'}</td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -409,17 +449,17 @@ export default function App() {
         </div>
       </div>
 
-      {/* TERMINAL CONSOLE */}
+      {/* TERMINAL CONSOLE REALTIME CHUYÊN NGHIỆP */}
       <div className="bg-[#050811] border border-slate-800 rounded-2xl overflow-hidden flex flex-col h-[180px]">
         <div className="bg-[#0e1424] px-4 py-2 border-b border-slate-800 flex justify-between items-center">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
             <TerminalIcon className="text-teal-400 w-4 h-4" />
-            <span>Live Console Monitor</span>
+            <span>Nhật ký luồng hệ thống (Live Terminal Console)</span>
           </div>
           <button onClick={() => setLogs([])} className="text-[10px] text-slate-500 hover:text-slate-300 font-bold">Xóa nhật ký</button>
         </div>
         <div className="p-4 font-mono text-xs overflow-y-auto flex-1 space-y-1 text-slate-400 bg-black/40">
-          {logs.length === 0 ? <div className="text-slate-600 italic">Chờ nhận nhật ký thao tác luồng...</div> : logs.map((log, index) => (
+          {logs.length === 0 ? <div className="text-slate-600 italic">Chờ khởi động tác vụ để ghi nhận log...</div> : logs.map((log, index) => (
             <div key={index} className="flex gap-2">
               <span className="text-slate-600">[{log.time}]</span>
               <span className="text-teal-400">[{log.username}]</span>
@@ -431,4 +471,11 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+// Biến giả lập phòng ngừa lỗi khai báo trong React
+const settings_concurrency = 4;
+class ErrorWebSocketFake {
+  onmessage() {}
+  close() {}
 }
