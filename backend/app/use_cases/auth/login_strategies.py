@@ -44,13 +44,13 @@ class CookieLoginStrategy(ITikTokLoginStrategy):
                 await step_logger("[-] Tài khoản không chứa dữ liệu Cookies để đăng nhập.")
             return False
         
-        await browser.navigate_to("https://www.tiktok.com")
+        await browser.navigate_to("https://www.tiktok.com/?lang=en")
         
         if step_logger:
             await step_logger("Đang dọn sạch cache & nạp mảng Cookies JSON vào trình duyệt...")
         await browser.inject_cookies(account.cookies)
         
-        await browser.navigate_to("https://www.tiktok.com")
+        await browser.navigate_to("https://www.tiktok.com/?lang=en")
         await asyncio.sleep(3)
         
         is_logged_in = await browser.check_login_status()
@@ -78,8 +78,8 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
         # Bước 1: Đi tới trang chủ của TikTok
         if step_logger:
             await step_logger("Đang truy cập trang chủ TikTok...")
-        await browser.navigate_to("https://www.tiktok.com")
-        await asyncio.sleep(4)
+        await browser.navigate_to("https://www.tiktok.com/?lang=en")
+        await asyncio.sleep(10)
 
         page = browser._page
 
@@ -90,7 +90,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             login_home_btn = page.locator('div.TUXButton-content:has-text("Log in"), div.TUXButton-label:has-text("Log in")')
             await login_home_btn.first.wait_for(state="visible", timeout=15000)
             await login_home_btn.first.click()
-            await asyncio.sleep(3) 
+            await asyncio.sleep(10) 
 
             # Bước 3: Nhấp vào nút "Use phone or email" trên cửa sổ popup
             if step_logger:
@@ -103,7 +103,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             # Bước 4: Nhấp vào nút chuyển tab "Use email or username"
             if step_logger:
                 await step_logger("Đang chuyển sang tab 'Use email or username'...")
-            tab_btn = page.locator('a[href*="/login/phone-or-email/email"], a:has-text("Use email or username"), .elfe54h0')
+            tab_btn = page.locator('a[href*="/login/phone-or-email/email"], a:has-text("Use email or username"), .elfe54h0, span:has-text("Username or email")')
             await tab_btn.first.wait_for(state="visible", timeout=10000)
             await tab_btn.first.click()
             await asyncio.sleep(3) 
@@ -136,7 +136,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             login_btn = page.locator('[data-e2e="login-button"]')
             await login_btn.first.wait_for(state="visible", timeout=10000)
             await login_btn.first.click()
-            await asyncio.sleep(6) # Đợi TikTok điều hướng và xử lý captcha
+            await asyncio.sleep(15) # Đợi TikTok điều hướng và xử lý captcha
 
             # =================================================================
             # BƯỚC 8: BỘ PHÁT HIỆN MÀN HÌNH ĐA NHÁNH (Xử lý các tình huống OTP)
@@ -173,7 +173,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
 
             # 8.2 XỬ LÝ NHÁNH B: Bóc tách mã OTP từ dongvanfb và gõ xác minh
             if is_direct_otp_active:
-                otp_input = page.locator('input[placeholder*="code"], input.tux-input__element-zY3KBY')
+                otp_input = page.locator('input[placeholder*="code"], input.tux-input__element-zY3KBY, input[placeholder="Enter 6-digit code"]')
                 await otp_input.first.wait_for(state="visible", timeout=10000)
 
                 if not account.email or not account.refresh_token or not account.client_id:
@@ -186,8 +186,22 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                         await step_logger("[-] Email Service của DONGVANFB chưa được nạp.")
                     return False
 
+                # =================================================================
+                # ĐỒNG BỘ: Chờ đồng hồ đếm ngược gửi mã xuất hiện rồi mới gọi API
+                # =================================================================
                 if step_logger:
-                    await step_logger(f"Đang gọi API dongvanfb để quét mã OTP gửi về {account.email}...")
+                    await step_logger("Đang đợi TikTok phát lệnh gửi mã OTP và kích hoạt đếm ngược...")
+                
+                # Tìm nút Resend code chuẩn theo đúng data-testid và cấu trúc class bạn cung cấp
+                resend_btn = page.locator('button.tux-button__element-ZBq38f:has-text("Resend"), button:has-text("Resend"), button:has-text("Gửi lại")')
+                # Đợi cho nút này được đính kèm vào DOM (attached) biểu thị đếm ngược bắt đầu chạy
+                await resend_btn.first.wait_for(state="attached", timeout=15000)
+                
+                # Chờ thêm 2 giây trễ an toàn để email chắc chắn truyền thành công đến máy chủ DONGVANFB
+                await asyncio.sleep(10)
+
+                if step_logger:
+                    await step_logger(f"Đồng hồ đếm ngược đã kích hoạt. Đang quét hòm thư {account.email} qua API dongvanfb...")
                 
                 # Gọi API bóc tách mã OTP của dongvanfb bằng cơ chế Polling ngầm
                 otp_code = await email_service.fetch_last_tiktok_otp(

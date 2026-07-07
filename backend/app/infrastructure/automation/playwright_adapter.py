@@ -1,6 +1,6 @@
 import asyncio
 import logging
-import shutil
+import shutil  # 1. Bổ sung import bị thiếu để tránh lỗi sao chép ảnh đại diện
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -16,33 +16,42 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         self._browser = None
         self._page = None
 
-    # Cập nhật signature nhận thêm tham số seed
     async def initialize(self, proxy_config: Optional[Dict[str, Any]] = None, seed: Optional[int] = None) -> None:
         try:
+            # 2. SỬA LỖI BẢO MẬT: Bộ lọc làm sạch Proxy (Proxy Sanitization)
+            # Chỉ nạp username/password nếu có dữ liệu thật trong DB, loại bỏ hoàn toàn None/chuỗi rỗng
+            # Tránh việc Playwright tự động âm thầm fallback về mạng LAN thật của bạn
             proxy_opts = None
-            if proxy_config:
+            if proxy_config and proxy_config.get("server"):
                 proxy_opts = {
-                    "server": proxy_config.get("server"),
-                    "username": proxy_config.get("username"),
-                    "password": proxy_config.get("password")
+                    "server": proxy_config.get("server")
                 }
+                if proxy_config.get("username"):
+                    proxy_opts["username"] = proxy_config.get("username")
+                if proxy_config.get("password"):
+                    proxy_opts["password"] = proxy_config.get("password")
 
-            # os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
-            # os.environ["MOZ_WEBRENDER"] = "0"
-            # os.environ["MOZ_ACCELERATED"] = "0"
+            # Chỉ chạy render phần mềm CPU khi ở chế độ headless (chạy ẩn danh trên Docker/Server)
+            # if settings.BROWSER_HEADLESS:
+            #     os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
+            #     os.environ["MOZ_WEBRENDER"] = "0"
+            #     os.environ["MOZ_ACCELERATED"] = "0"
+            # else:
+            #     os.environ.pop("LIBGL_ALWAYS_SOFTWARE", None)
+            #     os.environ.pop("MOZ_WEBRENDER", None)
+            #     os.environ.pop("MOZ_ACCELERATED", None)
 
-            # Khởi chạy trình duyệt tàng hình theo cấu hình gốc và SEED cố định (nếu có)
-            # Thư viện sẽ tự bóc tách và duy trì cấu hình vân tay dựa trên seed này!
+            # Khởi chạy trình duyệt tàng hình theo cấu hình gốc và SEED cố định
             self._invisible_pw = InvisiblePlaywright(
                 proxy=proxy_opts, 
                 headless=settings.BROWSER_HEADLESS,
-                humanize=True,
-                seed=seed  # <-- Gán hạt giống vân tay cố định cho tài khoản
+                humanize=True, # Tự động di chuột uốn lượn có gia tốc dưới nền
+                seed=seed  # Gán hạt giống vân tay cố định cho tài khoản
             )
             
             self._browser = await self._invisible_pw.__aenter__()
             self._page = await self._browser.new_page()
-            logger.info(f"[+] Khởi tạo Invisible Firefox-13 thành công. Browser Seed: {seed}")
+            logger.info(f"[+] Khởi tạo Invisible Firefox-13 thành công. Browser Seed: {seed} | Proxy: {proxy_opts.get('server') if proxy_opts else 'Direct NET'}")
         except Exception as e:
             logger.error(f"[-] Không thể khởi tạo trình duyệt: {str(e)}")
             await self.close()
@@ -143,7 +152,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             await avatar_wrapper.first.wait_for(state="visible", timeout=15000)
             await asyncio.sleep(2)
 
-            # 3. THAY ĐỔI AVATAR (Phương pháp JS Base64 Injection tột đỉnh của bạn)
+            # 3. THAY ĐỔI AVATAR (Phương pháp JS Base64 Injection tột định của bạn)
             if avatar_path:
                 try:
                     abs_origin_path = os.path.abspath(os.path.expanduser(avatar_path))
@@ -260,3 +269,14 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 await step_logger(f"Lỗi thao tác sửa hồ sơ: {str(e)}")
             logger.error(f"[-] Gặp lỗi khi thao tác cập nhật thông tin hồ sơ: {str(e)}")
             return False
+
+    async def close(self) -> None:
+        try:
+            if self._invisible_pw:
+                await self._invisible_pw.__aexit__(None, None, None)
+                self._invisible_pw = None
+                self._browser = None
+                self._page = None
+                logger.info("[+] Đã đóng phiên trình duyệt và giải phóng tài nguyên.")
+        except Exception as e:
+            logger.error(f"[-] Lỗi phát sinh khi đóng trình duyệt: {str(e)}")

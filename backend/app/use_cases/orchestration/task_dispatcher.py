@@ -109,6 +109,7 @@ class ConcurrentTaskDispatcher:
         logger.info(f"[+] Phân bổ ảnh đại diện: {os.path.basename(assigned_image)} cho luồng số {task_index}")
         return assigned_image
 
+    # Tìm kiếm hàm _execute_worker_with_semaphore của task_dispatcher.py và dán đè bằng đoạn mã sau:
     async def _execute_worker_with_semaphore(self, account_id: str, task_type: str, avatar_path: Optional[str]) -> None:
         logger.info(f"[*] Khởi chạy trình duyệt cho tài khoản: {account_id} | Tác vụ: {task_type}")
         
@@ -125,6 +126,7 @@ class ConcurrentTaskDispatcher:
                 await self._update_step_log(account_id, step_desc, session)
 
             try:
+                # 1. Truy vấn thông tin tài khoản và cấu hình Proxy động liên kết
                 account = account_repo.get_by_id(account_id)
                 proxy_config = None
                 if account and account.proxy_id:
@@ -137,8 +139,13 @@ class ConcurrentTaskDispatcher:
                         }
 
                 await self._update_account_status(account_id, "RUNNING", step_desc="Đang khởi chạy...", session=session)
+
+                # 2. THỐNG NHẤT KHỞI TẠO VÒNG ĐỜI TRÌNH DUYỆT TẠI ĐÂY:
+                # Đảm bảo 100% mọi tác vụ (LOGIN & UPDATE_PROFILE) đều chạy đúng Proxy cách ly và Seed vân tay cố định!
                 seed_val = _uuid_to_seed(account_id)
-                # PHÂN PHỐI ĐÚNG LUỒNG CHẠY USE CASE ĐỘC LẬP
+                await browser_service.initialize(proxy_config=proxy_config, seed=seed_val)
+
+                # 3. THỰC THI USE CASE TƯƠNG ỨNG (Không chứa lệnh khởi chạy trùng lặp ở trong nữa)
                 if task_type.startswith("LOGIN"):
                     method = task_type.split("_")[1]  # COOKIE hoặc CREDENTIAL
                     
@@ -148,11 +155,9 @@ class ConcurrentTaskDispatcher:
                         step_logger=log_step,
                         email_service=email_service
                     )
-                    await browser_service.initialize(proxy_config=proxy_config, seed=seed_val)
                     success = await use_case.execute(account_id, method)
 
                 elif task_type == "UPDATE_PROFILE":
-                    # Tác vụ đổi thông tin hoàn toàn độc lập (nạp trực tiếp Cookies sống)
                     from app.use_cases.profile.tiktok_update_profile import TikTokUpdateProfileUseCase
                     
                     use_case = TikTokUpdateProfileUseCase(
