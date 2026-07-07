@@ -4,8 +4,3 @@ uv run uvicorn --app-dir backend app.main:app --reload --port 8000
 cd frontend
 npm install
 npm run dev
-
-
-<input type="text" placeholder="Enter 6-digit code" class="tux-input__element-zY3KBY" style="color: var(--tux-v2-color-ui-text-1);" data-testid="tux-web-input" value="">
-
-<div class="tux-web-canary tux-interaction-container-ohUjRG tux-web-canary tux-button-rFq4rS tux-button--medium-R3_Njm tux-button--disabled-lkF3kg" style="width: 100%; height: 40px; background-color: var(--tux-v2-color-ui-shape-primary); color: var(--tux-v2-color-ui-shape-text-1-on-primary); cursor: not-allowed;" data-testid="tux-web-button-container"><button type="button" disabled="" class="tux-button__element-ZBq38f" style="padding-left: 16px; padding-right: 16px;" data-testid="tux-web-button"><div class="tux-button__content-naVKgq"><div class="tux-button__text-container-oMVxoQ item-ZxfZxl"><div class="tux-web-canary Headline-Semibold text--truncate-Q49nU9" data-testid="tux-web-text">Next</div></div></div></button></div>

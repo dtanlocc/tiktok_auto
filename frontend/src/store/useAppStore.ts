@@ -1,56 +1,65 @@
 import { create } from 'zustand';
-
-export interface Account {
-  id: string;
-  username: string;
-  status: string;
-  proxy_id: string | null;
-  has_cookies: boolean;
-  current_step: string;
-}
-
-export interface Proxy {
-  id: string;
-  host: string;
-  port: number;
-  username: string | null;
-  protocol: string;
-}
+import { Account, ProxyModel, LogMessage } from '../types';
 
 interface AppState {
   accounts: Account[];
-  proxies: Proxy[]; // Danh sách proxy quản lý
+  proxies: ProxyModel[];
+  logs: LogMessage[];
   wsConnected: boolean;
+  
   setAccounts: (accounts: Account[]) => void;
-  updateAccountStatus: (id: string, status: string) => void;
-  updateAccountProxy: (id: string, proxyId: string | null) => void; // Hàm update proxy realtime
-  addAccount: (account: Account) => void;
-  setProxies: (proxies: Proxy[]) => void;
-  addProxy: (proxy: Proxy) => void;
+  setProxies: (proxies: ProxyModel[]) => void;
   setWsConnected: (connected: boolean) => void;
+  
+  addAccount: (account: Account) => void;
+  updateAccountStatus: (id: string, status: string, current_step?: string) => void;
+  updateAccountStep: (id: string, current_step: string) => void;
+  updateAccountProxy: (id: string, proxyId: string | null) => void;
+  
+  addLog: (log: LogMessage) => void;
+  clearLogs: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   accounts: [],
   proxies: [],
+  logs: [],
   wsConnected: false,
+
   setAccounts: (accounts) => set({ accounts }),
-  updateAccountStatus: (id, status) => set((state) => ({
+  setProxies: (proxies) => set({ proxies }),
+  setWsConnected: (connected) => set({ wsConnected: connected }),
+
+  addAccount: (account) => set((state) => {
+    if (state.accounts.some((a) => a.id === account.id)) {
+      return state;
+    }
+    return { accounts: [...state.accounts, account] };
+  }),
+
+  updateAccountStatus: (id, status, current_step) => set((state) => ({
     accounts: state.accounts.map((acc) => 
-      acc.id === id ? { ...acc, status } : acc
+      acc.id === id 
+        ? { ...acc, status, ...(current_step ? { current_step } : {}) } 
+        : acc
     )
   })),
+
+  updateAccountStep: (id, current_step) => set((state) => ({
+    accounts: state.accounts.map((acc) => 
+      acc.id === id ? { ...acc, current_step } : acc
+    )
+  })),
+
   updateAccountProxy: (id, proxyId) => set((state) => ({
     accounts: state.accounts.map((acc) => 
       acc.id === id ? { ...acc, proxy_id: proxyId } : acc
     )
   })),
-  addAccount: (account) => set((state) => ({
-    accounts: [...state.accounts, account]
+
+  addLog: (log) => set((state) => ({
+    logs: [...state.logs, log]
   })),
-  setProxies: (proxies) => set({ proxies }),
-  addProxy: (proxy) => set((state) => ({
-    proxies: [...state.proxies, proxy]
-  })),
-  setWsConnected: (connected) => set({ wsConnected: connected })
+
+  clearLogs: () => set({ logs: [] })
 }));

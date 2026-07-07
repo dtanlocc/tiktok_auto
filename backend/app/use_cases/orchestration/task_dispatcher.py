@@ -159,10 +159,16 @@ class ConcurrentTaskDispatcher:
 
                 elif task_type == "UPDATE_PROFILE":
                     from app.use_cases.profile.tiktok_update_profile import TikTokUpdateProfileUseCase
+                    from app.use_cases.auth.login_strategies import CredentialEmailOtpLoginStrategy
+                    
+                    # Tự động inject Strategy đăng nhập bằng thông tin tài khoản và OTP cho kịch bản đổi profile
+                    login_strategy = CredentialEmailOtpLoginStrategy()
                     
                     use_case = TikTokUpdateProfileUseCase(
                         account_repo=account_repo,
                         browser_service=browser_service,
+                        login_strategy=login_strategy,
+                        email_service=email_service,
                         step_logger=log_step
                     )
                     success = await use_case.execute(account_id, avatar_path)
