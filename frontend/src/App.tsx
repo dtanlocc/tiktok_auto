@@ -19,7 +19,8 @@ import {
   Trash2, 
   Wifi, 
   WifiOff, 
-  ShieldCheck 
+  ShieldCheck, 
+  Sparkles
 } from 'lucide-react';
 
 interface LogMessage {
@@ -73,7 +74,7 @@ export default function App() {
       }
     };
 
-    const activeWs = new WebSocket('ws://127.0.0.1:8000/ws');
+    const activeWs = new WebSocket('ws://127.0.0.1:8001/ws');
     activeWs.onmessage = handleWsEvents;
 
     // Tải dữ liệu ban đầu
@@ -96,12 +97,12 @@ export default function App() {
 
   // Hàm tải dữ liệu từ API Backend
   const loadData = () => {
-    fetch('http://127.0.0.1:8000/api/v1/accounts/')
+    fetch('http://127.0.0.1:8001/api/v1/accounts/')
       .then((res) => res.json())
       .then((data) => setAccounts(data))
       .catch((err) => console.error('Lỗi tải danh sách tài khoản:', err));
 
-    fetch('http://127.0.0.1:8000/api/v1/proxies/')
+    fetch('http://127.0.0.1:8001/api/v1/proxies/')
       .then((res) => res.json())
       .then((data) => setProxies(data))
       .catch((err) => console.error('Lỗi tải danh sách proxy:', err));
@@ -137,8 +138,8 @@ export default function App() {
     setLoading(true);
 
     const url = type === 'accounts' 
-      ? 'http://127.0.0.1:8000/api/v1/accounts/import-file' 
-      : 'http://127.0.0.1:8000/api/v1/proxies/import-file';
+      ? 'http://127.0.0.1:8001/api/v1/accounts/import-file' 
+      : 'http://127.0.0.1:8001/api/v1/proxies/import-file';
 
     try {
       const response = await fetch(url, {
@@ -176,33 +177,65 @@ export default function App() {
   };
 
   // 5. Kích hoạt luồng chạy ĐỒNG BỘ ĐỔI AVATAR & BIO HÀNG LOẠT (Gọi API bulk-start)
-  const handleBulkStart = async (method: 'COOKIE' | 'CREDENTIAL') => {
+  // Tìm kiếm và thay thế hàm handleBulkStart cũ bằng 2 hàm xử lý độc lập mới dưới đây:
+  
+  // HÀM 1: CHUYÊN XỬ LÝ ĐĂNG NHẬP HÀNG LOẠT (COOKIE HOẶC FORM OTP)
+  const handleBulkLogin = async (method: 'COOKIE' | 'CREDENTIAL') => {
     if (selectedAccountIds.length === 0) {
       alert("Vui lòng tích chọn ít nhất một tài khoản trên bảng trước khi chạy.");
       return;
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/v1/tasks/bulk-start', {
+      const response = await fetch('http://127.0.0.1:8001/api/v1/tasks/bulk-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           account_ids: selectedAccountIds,
           login_method: method,
-          avatar_folder: avatarFolder || null,
-          concurrency_limit: concurrency
+          concurrency_limit: typeof concurrency === 'string' ? 4 : concurrency
         }),
       });
 
       if (response.ok) {
-        setSelectedAccountIds([]); // Reset tích chọn sau khi đẩy vào hàng đợi thành công
+        setSelectedAccountIds([]); // Reset tích chọn
         setContextMenu(null); // Đóng menu chuột phải
       } else {
         const err = await response.json();
-        alert(`Lỗi kích hoạt luồng chạy: ${err.detail}`);
+        alert(`Lỗi kích hoạt đăng nhập: ${err.detail}`);
       }
     } catch (err) {
-      console.error('Lỗi gọi API bulk-start:', err);
+      console.error('Lỗi gọi API bulk-login:', err);
+    }
+  };
+
+  // HÀM 2: CHUYÊN XỬ LÝ CẬP NHẬT HỒ SƠ HÀNG LOẠT (AVATAR & BIO)
+  const handleBulkUpdateProfile = async () => {
+    if (selectedAccountIds.length === 0) {
+      alert("Vui lòng tích chọn ít nhất một tài khoản trên bảng trước khi chạy.");
+      return;
+    }
+
+    try {
+      const response = await fetch('http://127.0.0.1:8001/api/v1/tasks/bulk-update-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_ids: selectedAccountIds,
+          avatar_folder: avatarFolder || null,
+          concurrency_limit: typeof concurrency === 'string' ? 4 : concurrency
+        }),
+      });
+
+      if (response.ok) {
+        setSelectedAccountIds([]);
+        setContextMenu(null);
+      } else {
+        const err = await response.json();
+        alert(`Lỗi kích hoạt đổi profile: ${err.detail}`);
+      }
+    } catch (err) {
+      console.error('Lỗi gọi API bulk-update-profile:', err);
     }
   };
 
@@ -212,7 +245,7 @@ export default function App() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/v1/accounts/auto-allocate-proxies', {
+      const response = await fetch('http://127.0.0.1:8001/api/v1/accounts/auto-allocate-proxies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ account_ids: selectedAccountIds }),
@@ -238,7 +271,7 @@ export default function App() {
   const handleBindProxy = async (accountId: string, proxyId: string) => {
     try {
       const targetProxyId = proxyId === 'none' ? null : proxyId;
-      await fetch(`http://127.0.0.1:8000/api/v1/accounts/${accountId}/proxy`, {
+      await fetch(`http://127.0.0.1:8001/api/v1/accounts/${accountId}/proxy`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ proxy_id: targetProxyId }),
@@ -549,48 +582,57 @@ export default function App() {
       </div>
 
       {/* ==================== CUSTOM CONTEXT MENU (MENU CHUỘT PHẢI) ==================== */}
-      {contextMenu && contextMenu.visible && (
+      {contextMenu && contextMenu.visible && activeTab === 'accounts' && (
         <div 
           style={{ top: contextMenu.y, left: contextMenu.x }}
-          className="fixed bg-[#10172a] border border-slate-800 rounded-xl shadow-2xl p-1.5 z-50 min-w-[220px] text-xs font-semibold text-slate-300 flex flex-col gap-1 border-b-2 border-b-teal-500"
+          className="fixed bg-[#040814]/90 border border-cyan-500/20 shadow-[0_10px_40px_rgba(0,0,0,0.95)] rounded-sm p-1.5 z-50 min-w-[240px] text-xs text-slate-300 font-sans backdrop-blur-md border-b-2 border-b-cyan-500"
         >
-          <div className="px-3 py-1.5 text-[10px] text-slate-500 uppercase tracking-wider border-b border-slate-800/60 mb-1">
-            Thao tác hàng loạt ({selectedAccountIds.length} Acc)
+          <div className="px-2 py-1 text-[8px] text-cyan-500/60 font-black uppercase tracking-widest border-b border-slate-900 mb-1.5 select-none flex items-center gap-1.5">
+            <Sparkles className="w-2.5 h-2.5 text-cyan-400" />
+            <span>Batch Operations // {selectedAccountIds.length} Nodes</span>
           </div>
 
-          {/* HÀNH ĐỘNG 1: ĐỒNG BỘ ĐỔI AVATAR & BIO */}
+          {/* CHỨC NĂNG 1: ĐĂNG NHẬP COOKIES HÀNG LOẠT */}
           <button 
-            onClick={() => handleBulkStart('COOKIE')}
-            className="w-full text-left px-3 py-2 hover:bg-teal-500 hover:text-slate-950 rounded-lg flex items-center gap-2 transition-colors duration-100 font-bold text-slate-200"
+            onClick={() => handleBulkLogin('COOKIE')} // <-- Gọi hàm xử lý Đăng nhập Cookies độc lập
+            className="w-full text-left px-2 py-1.5 hover:bg-cyan-950/20 hover:text-cyan-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-teal-400" />
-            <span>Đồng bộ Đổi Avatar & Bio</span>
+            <RefreshCw className="w-3.5 h-3.5 text-slate-600 group-hover:text-cyan-400 transition-transform duration-300 group-hover:rotate-180" />
+            <span className="text-[10px] font-black uppercase tracking-widest">LOGIN_VIA_COOKIES</span>
           </button>
 
-          {/* HÀNH ĐỘNG 2: TỰ ĐỘNG GÁN PROXY KHẢ DỤNG */}
+          {/* CHỨC NĂNG 2: ĐĂNG NHẬP FORM OTP HÀNG LOẠT */}
+          <button 
+            onClick={() => handleBulkLogin('CREDENTIAL')} // <-- Gọi hàm xử lý Đăng nhập Form OTP độc lập
+            className="w-full text-left px-2 py-1.5 hover:bg-cyan-950/20 hover:text-cyan-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
+          >
+            <Key className="w-3.5 h-3.5 text-slate-600 group-hover:text-cyan-400" />
+            <span className="text-[10px] font-black uppercase tracking-widest">LOGIN_VIA_FORM_OTP</span>
+          </button>
+
+          {/* CHỨC NĂNG 3: ĐỔI PROFILE HÀNG LOẠT (Chỉ chạy khi Cookies sống) */}
+          <button 
+            onClick={handleBulkUpdateProfile} // <-- Gọi hàm xử lý Đổi Avatar & Bio độc lập
+            className="w-full text-left px-2 py-1.5 hover:bg-cyan-950/20 hover:text-cyan-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
+          >
+            <Video className="w-3.5 h-3.5 text-slate-600 group-hover:text-cyan-400 animate-bounce" />
+            <span className="text-[10px] font-black uppercase tracking-widest">UPDATE_AVATAR_BIO</span>
+          </button>
+
+          {/* CHỨC NĂNG 4: TỰ ĐỘNG PHÂN BỔ PROXY HÀNG LOẠT */}
           <button 
             onClick={handleAutoAllocateProxies}
-            className="w-full text-left px-3 py-2 hover:bg-teal-500 hover:text-slate-950 rounded-lg flex items-center gap-2 transition-colors duration-100 font-bold text-slate-200"
+            className="w-full text-left px-2 py-1.5 hover:bg-amber-950/20 hover:text-amber-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
           >
-            <Globe className="w-3.5 h-3.5 text-teal-400" />
-            <span>Tự động gán Proxy khả dụng</span>
+            <Globe className="w-3.5 h-3.5 text-slate-600 group-hover:text-amber-400" />
+            <span className="text-[10px] font-black uppercase tracking-widest">AUTO_MAP_PROXIES</span>
           </button>
-
-          <div className="border-t border-slate-800/80 my-1"></div>
           
-          <button disabled className="w-full text-left px-3 py-2 text-slate-600 rounded-lg flex items-center gap-2 cursor-not-allowed">
-            <Key className="w-3.5 h-3.5 text-slate-600" />
-            <span>Đổi Password (Sắp có)</span>
-          </button>
-
-          <button disabled className="w-full text-left px-3 py-2 text-slate-600 rounded-lg flex items-center gap-2 cursor-not-allowed">
-            <Video className="w-3.5 h-3.5 text-slate-600" />
-            <span>Đăng Video hàng loạt (Sắp có)</span>
-          </button>
-
-          <button disabled className="w-full text-left px-3 py-2 text-slate-600 rounded-lg flex items-center gap-2 cursor-not-allowed">
-            <Trash2 className="w-3.5 h-3.5 text-slate-600" />
-            <span>Xoá tài khoản (Sắp có)</span>
+          <div className="h-[1px] bg-slate-900 my-1.5 select-none"></div>
+          
+          <button disabled className="w-full text-left px-2 py-1.5 text-slate-700 flex items-center gap-2.5 cursor-not-allowed font-mono">
+            <Trash2 className="w-3.5 h-3.5 text-slate-900" />
+            <span className="text-[10px] font-black uppercase tracking-widest">DROP_RECORDS</span>
           </button>
         </div>
       )}

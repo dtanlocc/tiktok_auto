@@ -5,7 +5,7 @@ let socket: WebSocket | null = null;
 export const initWebSocket = () => {
   if (socket) return;
 
-  socket = new WebSocket('ws://127.0.0.1:8000/ws');
+  socket = new WebSocket('ws://127.0.0.1:8001/ws');
 
   socket.onopen = () => {
     console.log('[+] WebSocket Connected to Backend.');

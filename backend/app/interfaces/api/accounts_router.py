@@ -23,13 +23,11 @@ def _get_least_used_proxy_id(account_repo: IAccountRepository, proxy_repo: IProx
         return None
         
     accounts = account_repo.get_all()
-    # Khởi tạo bộ đếm tải trọng cho từng Proxy
     proxy_usage = {p.id: 0 for p in proxies}
     for acc in accounts:
         if acc.proxy_id in proxy_usage:
             proxy_usage[acc.proxy_id] += 1
             
-    # Tìm ra Proxy có bộ đếm nhỏ nhất (ít liên kết nhất)
     best_proxy = min(proxies, key=lambda p: proxy_usage[p.id])
     return best_proxy.id
 
@@ -43,7 +41,6 @@ async def create_account(
     """API thêm tài khoản thủ công qua Form (Tự động gán Proxy tải trọng nhẹ nếu không truyền proxy_id)"""
     proxy_id = payload.proxy_id
     if not proxy_id:
-        # Tự động tìm Proxy tốt nhất nếu trong DB đã có sẵn proxy
         proxy_id = _get_least_used_proxy_id(account_repo, proxy_repo)
 
     new_account = TikTokAccount(
@@ -108,7 +105,7 @@ async def import_raw_account(
     account_repo: IAccountRepository = Depends(get_account_repository),
     proxy_repo: IProxyRepository = Depends(get_proxy_repository)
 ):
-    """API Phân tích cú pháp chuỗi text dán (Tự động phân bổ Proxy tối ưu)"""
+    """API Phân tích cú pháp chuỗi text dán (Tự động cấp phát ID hệ thống độc nhất)"""
     try:
         parts = raw_text.strip().split("|")
         if len(parts) < 7:
@@ -121,35 +118,35 @@ async def import_raw_account(
         password = parts[1].strip()
         email = parts[2].strip()
         email_password = parts[3].strip()
-        device_token = parts[4].strip()
-        uuid_str = parts[5].strip()
+        refresh_token = parts[4].strip()  # Cột 5 làm refresh_token
+        client_id = parts[5].strip()      # Cột 6 làm client_id
         cookies_raw = parts[6].strip()
 
+        # Phân tích cú pháp cookies từ chuỗi JSON
         try:
             cookies = json.loads(cookies_raw)
         except json.JSONDecodeError:
             cookies = []
 
-        # Chống ghi đè thông minh trùng UUID
-        if uuid_str:
-            existing = account_repo.get_by_id(uuid_str)
-            if existing and existing.username != username:
-                uuid_str = str(uuid.uuid4())
-
         # TỰ ĐỘNG PHÂN BỔ PROXY TỐI ƯU
         allocated_proxy_id = _get_least_used_proxy_id(account_repo, proxy_repo)
 
+        # CẤP PHÁT ID KHÓA CHÍNH RIÊNG BIỆT (Collision-free)
+        # client_id vẫn được lưu vào trường client_id phục vụ gọi API DongVan
+        account_id = str(uuid.uuid4())
+
         account = TikTokAccount(
-            id=uuid_str if uuid_str else str(uuid.uuid4()),
+            id=account_id,
             username=username,
             password=password,
             email=email,
             email_password=email_password,
-            device_token=device_token,
+            refresh_token=refresh_token,
+            client_id=client_id,
             cookies=cookies,
             status="IDLE",
             current_step="Chưa kích hoạt",
-            proxy_id=allocated_proxy_id  # <-- Gán Proxy tự động
+            proxy_id=allocated_proxy_id
         )
 
         saved_account = account_repo.save(account)
@@ -178,7 +175,7 @@ async def import_accounts_from_files(
     account_repo: IAccountRepository = Depends(get_account_repository),
     proxy_repo: IProxyRepository = Depends(get_proxy_repository)
 ):
-    """API Nhập hàng loạt tài khoản từ nhiều file cùng lúc (Tự động phân bổ Proxy tải trọng nhẹ cho từng file)"""
+    """API Nhập hàng loạt tài khoản từ nhiều file cùng lúc (ID hệ thống độc lập 100% không lo trùng lặp)"""
     try:
         imported_count = 0
         for file in files:
@@ -196,8 +193,8 @@ async def import_accounts_from_files(
                 password = parts[1].strip()
                 email = parts[2].strip()
                 email_password = parts[3].strip()
-                device_token = parts[4].strip()
-                uuid_str = parts[5].strip()
+                refresh_token = parts[4].strip()  # Cột 5 làm refresh_token
+                client_id = parts[5].strip()      # Cột 6 làm client_id
                 cookies_raw = parts[6].strip()
 
                 try:
@@ -205,40 +202,46 @@ async def import_accounts_from_files(
                 except json.JSONDecodeError:
                     cookies = []
 
-                if uuid_str:
-                    existing = account_repo.get_by_id(uuid_str)
-                    if existing and existing.username != username:
-                        uuid_str = str(uuid.uuid4())
-
                 # TỰ ĐỘNG PHÂN BỔ PROXY TẢI TRỌNG THẤP NHẤT
                 allocated_proxy_id = _allocate_next_proxy(proxy_repo, account_repo)
 
+                # CẤP PHÁT ID KHÓA CHÍNH RIÊNG BIỆT (Bypass 100% lỗi UnboundLocalError & Overwrite)
+                account_id = str(uuid.uuid4())
+
                 account = TikTokAccount(
-                    id=uuid_str if uuid_str else str(uuid.uuid4()),
+                    id=account_id,
                     username=username,
                     password=password,
                     email=email,
                     email_password=email_password,
-                    device_token=device_token,
+                    refresh_token=refresh_token,
+                    client_id=client_id,
                     cookies=cookies,
                     status="IDLE",
                     current_step="Chưa kích hoạt",
                     proxy_id=allocated_proxy_id
                 )
-                account_repo.save(account)
-                imported_count += 1
 
-                await ws_manager.broadcast({
-                    "event": "ACCOUNT_ADDED",
-                    "data": {
-                        "id": account.id,
-                        "username": account.username,
-                        "status": account.status,
-                        "proxy_id": account.proxy_id,
-                        "has_cookies": len(account.cookies) > 0,
-                        "current_step": account.current_step
-                    }
-                })
+                try:
+                    account_repo.save(account)
+                    imported_count += 1
+
+                    await ws_manager.broadcast({
+                        "event": "ACCOUNT_ADDED",
+                        "data": {
+                            "id": account.id,
+                            "username": account.username,
+                            "status": account.status,
+                            "proxy_id": account.proxy_id,
+                            "has_cookies": len(account.cookies) > 0,
+                            "current_step": account.current_step
+                        }
+                    })
+                except Exception as db_err:
+                    logger.warning(f"Bỏ qua dòng lỗi hoặc trùng lặp vấp phải: {str(db_err)}")
+                    if hasattr(account_repo, "session"):
+                        account_repo.session.rollback()
+                    continue
 
         return {"status": "SUCCESS", "message": f"Đã nhập thành công {imported_count} tài khoản từ {len(files)} tệp tin."}
     except Exception as e:
@@ -290,7 +293,6 @@ async def auto_allocate_proxies_endpoint(
             detail="Kho lưu trữ chưa có Proxy nào. Vui lòng nạp Proxy trước."
         )
 
-    # 1. Thống kê tải trọng sử dụng thực tế của từng Proxy hiện tại
     accounts = account_repo.get_all()
     proxy_usage = {p.id: 0 for p in proxies}
     for acc in accounts:
@@ -303,17 +305,14 @@ async def auto_allocate_proxies_endpoint(
         if not account:
             continue
         
-        # Thuật toán Least Connections: Tìm Proxy đang gánh ít tài khoản nhất
         best_proxy_id = min(proxies, key=lambda p: proxy_usage[p.id]).id
         
-        # Gán Proxy và cập nhật tải trọng tức thời để gán cho tài khoản tiếp theo
         account.proxy_id = best_proxy_id
         proxy_usage[best_proxy_id] += 1
         
         account_repo.save(account)
         allocated_count += 1
 
-        # Bắn tín hiệu WebSocket báo cho Web UI cập nhật lại bảng gán Proxy ngay lập tức
         await ws_manager.broadcast({
             "event": "ACCOUNT_PROXY_CHANGED",
             "data": {

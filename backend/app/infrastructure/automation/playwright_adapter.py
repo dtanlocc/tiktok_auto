@@ -16,26 +16,33 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         self._browser = None
         self._page = None
 
-    async def initialize(self, proxy_config: Optional[Dict[str, Any]] = None) -> None:
+    # Cập nhật signature nhận thêm tham số seed
+    async def initialize(self, proxy_config: Optional[Dict[str, Any]] = None, seed: Optional[int] = None) -> None:
         try:
-            # Ánh xạ cấu hình Proxy theo đúng định dạng của Playwright
             proxy_opts = None
             if proxy_config:
                 proxy_opts = {
-                    "server": proxy_config.get("server"),  # socks5://... hoặc http://...
+                    "server": proxy_config.get("server"),
                     "username": proxy_config.get("username"),
                     "password": proxy_config.get("password")
                 }
 
-            # Khởi chạy trình duyệt tàng hình theo cấu hình Headless linh hoạt
-            self._invisible_pw = InvisiblePlaywright(proxy=proxy_opts, headless=settings.BROWSER_HEADLESS)
+            # os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
+            # os.environ["MOZ_WEBRENDER"] = "0"
+            # os.environ["MOZ_ACCELERATED"] = "0"
+
+            # Khởi chạy trình duyệt tàng hình theo cấu hình gốc và SEED cố định (nếu có)
+            # Thư viện sẽ tự bóc tách và duy trì cấu hình vân tay dựa trên seed này!
+            self._invisible_pw = InvisiblePlaywright(
+                proxy=proxy_opts, 
+                headless=settings.BROWSER_HEADLESS,
+                humanize=True,
+                seed=seed  # <-- Gán hạt giống vân tay cố định cho tài khoản
+            )
             
-            # Kích hoạt thủ công Async Context Manager để kiểm soát vòng đời đối tượng
             self._browser = await self._invisible_pw.__aenter__()
-            
-            # Tạo trang mới
             self._page = await self._browser.new_page()
-            logger.info("[+] Khởi tạo Invisible Firefox-13 thành công.")
+            logger.info(f"[+] Khởi tạo Invisible Firefox-13 thành công. Browser Seed: {seed}")
         except Exception as e:
             logger.error(f"[-] Không thể khởi tạo trình duyệt: {str(e)}")
             await self.close()
@@ -69,15 +76,16 @@ class InvisiblePlaywrightAdapter(IBrowserService):
     async def check_login_status(self) -> bool:
         """
         Xác minh Cookies bằng bộ lọc liên kết bất biến (Language & Class Independent)
-        Tìm kiếm các thẻ liên kết 'a' dẫn tới trang cá nhân có định dạng '/@username'
+        Chỉ tìm kiếm các phần tử đặc quyền của thanh tiêu đề Đăng nhập (Avatar tròn, Hộp thư)
         """
         if not self._page:
             return False
 
-        logger.info("[*] Đang đợi trang chủ TikTok ổn định phiên đăng nhập (tối đa 15 giây)...")
+        logger.info("[*] Đang đợi trang chủ TikTok ổn định phiên đăng nhập...")
         
-        # Bộ định vị bất biến: Tìm liên kết chứa ký tự '/@' (chỉ xuất hiện khi đăng nhập)
-        profile_link_locator = self._page.locator('a[href*="/@"]')
+        # SỬA LỖI: Chỉ tìm kiếm các phần tử đặc quyền trên Header của tài khoản đã đăng nhập
+        # Bỏ qua hoàn toàn 'a[href*="/@"]' cũ để tránh bị nhận diện nhầm với liên kết của tác giả video xu hướng
+        profile_link_locator = self._page.locator('[data-e2e="profile-icon"], [data-e2e="messages-icon"], a[href*="/messages"]')
         
         # Nút Đăng nhập (xuất hiện khi chưa đăng nhập)
         login_locator = self._page.locator('[data-e2e="nav-login-button"], button:has-text("Log in"), button:has-text("Đăng nhập")')
@@ -85,12 +93,12 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # Vòng lặp kiểm tra thông minh mỗi giây
         for i in range(15):
             try:
-                # 1. Nếu tìm thấy bất kỳ liên kết nào chứa '/@' -> Đã đăng nhập!
+                # 1. Nếu tìm thấy nút Avatar hoặc Hộp thư trên tiêu đề -> Đã đăng nhập!
                 if await profile_link_locator.count() > 0:
-                    logger.info(f"[+] Xác minh THÀNH CÔNG sau {i+1} giây (Phát hiện liên kết trang cá nhân '/@').")
+                    logger.info(f"[+] Xác minh THÀNH CÔNG sau {i+1} giây (Phát hiện Avatar hoặc Hộp thư đăng nhập).")
                     return True
                 
-                # 2. Nếu tìm thấy nút Login hiển thị rõ ràng -> Cookies đã chết!
+                # 2. Nếu tìm thấy nút Login hiển thị rõ ràng -> Chưa đăng nhập
                 if await login_locator.count() > 0 and await login_locator.first.is_visible():
                     logger.warning(f"[-] Xác minh THẤT BẠI sau {i+1} giây (Phát hiện nút Log in).")
                     return False

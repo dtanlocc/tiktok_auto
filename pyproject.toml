@@ -13,6 +13,7 @@ dependencies = [
     "websockets>=12.0",
     "invisible-playwright @ git+https://github.com/feder-cr/invisible_playwright.git",
     "python-multipart>=0.0.32",
+    "httpx>=0.28.1",
 ]
 
 # Chuẩn mới của uv thay thế cho tool.uv.dev-dependencies

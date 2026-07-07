@@ -2,8 +2,8 @@ from typing import Protocol, List, Dict, Any, Optional
 
 class IBrowserService(Protocol):
     """Port định nghĩa các hành vi bắt buộc của một trình duyệt tự động hóa"""
-    async def initialize(self, proxy_config: Optional[Dict[str, Any]] = None) -> None:
-        """Khởi động trình duyệt và cấu hình Proxy"""
+    async def initialize(self, proxy_config: Optional[Dict[str, Any]] = None, seed: Optional[int] = None) -> None:
+        """Khởi động trình duyệt, cấu hình Proxy và gán hạt giống Vân tay (Fingerprint Seed)"""
         ...
 
     async def navigate_to(self, url: str) -> None:

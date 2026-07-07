@@ -82,11 +82,12 @@ class SQLiteAccountRepository(IAccountRepository):
 
         # SỬA LỖI: Đồng bộ ghi nhận toàn bộ các trường thông tin mới xuống SQLite
         db_row.password = account.password
-        db_row.email = account.email                         # <-- Bổ sung ghi email
-        db_row.email_password = account.email_password       # <-- Bổ sung ghi email password
-        db_row.device_token = account.device_token           # <-- Bổ sung ghi device token
+        db_row.email = account.email
+        db_row.email_password = account.email_password
+        db_row.refresh_token = account.refresh_token       # <-- Thêm gán trường mới
+        db_row.client_id = account.client_id               # <-- Thêm gán trường mới
         db_row.status = account.status
-        db_row.current_step = account.current_step           # <-- Bổ sung ghi bước chạy
+        db_row.current_step = account.current_step
         db_row.proxy_id = account.proxy_id
         db_row.cookies_json = json.dumps(account.cookies)
 
@@ -111,11 +112,12 @@ class SQLiteAccountRepository(IAccountRepository):
             id=db_row.id,
             username=db_row.username,
             password=db_row.password,
-            email=db_row.email,                              # <-- Bổ sung đọc email
-            email_password=db_row.email_password,           # <-- Bổ sung đọc email password
-            device_token=db_row.device_token,               # <-- Bổ sung đọc device token
+            email=db_row.email,
+            email_password=db_row.email_password,
+            refresh_token=db_row.refresh_token,             # <-- Thêm bóc tách
+            client_id=db_row.client_id,                     # <-- Thêm bóc tách
             cookies=json.loads(db_row.cookies_json or "[]"),
             status=db_row.status,
-            current_step=db_row.current_step,                # <-- Bổ sung đọc bước chạy
+            current_step=db_row.current_step,
             proxy_id=db_row.proxy_id
         )
