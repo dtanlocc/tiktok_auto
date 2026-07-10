@@ -12,9 +12,10 @@ interface AppState {
   setWsConnected: (connected: boolean) => void;
   
   addAccount: (account: Account) => void;
-  updateAccountStatus: (id: string, status: string, current_step?: string) => void;
+  updateAccountStatus: (id: string, status: string, current_step?: string, health_status?: string, profile_status?: string) => void;
   updateAccountStep: (id: string, current_step: string) => void;
   updateAccountProxy: (id: string, proxyId: string | null) => void;
+  deleteAccount: (id: string) => void; 
   
   addLog: (log: LogMessage) => void;
   clearLogs: () => void;
@@ -37,12 +38,21 @@ export const useAppStore = create<AppState>((set) => ({
     return { accounts: [...state.accounts, account] };
   }),
 
-  updateAccountStatus: (id, status, current_step) => set((state) => ({
+  updateAccountStatus: (id, status, current_step, health_status, profile_status) => set((state) => ({
     accounts: state.accounts.map((acc) => 
       acc.id === id 
-        ? { ...acc, status, ...(current_step ? { current_step } : {}) } 
+        ? { 
+            ...acc, 
+            status, 
+            ...(current_step ? { current_step } : {}),
+            ...(health_status ? { health_status } : {}),
+            ...(profile_status ? { profile_status } : {})
+          } 
         : acc
     )
+  })),
+  deleteAccount: (id) => set((state) => ({
+    accounts: state.accounts.filter((acc) => acc.id !== id)
   })),
 
   updateAccountStep: (id, current_step) => set((state) => ({

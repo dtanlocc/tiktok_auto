@@ -6,6 +6,7 @@ from app.domain.ports.repository import IAccountRepository
 from app.domain.ports.browser import IBrowserService
 from app.domain.ports.email import IEmailService
 from app.use_cases.auth.login_strategies import ITikTokLoginStrategy, CookieLoginStrategy, CredentialEmailOtpLoginStrategy
+from app.core.exceptions import AccountBannedException
 
 # Định nghĩa biến logger toàn cục của mô-đun
 logger = logging.getLogger("TikTokLoginUseCase")
@@ -44,18 +45,17 @@ class TikTokLoginUseCase:
 
         try:
             strategy = LoginStrategyFactory.get_strategy(login_method)
-            
             success = await strategy.login(
-                self.browser_service, 
-                account,
-                step_logger=self.step_logger,
-                email_service=self.email_service
+                self.browser_service, account, step_logger=self.step_logger, email_service=self.email_service
             )
             
             if success:
                 new_cookies = await self.browser_service.extract_cookies()
                 account.cookies = new_cookies
-                account.status = "LOGGED_IN"
+                
+                # CẬP NHẬT TRẠNG THÁI PHÂN RÃ SẠCH SẼ
+                account.status = "SUCCESS"               # Phiên chạy thành công
+                account.health_status = "ALIVE"          # Nick sống
                 account.current_step = "Đăng nhập thành công"
             else:
                 account.status = "ERROR"
@@ -64,8 +64,11 @@ class TikTokLoginUseCase:
             self.account_repo.save(account)
             return success
             
-        except Exception as e:
-            logger.error(f"[-] Lỗi thực thi đăng nhập TikTok: {str(e)}")
-            account.status = "ERROR"
+        except AccountBannedException as e_ban:
+            logger.error(f"[!] Tài khoản {account.username} bị Banned!")
+            account.status = "ERROR"                    # Phiên chạy lỗi
+            account.health_status = "BANNED"            # Ghi nhận trạng thái Banned vĩnh viễn
+            account.cookies = []  
+            account.current_step = "Tài khoản bị Banned"
             self.account_repo.save(account)
-            raise e
+            raise e_ban

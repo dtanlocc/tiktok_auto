@@ -67,6 +67,8 @@ class ConcurrentTaskDispatcher:
         logger.info("[-] Đã dừng Task Dispatcher.")
 
     async def _process_queue_loop(self) -> None:
+        import random  # Đảm bảo đã import thư viện random để sinh số ngẫu nhiên
+
         while self.is_running:
             try:
                 task_payload = await self.queue.get()
@@ -86,6 +88,18 @@ class ConcurrentTaskDispatcher:
                 )
                 self.active_tasks[account_id] = worker_task
                 self.queue.task_done()
+
+                # =============================================================
+                # CẬP NHẬT THƯƠNG MẠI: CƠ CHẾ GIÃN CÁCH THỜI GIAN (STAGGER LAUNCH)
+                # =============================================================
+                # Nếu vẫn còn tài khoản tiếp theo trong hàng đợi, thực hiện giãn cách ngẫu nhiên
+                # để tránh CPU/RAM tăng vọt và qua mặt hệ thống quét hành vi đồng thời của TikTok
+                if not self.queue.empty():
+                    # Trễ ngẫu nhiên trong khoảng từ 8 đến 15 giây (bạn có thể điều chỉnh lại)
+                    stagger_delay = random.uniform(30.0, 60.0)
+                    logger.info(f"[*] [Stagger Delay] Đang giãn cách luồng tiếp theo trong {stagger_delay:.1f} giây...")
+                    await asyncio.sleep(stagger_delay)
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -174,26 +188,78 @@ class ConcurrentTaskDispatcher:
                     success = await use_case.execute(account_id, avatar_path)
 
                 if success:
-                    await self._update_account_status(account_id, "LOGGED_IN", step_desc="Thành công", session=session)
+                    # NÂNG CẤP ĐỘNG: Nạp lại tài khoản từ DB để lấy đúng trạng thái chuyên biệt
+                    updated_account = account_repo.get_by_id(account_id)
+                    final_status = updated_account.status if updated_account else "LOGGED_IN"
+                    
+                    # ĐỒNG BỘ SỨC KHỎE NICK: Bắt buộc truyền thêm health_status="ALIVE" khi thành công
+                    await self._update_account_status(
+                        account_id, 
+                        final_status, 
+                        step_desc="Thành công", 
+                        health_status="ALIVE",      # <-- CẬP NHẬT Ở ĐÂY CHÍNH XÁC [1]
+                        session=session
+                    )
+
+                    # =========================================================
+                    # ĐẶC QUYỀN KIỂM THỬ THƯƠNG MẠI: GIỮ TRÌNH DUYỆT MỞ KHI LOGIN COOKIE
+                    # =========================================================
+                    if task_type == "LOGIN_COOKIE":
+                        # Bắn thông báo hướng dẫn lên Web UI Dashboard
+                        await log_step("⚠️ Trình duyệt đang được giữ lại để kiểm thử. Hãy tự tay đóng cửa sổ khi test xong.")
+                        logger.info(f"[!] [Test Mode] Giữ nguyên trình duyệt hoạt động cho {account_id}. Đợi đóng thủ công...")
+                        
+                        try:
+                            # Chờ sự kiện trang bị đóng (User click X trên trình duyệt vật lý) với timeout=0 (vô hạn)
+                            if browser_service and browser_service._page:
+                                await browser_service._page.wait_for_event("close", timeout=0)
+                        except Exception as e_close:
+                            logger.info(f"[*] Trình duyệt kiểm thử {account_id} đã được đóng: {str(e_close)}")
                 else:
                     await self._update_account_status(account_id, "ERROR", step_desc="Thất bại", session=session)
 
             except Exception as e:
-                logger.error(f"[-] Lỗi nghiêm trọng khi thực thi tài khoản {account_id}: {str(e)}")
-                short_error = "Lỗi kẹt"
-                if "timeout" in str(e).lower():
-                    short_error = "Lỗi: Timeout"
-                elif "proxy" in str(e).lower() or "connection" in str(e).lower():
-                    short_error = "Lỗi: Proxy kẹt"
+                logger.error(f"[-] Thất bại chung cuộc cho tài khoản {account_id}: {str(e)}")
+                
+                health_val = None
+                
+                # KHỚP CHUẨN XÁC NGOẠI LỆ BANNED ĐỂ GÁN TRẠNG THÁI VẬT LÝ LÀ BANNED CHUYÊN BIỆT
+                if "AccountBannedException" in str(type(e)) or "banned" in str(e).lower() or "cấm vĩnh viễn" in str(e).lower():
+                    status_val = "ERROR" # Kết thúc phiên chạy với nhãn lỗi
+                    health_val = "BANNED" # Đánh dấu sức khỏe vĩnh viễn là Banned!
+                    short_error = "Tài khoản bị Banned"
+                else:
+                    status_val = "ERROR"
+                    short_error = "Lỗi kẹt"
+                    if "timeout" in str(e).lower():
+                        short_error = "Lỗi: Timeout"
+                    elif "proxy" in str(e).lower() or "connection" in str(e).lower():
+                        short_error = "Lỗi: Proxy kẹt"
                     
-                await self._update_account_status(account_id, "ERROR", step_desc=short_error, session=session)
+                # Gọi hàm update trạng thái đồng bộ xuống DB
+                await self._update_account_status(
+                    account_id, 
+                    status_val, 
+                    step_desc=short_error, 
+                    health_status=health_val, 
+                    session=session
+                )
+
             finally:
                 await browser_service.close()
                 self.semaphore.release()
                 self.active_tasks.pop(account_id, None)
 
-    async def _update_account_status(self, account_id: str, status: str, step_desc: str = "IDLE", session: Optional[Session] = None) -> None:
-        """Cập nhật trạng thái tài khoản (Đã thụt lề 4 khoảng trắng chuẩn phương thức Class)"""
+    # BƯỚC A: NÂNG CẤP HÀM UPDATE STATUS ĐỂ CHẤP NHẬN CẬP NHẬT SỨC KHỎE
+    async def _update_account_status(
+        self, 
+        account_id: str, 
+        status: str, 
+        step_desc: str = "IDLE", 
+        health_status: Optional[str] = None,       # <-- THÊM THAM SỐ CẬP NHẬT SỨC KHỎE
+        profile_status: Optional[str] = None,      # <-- THÊM THAM SỐ CẬP NHẬT PROFILE
+        session: Optional[Session] = None
+    ) -> None:
         if not session:
             with Session(engine) as temp_session:
                 repo = SQLiteAccountRepository(temp_session)
@@ -201,6 +267,10 @@ class ConcurrentTaskDispatcher:
                 account = repo.get_by_id(account_id)
                 if account:
                     account.current_step = step_desc
+                    if health_status:
+                        account.health_status = health_status
+                    if profile_status:
+                        account.profile_status = profile_status
                     repo.save(account)
         else:
             repo = SQLiteAccountRepository(session)
@@ -208,13 +278,20 @@ class ConcurrentTaskDispatcher:
             account = repo.get_by_id(account_id)
             if account:
                 account.current_step = step_desc
+                if health_status:
+                    account.health_status = health_status
+                if profile_status:
+                    account.profile_status = profile_status
                 repo.save(account)
 
+        # PHÁT TIN WEBSOCKET ĐỒNG BỘ ĐẦY ĐỦ THUỘC TÍNH MỚI LÊN WEB UI LẬP TỨC
         await ws_manager.broadcast({
             "event": "ACCOUNT_STATUS_CHANGED",
             "data": {
                 "id": account_id,
                 "status": status,
+                "health_status": account.health_status if account else "UNKNOWN",
+                "profile_status": account.profile_status if account else "PENDING",
                 "current_step": step_desc
             }
         })

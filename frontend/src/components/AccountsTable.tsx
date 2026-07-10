@@ -1,6 +1,8 @@
+// File: frontend/src/components/AccountsTable.tsx
 import React from 'react';
-import { CheckSquare, Square, ChevronDown } from 'lucide-react';
-import { Account, Proxy } from '../store/useAppStore';
+import { CheckSquare, Square, Folder } from 'lucide-react';
+import { Account, Proxy } from '../types';
+import { getCountryFlagUrl } from '../utils/countries'; // <-- NẠP TẬP TRUNG TỪ UTILS CHUẨN XÁC
 
 interface AccountsTableProps {
   accounts: Account[];
@@ -48,16 +50,19 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
             <tr className="bg-[#141b2e] text-xs font-semibold text-slate-400 uppercase">
               <th className="p-4 w-12 text-center">Tích</th>
               <th className="p-4">Tài khoản</th>
+              <th className="p-4">Quốc Gia / Lô hàng</th>
               <th className="p-4">Liên kết IP Proxy</th>
-              <th className="p-4">Trạng thái</th>
+              <th className="p-4 text-center">Phiên chạy</th>
+              <th className="p-4 text-center">Sức khỏe Nick</th>
+              <th className="p-4 text-center">Cập nhật Profile</th>
               <th className="p-4">Tiến trình chạy</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800 text-xs">
             {accounts.length === 0 ? (
               <tr>
-                <td colSpan={5} className="p-8 text-center text-slate-500 font-semibold">
-                  Chưa có tài khoản nào. Vui lòng tải các file .txt lên để nhập hàng loạt.
+                <td colSpan={8} className="p-8 text-center text-slate-500 font-semibold">
+                  Không tìm thấy tài khoản nào khớp với bộ lọc hoặc Lô đang chọn.
                 </td>
               </tr>
             ) : (
@@ -76,10 +81,31 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       )}
                     </button>
                   </td>
+                  
                   <td className="p-4 font-medium text-slate-200">
                     <div>{acc.username}</div>
                     <div className="text-[10px] text-slate-500 font-mono mt-0.5">{acc.id}</div>
                   </td>
+
+                  {/* QUỐC GIA & PHÂN LÔ ĐỒ HỌA SẮC NÉT CHẠY HOÀN HẢO TRÊN WINDOWS */}
+                  <td className="p-4">
+                    <div className="flex items-center gap-2 font-bold text-slate-100">
+                      <img 
+                        src={getCountryFlagUrl(acc.country)} 
+                        alt={acc.country} 
+                        className="w-4.5 h-3.5 object-cover rounded-sm border border-slate-800 shadow-sm shrink-0"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                      <span className="text-[11px] uppercase tracking-wider">{acc.country}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-medium mt-1 flex items-center gap-1">
+                      <Folder className="w-3 h-3 text-slate-500" /> {acc.batch_tag}
+                    </div>
+                    <div className="text-[9px] text-slate-500 font-mono mt-0.5">
+                      📅 {acc.created_at || "N/A"}
+                    </div>
+                  </td>
+                  
                   <td className="p-4">
                     <select
                       value={acc.proxy_id || 'none'}
@@ -87,31 +113,58 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       className="bg-[#182032] border border-slate-700 rounded-lg p-1.5 text-xs text-teal-400 font-medium focus:outline-none focus:ring-1 focus:ring-teal-400"
                     >
                       <option value="none">Mạng LAN (Không Proxy)</option>
-                      {proxies.map((p: Proxy) => (
+                      {proxies.map((p) => (
                         <option key={p.id} value={p.id}>
                           [{p.protocol.toUpperCase()}] {p.host}:{p.port}
                         </option>
                       ))}
                     </select>
                   </td>
-                  <td className="p-4">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                      acc.status === 'RUNNING' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
+                  
+                  <td className="p-4 text-center">
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                      acc.status === 'RUNNING' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse' :
                       acc.status === 'QUEUED' ? 'bg-teal-500/10 text-teal-400 border-teal-500/30' :
-                      acc.status === 'LOGGED_IN' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                      acc.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
                       acc.status === 'ERROR' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
                       'bg-slate-500/10 text-slate-400 border-slate-500/30'
                     }`}>
                       {acc.status}
                     </span>
                   </td>
+
+                  {/* CỘT SỨC KHỎE NICK NÂNG CẤP TOÀN DIỆN */}
+                  <td className="p-4 text-center">
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                      acc.health_status === 'BANNED' 
+                        ? 'bg-red-500/15 text-red-400 border-red-500/40 animate-pulse font-black' 
+                        : acc.health_status === 'ALIVE'
+                        ? 'bg-green-500/10 text-green-400 border-green-500/30'
+                        : 'bg-slate-800/40 text-slate-400 border-slate-700/50' // MÀU XÁM CHO TRẠNG THÁI CHƯA BIẾT (UNKNOWN)
+                    }`}>
+                      ● {
+                        acc.health_status === 'BANNED' ? 'ĐÃ BỊ BAN' : 
+                        acc.health_status === 'ALIVE' ? 'ĐANG SỐNG' : 
+                        'CHƯA BIẾT'
+                      }
+                    </span>
+                  </td>
+
+                  <td className="p-4 text-center">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                      acc.profile_status === 'COMPLETED' 
+                        ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30' 
+                        : 'bg-slate-700/20 text-slate-400 border-slate-700/40'
+                    }`}>
+                      {acc.profile_status === 'COMPLETED' ? '✓ ĐÃ ĐỔI PROFILE' : '⚡ CHƯA ĐỔI'}
+                    </span>
+                  </td>
+
                   <td className="p-4 font-mono font-bold text-slate-300">
                     {acc.status === 'RUNNING' ? (
                       <span className="flex items-center gap-1 text-amber-400 animate-pulse">
                         ⏳ {acc.current_step}
                       </span>
-                    ) : acc.status === 'QUEUED' ? (
-                      <span className="text-teal-400">⏳ {acc.current_step}</span>
                     ) : (
                       <span>{acc.current_step}</span>
                     )}

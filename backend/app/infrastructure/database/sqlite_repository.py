@@ -1,3 +1,4 @@
+# File: backend/app/infrastructure/database/sqlite_repository.py
 import json
 from typing import List, Optional
 from sqlmodel import Session, select
@@ -80,13 +81,20 @@ class SQLiteAccountRepository(IAccountRepository):
         else:
             db_row.username = account.username
 
-        # SỬA LỖI: Đồng bộ ghi nhận toàn bộ các trường thông tin mới xuống SQLite
         db_row.password = account.password
         db_row.email = account.email
         db_row.email_password = account.email_password
-        db_row.refresh_token = account.refresh_token       # <-- Thêm gán trường mới
-        db_row.client_id = account.client_id               # <-- Thêm gán trường mới
+        db_row.refresh_token = account.refresh_token       
+        db_row.client_id = account.client_id               
         db_row.status = account.status
+        db_row.health_status = account.health_status
+        db_row.profile_status = account.profile_status
+        
+        # ĐỒNG BỘ GHI NHẬN CÁC CỘT PHÂN LÔ MỚI XUỐNG SQLITE VẬT LÝ
+        db_row.country = account.country
+        db_row.batch_tag = account.batch_tag
+        db_row.created_at = account.created_at or ""
+        
         db_row.current_step = account.current_step
         db_row.proxy_id = account.proxy_id
         db_row.cookies_json = json.dumps(account.cookies)
@@ -105,19 +113,36 @@ class SQLiteAccountRepository(IAccountRepository):
             self.session.add(db_row)
             self.session.commit()
 
+    def delete(self, account_id: str) -> bool:
+        db_row = self.session.get(AccountDbTable, account_id)
+        if db_row:
+            self.session.delete(db_row)
+            self.session.commit()
+            return True
+        return False
+
     def _to_domain(self, db_row: AccountDbTable) -> TikTokAccount:
         """Hàm helper chuyển đổi Database Table Model sang Domain Entity thuần túy"""
-        # SỬA LỖI: Đồng bộ đọc ngược toàn bộ các trường thông tin mới từ SQLite lên Domain Entity
         return TikTokAccount(
             id=db_row.id,
             username=db_row.username,
             password=db_row.password,
             email=db_row.email,
             email_password=db_row.email_password,
-            refresh_token=db_row.refresh_token,             # <-- Thêm bóc tách
-            client_id=db_row.client_id,                     # <-- Thêm bóc tách
+            refresh_token=db_row.refresh_token,             
+            client_id=db_row.client_id,                     
             cookies=json.loads(db_row.cookies_json or "[]"),
-            status=db_row.status,
+            status=db_row.status or "IDLE",
+            health_status=db_row.health_status or "ALIVE",
+            profile_status=db_row.profile_status or "PENDING",
+            
+            # =================================================================
+            # ĐÃ ĐỒNG BỘ SỬA LỖI: Ánh xạ đọc ngược 3 trường phân lô từ SQLite lên thực thể
+            # =================================================================
+            country=db_row.country or "US",
+            batch_tag=db_row.batch_tag or "DEFAULT",
+            created_at=db_row.created_at or "",
+            
             current_step=db_row.current_step,
             proxy_id=db_row.proxy_id
         )

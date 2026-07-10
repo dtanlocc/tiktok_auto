@@ -8,6 +8,7 @@ interface ContextMenuProps {
   onBulkLogin: (method: 'COOKIE' | 'CREDENTIAL') => void;
   onBulkUpdateProfile: () => void;
   onAutoAllocateProxies: () => void;
+  onBulkDelete: () => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -16,7 +17,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   selectedCount,
   onBulkLogin,
   onBulkUpdateProfile,
-  onAutoAllocateProxies
+  onAutoAllocateProxies,
+  onBulkDelete
 }) => {
   return (
     <div 
@@ -62,8 +64,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       
       <div className="h-[1px] bg-slate-900 my-1.5 select-none"></div>
       
-      <button disabled className="w-full text-left px-2 py-1.5 text-slate-700 flex items-center gap-2.5 cursor-not-allowed font-mono">
-        <Trash2 className="w-3.5 h-3.5 text-slate-900" />
+      {/* NÂNG CẤP KÍCH HOẠT NÚT XÓA BẢN GHI */}
+      <button 
+        onClick={onBulkDelete}
+        className="w-full text-left px-2 py-1.5 hover:bg-rose-950/20 hover:text-rose-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono text-rose-500"
+      >
+        <Trash2 className="w-3.5 h-3.5 text-rose-700 group-hover:text-rose-400" />
         <span className="text-[10px] font-black uppercase tracking-widest">DROP_RECORDS</span>
       </button>
     </div>

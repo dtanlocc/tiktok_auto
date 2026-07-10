@@ -8,7 +8,11 @@ venv/
 ENV/
 env/
 .env
+.venv
 
+backend/extensions/
+
+backend/setup_master_profile.py
 # Databases (SQLite)
 *.db
 *.sqlite3
@@ -25,3 +29,5 @@ Thumbs.db
 node_modules/
 frontend/package.json
 frontend/package-lock.json
+
+profiles/

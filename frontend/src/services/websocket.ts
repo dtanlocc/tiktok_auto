@@ -29,15 +29,19 @@ export const initWebSocket = () => {
       const store = useAppStore.getState();
       
       if (message.event === 'ACCOUNT_STATUS_CHANGED') {
-        const { id, status, current_step } = message.data;
-        store.updateAccountStatus(id, status, current_step);
-      } 
+        const { id, status, current_step, health_status, profile_status } = message.data;
+        store.updateAccountStatus(id, status, current_step, health_status, profile_status);
+      }
       else if (message.event === 'ACCOUNT_ADDED') {
         store.addAccount(message.data);
       }
       else if (message.event === 'TASK_STEP_UPDATED') {
         const { id, current_step } = message.data;
         store.updateAccountStep(id, current_step);
+      }
+      else if (message.event === 'ACCOUNT_DELETED') {  // <-- THÊM XỬ LÝ SỰ KIỆN XÓA
+        const { id } = message.data;
+        store.deleteAccount(id);
       }
       else if (message.event === 'ACCOUNT_PROXY_CHANGED') {
         const { id, proxy_id } = message.data;

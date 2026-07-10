@@ -1,3 +1,16 @@
+# File: backend/app/main.py
+import sys
+import asyncio
+
+# =============================================================================
+# KHẮC PHỤC LỖI NOTIMPLEMENTEDERROR TRÊN WINDOWS (PROACTOR LOOP ENFORCEMENT)
+# =============================================================================
+# Ép buộc Python sử dụng ProactorEventLoop trên Windows trước khi nạp bất kỳ tác vụ nào.
+# Điều này giúp Playwright có thể tạo tiến trình con (Subprocess) khởi chạy Firefox tàng hình mượt mà.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -7,7 +20,7 @@ from app.core.config import settings
 from app.infrastructure.database.connection import init_db
 from app.infrastructure.websocket.socket_manager import ws_manager
 from app.interfaces.api.accounts_router import router as accounts_router
-from app.interfaces.api.proxies_router import router as proxies_router  # <-- Dòng import bị thiếu
+from app.interfaces.api.proxies_router import router as proxies_router  
 from app.interfaces.api.tasks_router import router as tasks_router
 from app.use_cases.orchestration.task_dispatcher import ConcurrentTaskDispatcher
 
@@ -18,7 +31,7 @@ logger = logging.getLogger("Application")
 async def lifespan(app: FastAPI):
     """Quản lý vòng đời khởi chạy và tắt ứng dụng"""
     logger.info("[*] Hệ thống đang khởi động...")
-    # 1. Khởi tạo DB SQLite
+    # 1. Khởi tạo DB SQLite (Đã tích hợp Auto-Migration tự sửa lỗi thiếu cột)
     init_db()
     logger.info("[+] Khởi tạo Cơ sở dữ liệu thành công.")
 
@@ -51,7 +64,7 @@ app.add_middleware(
 
 # Đăng ký các API Routers
 app.include_router(accounts_router, prefix=settings.API_V1_STR)
-app.include_router(proxies_router, prefix=settings.API_V1_STR)  # Đăng ký Router Proxy
+app.include_router(proxies_router, prefix=settings.API_V1_STR)  
 app.include_router(tasks_router, prefix=settings.API_V1_STR)
 
 @app.websocket("/ws")

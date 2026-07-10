@@ -5,6 +5,7 @@ from app.use_cases.orchestration.task_dispatcher import ConcurrentTaskDispatcher
 from app.interfaces.api.deps import get_task_dispatcher, get_account_repository
 from app.domain.ports.repository import IAccountRepository
 
+
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 class BulkLoginRequest(BaseModel):
@@ -70,3 +71,4 @@ async def start_bulk_update_profile(
         queued_count += 1
         
     return {"status": "SUCCESS", "message": f"Đang tiến hành xếp hàng cập nhật thông tin cho {queued_count} tài khoản."}
+

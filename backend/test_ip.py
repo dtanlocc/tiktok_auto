@@ -7,7 +7,7 @@ from invisible_playwright.async_api import InvisiblePlaywright
 # Nhập cấu hình và kết nối cơ sở dữ liệu từ dự án của bạn
 from app.infrastructure.database.connection import engine
 from app.infrastructure.database.schemas import ProxyDbTable
-
+xpi_path = r"D:\tiktok_auto\backend\extensions\omocaptcha_auto_solve_captcha-1.7.7.xpi"
 async def test_proxy_ip():
     print("[*] Đang truy vấn danh sách Proxy từ cơ sở dữ liệu SQLite...")
     
@@ -34,52 +34,34 @@ async def test_proxy_ip():
             print("[!] CẢNH BÁO: Cơ sở dữ liệu trống, không có Proxy nào để kiểm tra.")
             print("[!] Robot sẽ chạy bằng IP mạng thật (Direct) để kiểm tra kết nối.")
 
-    # Ép hệ thống đồ họa Linux X11/Mesa phải render bằng CPU (Tránh nhiễu hạt cát)
-    os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
-    os.environ["MOZ_WEBRENDER"] = "0"
-    os.environ["MOZ_ACCELERATED"] = "0"
+    # # Ép hệ thống đồ họa Linux X11/Mesa phải render bằng CPU (Tránh nhiễu hạt cát)
+    # os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
+    # os.environ["MOZ_WEBRENDER"] = "0"
+    # os.environ["MOZ_ACCELERATED"] = "0"
 
     print("[*] Đang khởi động trình duyệt tàng hình (Invisible Firefox-13)...")
-    try:
-        async with InvisiblePlaywright(proxy=proxy_config, headless=False) as browser:
-            print("[+] Khởi động trình duyệt thành công!")
-            page = await browser.new_page()
-
-            # BƯỚC 1: Quét IP thô từ api.ipify.org
-            print("[*] Đang kiểm tra IP thô từ api.ipify.org...")
-            await page.goto("https://api.ipify.org?format=json", wait_until="domcontentloaded")
-            body_text = await page.locator("body").text_content()
+    async with InvisiblePlaywright(proxy=proxy_config, headless=False, extra_args=[f"--install-extension={xpi_path}"]) as browser:
+        print("="*50)
+        print("DANH SÁCH CÁC THUỘC TÍNH & HÀM CỦA BROWSER:")
+        print("="*50)
+        
+        # Sử dụng hàm dir() để quét sạch các phương thức nội bộ
+        for attr in dir(browser):
+            # Lọc bỏ các hàm hệ thống có dấu gạch dưới nếu muốn nhìn cho thoáng, hoặc in hết ra:
             try:
-                ip_data = json.loads(body_text)
-                print(f"[+] Địa chỉ IP thô ghi nhận: {ip_data.get('ip')}")
+                val = getattr(browser, attr)
+                print(f"-> {attr} : {type(val)}")
             except Exception:
-                print(f"[!] Không thể parse JSON từ ipify. Nội dung thô: {body_text}")
+                print(f"-> {attr} : (Không thể truy cập giá trị)")
+                
+        print("="*50)
 
-            # BƯỚC 2: Quét chi tiết Quốc gia, Thành phố, Nhà mạng từ ipinfo.io
-            print("[*] Đang truy vấn thông tin định vị chi tiết từ ipinfo.io...")
-            await page.goto("https://ipinfo.io/json", wait_until="domcontentloaded")
-            body_text_detailed = await page.locator("body").text_content()
-            try:
-                geo_data = json.loads(body_text_detailed)
-                print("[+] THÔNG TIN ĐỊNH VỊ CHI TIẾT GHI NHẬN:")
-                print(f"    - IP Ngoại vi      : {geo_data.get('ip')}")
-                print(f"    - Quốc gia (Country): {geo_data.get('country')}")
-                print(f"    - Thành phố (City)  : {geo_data.get('city')}")
-                print(f"    - Nhà mạng (Org)    : {geo_data.get('org')}")
-                print(f"    - Tọa độ (Loc)      : {geo_data.get('loc')}")
-            except Exception:
-                print(f"[!] Không thể parse JSON từ ipinfo. Nội dung thô: {body_text_detailed}")
+        await asyncio.sleep(3000)
 
-            # BƯỚC 3: Đi tới Whoer.net để kiểm tra độ tàng hình trực quan
-            print("[*] Đang điều hướng tới Whoer.net...")
-            await page.goto("https://whoer.net", wait_until="domcontentloaded")
-            print("[*] Đang giữ màn hình Whoer.net trong 15 giây để bạn quan sát trực quan...")
-            await asyncio.sleep(15)
-
-            print("[+] Kiểm tra hoàn tất. Đang giải phóng tài nguyên...")
+        print("[+] Kiểm tra hoàn tất. Đang giải phóng tài nguyên...")
             
-    except Exception as e:
-        print(f"[-] Gặp lỗi trong quá trình kiểm tra IP: {str(e)}")
+    # except Exception as e:
+    #     print(f"[-] Gặp lỗi trong quá trình kiểm tra IP: {str(e)}")
 
 if __name__ == "__main__":
     # Đăng ký chạy vòng lặp bất đồng bộ của Python

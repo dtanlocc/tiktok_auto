@@ -1,10 +1,17 @@
 export interface Account {
   id: string;
   username: string;
-  status: string;
+  status: string;         
+  health_status: string;  
+  profile_status: string; 
   current_step: string;
   proxy_id: string | null;
   has_cookies: boolean;
+  
+  // KIỂU DỮ LIỆU PHÂN LÔ MỚI
+  country: string;
+  batch_tag: string;
+  created_at: string;
 }
 
 export interface ProxyModel {

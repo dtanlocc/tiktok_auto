@@ -26,6 +26,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+    BROWSER_EXTENSIONS_DIR: str = str(BASE_DIR / "extensions")
+    OMOCAPTCHA_KEY: str = "OMO_PRPNYKMWZKGSOXG4WE5UITKTPE6NN5LVNDXWZ5YVB2WW7WTZXXDNAEFIJMTIJY1764562155"
+    OMOCAPTCHA_MASTER_PROFILE_DIR: str = "D:/tiktok_auto/profiles/master_omocaptcha"
 
 # Khởi tạo một thực thể Singleton duy nhất dùng chung cho toàn bộ dự án
 settings = Settings()
