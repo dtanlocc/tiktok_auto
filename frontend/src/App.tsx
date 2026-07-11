@@ -91,6 +91,13 @@ export default function App() {
           useAppStore.setState((state) => ({
             accounts: state.accounts.map(acc => acc.id === id ? { ...acc, is_paused } : acc)
           }));
+        } else if (message.event === 'QUICK_CHECK_FINISHED') {
+          const { completed, total } = message.data;
+          setLogs((prev) => [...prev, {
+            time: new Date().toLocaleTimeString(),
+            username: 'System',
+            message: `✅ Đã hoàn tất đợt Check nhanh Sống/Chết: ${completed}/${total} tài khoản.`
+          }]);
         }
       } catch (err) {
         console.error(err);
@@ -419,6 +426,34 @@ export default function App() {
   const handlePauseAccount = (accountId: string) => callTaskControlApi(`pause-account/${accountId}`);
   const handleResumeAccount = (accountId: string) => callTaskControlApi(`resume-account/${accountId}`);
 
+  // CHECK NHANH SỐNG/CHẾT (độc lập hoàn toàn với hàng đợi Login)
+  const handleQuickHealthCheck = async () => {
+    if (selectedAccountIds.length === 0) {
+      alert("Vui lòng tích chọn ít nhất một tài khoản trên bảng trước khi chạy.");
+      return;
+    }
+    try {
+      const response = await fetch('http://127.0.0.1:8001/api/v1/tasks/quick-health-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_ids: selectedAccountIds,
+          concurrency_limit: 5
+        }),
+      });
+      if (response.ok) {
+        const result = await response.json();
+        alert(result.message);
+        setContextMenu(null);
+      } else {
+        const err = await response.json();
+        alert(`Lỗi kích hoạt Check nhanh: ${err.detail}`);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleSelectBatch = (country: string, batch: string) => {
     setSelectedCountry(country);
     setSelectedBatch(batch);
@@ -602,6 +637,7 @@ export default function App() {
           onBulkUpdateProfile={handleBulkUpdateProfile}
           onAutoAllocateProxies={handleAutoAllocateProxies}
           onBulkDelete={handleBulkDelete}
+          onQuickHealthCheck={handleQuickHealthCheck}
         />
       )}
 

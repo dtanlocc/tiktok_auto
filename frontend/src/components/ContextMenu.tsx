@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, RefreshCw, Key, Video, Trash2, Globe } from 'lucide-react';
+import { Sparkles, RefreshCw, Key, Video, Trash2, Globe, ScanSearch } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -9,6 +9,7 @@ interface ContextMenuProps {
   onBulkUpdateProfile: () => void;
   onAutoAllocateProxies: () => void;
   onBulkDelete: () => void;
+  onQuickHealthCheck: () => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -18,7 +19,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onBulkLogin,
   onBulkUpdateProfile,
   onAutoAllocateProxies,
-  onBulkDelete
+  onBulkDelete,
+  onQuickHealthCheck
 }) => {
   return (
     <div 
@@ -60,6 +62,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       >
         <Globe className="w-3.5 h-3.5 text-slate-600 group-hover:text-amber-400" />
         <span className="text-[10px] font-black uppercase tracking-widest">AUTO_MAP_PROXIES</span>
+      </button>
+
+      <button 
+        onClick={onQuickHealthCheck}
+        className="w-full text-left px-2 py-1.5 hover:bg-emerald-950/20 hover:text-emerald-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
+        title="Check nhanh sống/chết bằng Chromium nhẹ, độc lập với hàng đợi Login"
+      >
+        <ScanSearch className="w-3.5 h-3.5 text-slate-600 group-hover:text-emerald-400" />
+        <span className="text-[10px] font-black uppercase tracking-widest">QUICK_ALIVE_CHECK</span>
       </button>
       
       <div className="h-[1px] bg-slate-900 my-1.5 select-none"></div>

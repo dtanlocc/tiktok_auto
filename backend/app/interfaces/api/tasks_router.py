@@ -1,9 +1,11 @@
 from typing import List, Optional
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from app.use_cases.orchestration.task_dispatcher import ConcurrentTaskDispatcher
 from app.interfaces.api.deps import get_task_dispatcher, get_account_repository
 from app.domain.ports.repository import IAccountRepository
+from app.use_cases.health_check.quick_check_use_case import quick_health_check_service
 
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
@@ -17,6 +19,10 @@ class BulkUpdateProfileRequest(BaseModel):
     account_ids: List[str]
     avatar_folder: Optional[str] = None
     concurrency_limit: int = 4
+
+class QuickHealthCheckRequest(BaseModel):
+    account_ids: List[str]
+    concurrency_limit: int = 5
 
 @router.post("/bulk-login")
 async def start_bulk_login(
@@ -152,4 +158,40 @@ async def resume_account(
     dispatcher.resume_account(account_id)
     await dispatcher.broadcast_account_pause_state(account_id)
     return {"status": "SUCCESS", "message": f"Đã tiếp tục tài khoản {account_id}."}
+
+
+# =============================================================================
+# CHECK NHANH SỐNG/CHẾT (TÁCH RIÊNG HOÀN TOÀN - KHÔNG QUA DISPATCHER CHÍNH)
+# Dùng Chromium thường, chỉ đọc title công khai, không cần chống dò vân tay.
+# =============================================================================
+
+@router.post("/quick-health-check")
+async def start_quick_health_check(payload: QuickHealthCheckRequest):
+    """Chạy hàng loạt Check nhanh sống/chết bằng Chromium nhẹ, độc lập hoàn
+    toàn với hàng đợi/luồng đăng nhập chính. Trả về ngay lập tức, tiến độ
+    được cập nhật qua WebSocket (event ACCOUNT_STATUS_CHANGED cho từng acc,
+    và QUICK_CHECK_FINISHED khi xong toàn bộ đợt)."""
+    if not payload.account_ids:
+        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
+
+    if quick_health_check_service.is_running:
+        raise HTTPException(
+            status_code=409,
+            detail="Đang có 1 đợt Check nhanh chạy dở, vui lòng đợi hoàn tất trước khi chạy đợt mới."
+        )
+
+    asyncio.create_task(
+        quick_health_check_service.run_batch(payload.account_ids, payload.concurrency_limit)
+    )
+
+    return {
+        "status": "SUCCESS",
+        "message": f"Đã bắt đầu Check nhanh cho {len(payload.account_ids)} tài khoản."
+    }
+
+
+@router.get("/quick-health-check/status")
+async def get_quick_health_check_status():
+    """Trạng thái tiến độ hiện tại của đợt Check nhanh (nếu đang chạy)."""
+    return quick_health_check_service.get_status()
 

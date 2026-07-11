@@ -143,12 +143,15 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
                       acc.health_status === 'BANNED' 
                         ? 'bg-red-500/15 text-red-400 border-red-500/40 animate-pulse font-black' 
+                        : acc.health_status === 'DEAD'
+                        ? 'bg-slate-700/30 text-slate-300 border-slate-600/50 font-black'
                         : acc.health_status === 'ALIVE'
                         ? 'bg-green-500/10 text-green-400 border-green-500/30'
                         : 'bg-slate-800/40 text-slate-400 border-slate-700/50' // MÀU XÁM CHO TRẠNG THÁI CHƯA BIẾT (UNKNOWN)
                     }`}>
                       ● {
                         acc.health_status === 'BANNED' ? 'ĐÃ BỊ BAN' : 
+                        acc.health_status === 'DEAD' ? 'ĐÃ DIE' :
                         acc.health_status === 'ALIVE' ? 'ĐANG SỐNG' : 
                         'CHƯA BIẾT'
                       }
