@@ -7,6 +7,7 @@ export interface Account {
   current_step: string;
   proxy_id: string | null;
   has_cookies: boolean;
+  is_paused?: boolean;   // Trang thai tam dung rieng cua account nay (khong luu DB, chi runtime)
   
   // KIỂU DỮ LIỆU PHÂN LÔ MỚI
   country: string;

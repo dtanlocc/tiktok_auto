@@ -72,3 +72,84 @@ async def start_bulk_update_profile(
         
     return {"status": "SUCCESS", "message": f"Đang tiến hành xếp hàng cập nhật thông tin cho {queued_count} tài khoản."}
 
+
+# =============================================================================
+# ĐIỀU KHIỂN TOÀN CỤC: Bắt đầu / Tạm dừng / Tiếp tục / Dừng khẩn cấp
+# =============================================================================
+
+@router.get("/status")
+async def get_global_status(
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+):
+    """Trạng thái hiện tại của dispatcher - dùng để đồng bộ UI khi tải lại trang."""
+    return dispatcher.get_global_status()
+
+
+@router.post("/start-global")
+async def start_global(
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+):
+    """Khởi động (hoặc khởi động lại) vòng lặp xử lý hàng đợi nếu đang tắt."""
+    await dispatcher.start()
+    await dispatcher.broadcast_global_state()
+    return {"status": "SUCCESS", "message": "Đã khởi động hệ thống điều phối."}
+
+
+@router.post("/pause-global")
+async def pause_global(
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+):
+    """Tạm dừng TOÀN BỘ các luồng đang chạy - mỗi luồng sẽ dừng lại ở checkpoint
+    gần nhất (thường chỉ trễ vài giây) và chờ lệnh tiếp tục."""
+    dispatcher.pause_global()
+    await dispatcher.broadcast_global_state()
+    return {"status": "SUCCESS", "message": "Đã tạm dừng toàn bộ hệ thống."}
+
+
+@router.post("/resume-global")
+async def resume_global(
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+):
+    """Tiếp tục lại toàn bộ hệ thống sau khi tạm dừng."""
+    dispatcher.resume_global()
+    await dispatcher.broadcast_global_state()
+    return {"status": "SUCCESS", "message": "Đã tiếp tục toàn bộ hệ thống."}
+
+
+@router.post("/stop-global")
+async def stop_global(
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+):
+    """DỪNG KHẨN CẤP: hủy ngay lập tức mọi luồng đang chạy (đóng browser của
+    từng luồng) và xóa sạch các tác vụ còn đang chờ trong hàng đợi. Hệ thống
+    vẫn sẵn sàng nhận tác vụ MỚI ngay sau đó (không tắt hẳn dispatcher)."""
+    await dispatcher.emergency_stop_all()
+    return {"status": "SUCCESS", "message": "Đã dừng khẩn cấp toàn bộ hệ thống."}
+
+
+# =============================================================================
+# ĐIỀU KHIỂN TỪNG TÀI KHOẢN: Tạm dừng / Tiếp tục riêng lẻ
+# =============================================================================
+
+@router.post("/pause-account/{account_id}")
+async def pause_account(
+    account_id: str,
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+):
+    """Tạm dừng riêng 1 tài khoản đang chạy để can thiệp thủ công, các tài
+    khoản khác không bị ảnh hưởng."""
+    dispatcher.pause_account(account_id)
+    await dispatcher.broadcast_account_pause_state(account_id)
+    return {"status": "SUCCESS", "message": f"Đã tạm dừng tài khoản {account_id}."}
+
+
+@router.post("/resume-account/{account_id}")
+async def resume_account(
+    account_id: str,
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+):
+    """Tiếp tục lại 1 tài khoản đã bị tạm dừng riêng."""
+    dispatcher.resume_account(account_id)
+    await dispatcher.broadcast_account_pause_state(account_id)
+    return {"status": "SUCCESS", "message": f"Đã tiếp tục tài khoản {account_id}."}
+

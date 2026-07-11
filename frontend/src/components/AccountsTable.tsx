@@ -1,6 +1,6 @@
 // File: frontend/src/components/AccountsTable.tsx
 import React from 'react';
-import { CheckSquare, Square, Folder } from 'lucide-react';
+import { CheckSquare, Square, Folder, Pause, Play } from 'lucide-react';
 import { Account, Proxy } from '../types';
 import { getCountryFlagUrl } from '../utils/countries'; // <-- NẠP TẬP TRUNG TỪ UTILS CHUẨN XÁC
 
@@ -12,6 +12,8 @@ interface AccountsTableProps {
   toggleSelectAccount: (id: string) => void;
   handleBindProxy: (accountId: string, proxyId: string) => void;
   handleRowContextMenu: (e: React.MouseEvent, accountId: string) => void;
+  onPauseAccount: (accountId: string) => void;
+  onResumeAccount: (accountId: string) => void;
 }
 
 export const AccountsTable: React.FC<AccountsTableProps> = ({
@@ -21,7 +23,9 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
   toggleSelectAll,
   toggleSelectAccount,
   handleBindProxy,
-  handleRowContextMenu
+  handleRowContextMenu,
+  onPauseAccount,
+  onResumeAccount
 }) => {
   return (
     <div className="bg-[#0e1424] rounded-2xl border border-slate-800 overflow-hidden flex-1 flex flex-col">
@@ -56,12 +60,13 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
               <th className="p-4 text-center">Sức khỏe Nick</th>
               <th className="p-4 text-center">Cập nhật Profile</th>
               <th className="p-4">Tiến trình chạy</th>
+              <th className="p-4 text-center">Điều khiển</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800 text-xs">
             {accounts.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-8 text-center text-slate-500 font-semibold">
+                <td colSpan={9} className="p-8 text-center text-slate-500 font-semibold">
                   Không tìm thấy tài khoản nào khớp với bộ lọc hoặc Lô đang chọn.
                 </td>
               </tr>
@@ -167,6 +172,31 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </span>
                     ) : (
                       <span>{acc.current_step}</span>
+                    )}
+                  </td>
+
+                  {/* NÚT TẠM DỪNG / TIẾP TỤC RIÊNG TỪNG ACCOUNT */}
+                  <td className="p-4 text-center">
+                    {(acc.status === 'RUNNING' || acc.is_paused) ? (
+                      acc.is_paused ? (
+                        <button
+                          onClick={() => onResumeAccount(acc.id)}
+                          className="inline-flex items-center gap-1 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all animate-pulse"
+                          title="Tiếp tục lại tài khoản này"
+                        >
+                          <Play className="w-3 h-3" /> Tiếp tục
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onPauseAccount(acc.id)}
+                          className="inline-flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all"
+                          title="Tạm dừng tài khoản này tại checkpoint gần nhất để can thiệp thủ công"
+                        >
+                          <Pause className="w-3 h-3" /> Tạm dừng
+                        </button>
+                      )
+                    ) : (
+                      <span className="text-slate-600 text-[10px]">—</span>
                     )}
                   </td>
                 </tr>

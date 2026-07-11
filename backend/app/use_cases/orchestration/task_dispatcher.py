@@ -35,6 +35,28 @@ class ConcurrentTaskDispatcher:
         self._loop_task: Optional[asyncio.Task] = None
         self.is_running = False
 
+        # =================================================================
+        # CO CHE TAM DUNG / TIEP TUC (Toan cuc + Tung account)
+        # =================================================================
+        # global_pause_event: khi "set" -> khong pause (chay binh thuong).
+        # Khi ".clear()" -> MOI account dang chay se dung lai o checkpoint
+        # gan nhat (xem _wait_if_paused). Khong anh huong tien trinh
+        # browser dang thuc thi giua chung 1 buoc (vi asyncio khong the
+        # ngat ngang 1 await dang cho page load) - pause co hieu luc tai
+        # diem checkpoint TIEP THEO, thuong chi tre vai giay.
+        self.global_pause_event: asyncio.Event = asyncio.Event()
+        self.global_pause_event.set()
+
+        # account_pause_events: moi account co 1 Event rieng, mac dinh "set"
+        # (khong pause) ngay khi task cua no bat dau chay.
+        self.account_pause_events: Dict[str, asyncio.Event] = {}
+
+        # is_globally_paused / paused_account_ids: co dung de UI truy van
+        # trang thai hien tai (vi Event khong tu expose trang thai ra ngoai
+        # 1 cach tien loi cho REST API).
+        self.is_globally_paused: bool = False
+        self.paused_account_ids: set = set()
+
     def set_concurrency_limit(self, limit: int) -> None:
         """Cập nhật động số luồng chạy song song từ Web UI"""
         if limit <= 0:
@@ -42,6 +64,121 @@ class ConcurrentTaskDispatcher:
         self.max_tabs = limit
         self.semaphore = asyncio.Semaphore(limit)
         logger.info(f"[+] Đã cập nhật giới hạn luồng chạy song song thành: {limit}")
+
+    # =====================================================================
+    # DIEU KHIEN TOAN CUC: Tam dung / Tiep tuc / Dung khan cap
+    # =====================================================================
+    def pause_global(self) -> None:
+        """Tam dung TAT CA cac account dang chay - moi task se dung lai o
+        checkpoint gan nhat va cho lenh tiep tuc. Hang doi van nhan task moi
+        nhung se khong duoc xu ly cho toi khi resume."""
+        self.global_pause_event.clear()
+        self.is_globally_paused = True
+        logger.info("[*] [GLOBAL PAUSE] Da tam dung toan bo he thong.")
+
+    def resume_global(self) -> None:
+        """Tiep tuc lai toan bo he thong sau khi tam dung."""
+        self.global_pause_event.set()
+        self.is_globally_paused = False
+        logger.info("[*] [GLOBAL RESUME] Da tiep tuc toan bo he thong.")
+
+    async def broadcast_global_state(self) -> None:
+        """Bao trang thai pause/running toan cuc hien tai len WebUI qua WebSocket."""
+        await ws_manager.broadcast({
+            "event": "GLOBAL_STATE_CHANGED",
+            "data": self.get_global_status()
+        })
+
+    async def emergency_stop_all(self) -> None:
+        """DUNG KHAN CAP: huy ngay lap tuc toan bo task dang chay (kem dong
+        trinh duyet cua tung task qua except CancelledError trong worker),
+        va xoa sach hang doi cac task chua kip chay. Dispatcher VAN o trang
+        thai is_running=True sau khi goi ham nay, tuc la van san sang nhan
+        va xu ly task MOI duoc submit sau do (khac voi stop() dung de tat
+        han dispatcher luc app shutdown)."""
+        # Dam bao khong co task nao dang "ket" o trang thai cho pause khi bi huy
+        self.global_pause_event.set()
+        self.is_globally_paused = False
+        for ev in self.account_pause_events.values():
+            ev.set()
+        self.paused_account_ids.clear()
+
+        cancelled_count = 0
+        for account_id, task in list(self.active_tasks.items()):
+            if not task.done():
+                task.cancel()
+                cancelled_count += 1
+
+        # Xoa sach hang doi cac task CHUA duoc lay ra xu ly
+        drained_count = 0
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+                self.queue.task_done()
+                drained_count += 1
+            except asyncio.QueueEmpty:
+                break
+
+        logger.info(
+            f"[!] [EMERGENCY STOP] Da huy {cancelled_count} task dang chay "
+            f"va xoa {drained_count} task con trong hang doi."
+        )
+        await self.broadcast_global_state()
+
+    # =====================================================================
+    # DIEU KHIEN TUNG ACCOUNT: Tam dung / Tiep tuc rieng le
+    # =====================================================================
+    def _get_or_create_account_event(self, account_id: str) -> asyncio.Event:
+        ev = self.account_pause_events.get(account_id)
+        if ev is None:
+            ev = asyncio.Event()
+            ev.set()  # mac dinh: khong pause
+            self.account_pause_events[account_id] = ev
+        return ev
+
+    def pause_account(self, account_id: str) -> None:
+        """Tam dung rieng 1 account - cac account khac van chay binh thuong."""
+        ev = self._get_or_create_account_event(account_id)
+        ev.clear()
+        self.paused_account_ids.add(account_id)
+        logger.info(f"[*] [ACCOUNT PAUSE] Da tam dung rieng account {account_id}.")
+
+    def resume_account(self, account_id: str) -> None:
+        """Tiep tuc lai 1 account da bi tam dung rieng."""
+        ev = self._get_or_create_account_event(account_id)
+        ev.set()
+        self.paused_account_ids.discard(account_id)
+        logger.info(f"[*] [ACCOUNT RESUME] Da tiep tuc account {account_id}.")
+
+    async def broadcast_account_pause_state(self, account_id: str) -> None:
+        """Bao trang thai pause hien tai cua 1 account len WebUI qua WebSocket."""
+        await ws_manager.broadcast({
+            "event": "ACCOUNT_PAUSE_CHANGED",
+            "data": {
+                "id": account_id,
+                "is_paused": account_id in self.paused_account_ids
+            }
+        })
+
+    async def _wait_if_paused(self, account_id: str) -> None:
+        """Checkpoint duoc goi tu step_logger (xem log_step trong
+        _execute_worker_with_semaphore) - moi khi worker bao cao 1 buoc
+        moi, no se dung o day cho toi khi CA global lan account-rieng deu
+        khong con bi pause. Day la co che 'pause theo checkpoint', khong
+        phai ngat ngang tuc thi giua 1 thao tac Playwright dang cho."""
+        ev = self._get_or_create_account_event(account_id)
+        await self.global_pause_event.wait()
+        await ev.wait()
+
+    def get_global_status(self) -> Dict[str, Any]:
+        """Tra ve trang thai hien tai de frontend dong bo UI khi tai lai trang."""
+        return {
+            "is_running": self.is_running,
+            "is_globally_paused": self.is_globally_paused,
+            "paused_account_ids": list(self.paused_account_ids),
+            "active_count": len(self.active_tasks),
+            "queued_count": self.queue.qsize(),
+        }
 
     async def submit_task(self, account_id: str, task_type: str, avatar_folder: Optional[str] = None) -> None:
         """Gửi tác vụ vào hàng đợi kèm theo loại tác vụ (task_type)"""
@@ -65,6 +202,7 @@ class ConcurrentTaskDispatcher:
         if self._loop_task:
             self._loop_task.cancel()
         logger.info("[-] Đã dừng Task Dispatcher.")
+
 
     async def _process_queue_loop(self) -> None:
         import random  # Đảm bảo đã import thư viện random để sinh số ngẫu nhiên
@@ -137,6 +275,10 @@ class ConcurrentTaskDispatcher:
             email_service = DongVanEmailService()
             
             async def log_step(step_desc: str):
+                # CHECKPOINT PAUSE: neu dang bi tam dung (toan cuc hoac rieng
+                # account nay), worker se dung ngay tai day cho toi khi duoc
+                # resume, truoc khi ghi log va tiep tuc buoc tiep theo.
+                await self._wait_if_paused(account_id)
                 await self._update_step_log(account_id, step_desc, session)
 
             try:
@@ -218,6 +360,20 @@ class ConcurrentTaskDispatcher:
                 else:
                     await self._update_account_status(account_id, "ERROR", step_desc="Thất bại", session=session)
 
+            except asyncio.CancelledError:
+                # Task nay bi huy do bam "Dung khan cap toan cuc" (emergency_stop_all)
+                # hoac dispatcher.stop() luc tat app. Can cap nhat trang thai ro rang
+                # thay vi de "RUNNING" mai mai tren UI, roi RE-RAISE de asyncio biet
+                # task da huy thanh cong (khong nuot mat CancelledError).
+                logger.warning(f"[!] Task cua tai khoan {account_id} da bi HUY (Emergency Stop / Shutdown).")
+                try:
+                    await self._update_account_status(
+                        account_id, "ERROR", step_desc="Đã bị dừng khẩn cấp (Emergency Stop)", session=session
+                    )
+                except Exception:
+                    pass  # Neu DB/session da khong con hop le luc shutdown thi bo qua, uu tien raise CancelledError
+                raise
+
             except Exception as e:
                 logger.error(f"[-] Thất bại chung cuộc cho tài khoản {account_id}: {str(e)}")
                 
@@ -249,6 +405,11 @@ class ConcurrentTaskDispatcher:
                 await browser_service.close()
                 self.semaphore.release()
                 self.active_tasks.pop(account_id, None)
+                # Don sach entry pause cua account nay - task da ket thuc
+                # (thanh cong, loi, hay bi huy khan cap) nen khong con y nghia
+                # de "cho pause" nua.
+                self.account_pause_events.pop(account_id, None)
+                self.paused_account_ids.discard(account_id)
 
     # BƯỚC A: NÂNG CẤP HÀM UPDATE STATUS ĐỂ CHẤP NHẬN CẬP NHẬT SỨC KHỎE
     async def _update_account_status(

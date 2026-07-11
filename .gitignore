@@ -31,3 +31,9 @@ frontend/package.json
 frontend/package-lock.json
 
 profiles/
+
+tiktok_auto_updated.zip
+tiktok_auto.zip
+backend_old/
+frontend_old/
+tiktok_auto_updated/

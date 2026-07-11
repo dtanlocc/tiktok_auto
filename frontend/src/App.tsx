@@ -29,6 +29,13 @@ export default function App() {
   // Bộ điều khiển trung tâm (Control Panel)
   const [concurrency, setConcurrency] = useState<number>(4);
   const [avatarFolder, setAvatarFolder] = useState<string>('');
+
+  // ĐIỀU KHIỂN TOÀN CỤC: Bắt đầu / Tạm dừng / Tiếp tục / Dừng khẩn cấp
+  const [isGloballyPaused, setIsGloballyPaused] = useState<boolean>(false);
+
+  // THU GỌN CÂY THƯ MỤC QUỐC GIA - mặc định THU GỌN để bảng tài khoản
+  // hiển thị đầy đủ (giống view database) ngay khi mở trang, đỡ chiếm chỗ.
+  const [isTreeCollapsed, setIsTreeCollapsed] = useState<boolean>(true);
   
   // Danh sách ID tài khoản được chọn (Checkbox Selection)
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
@@ -77,6 +84,13 @@ export default function App() {
           const { username, message: logMsg } = message.data;
           const time = new Date().toLocaleTimeString();
           setLogs((prev) => [...prev, { time, username, message: logMsg }]);
+        } else if (message.event === 'GLOBAL_STATE_CHANGED') {
+          setIsGloballyPaused(!!message.data.is_globally_paused);
+        } else if (message.event === 'ACCOUNT_PAUSE_CHANGED') {
+          const { id, is_paused } = message.data;
+          useAppStore.setState((state) => ({
+            accounts: state.accounts.map(acc => acc.id === id ? { ...acc, is_paused } : acc)
+          }));
         }
       } catch (err) {
         console.error(err);
@@ -115,6 +129,11 @@ export default function App() {
       .then((res) => res.json())
       .then((data) => setProxies(data))
       .catch((err) => console.error('Lỗi tải danh sách proxy:', err));
+
+    fetch('http://127.0.0.1:8001/api/v1/tasks/status')
+      .then((res) => res.json())
+      .then((data) => setIsGloballyPaused(!!data.is_globally_paused))
+      .catch((err) => console.error('Lỗi tải trạng thái dispatcher:', err));
   };
 
   // Kích hoạt Custom Context Menu khi người dùng click chuột phải lên hàng tài khoản
@@ -180,10 +199,14 @@ export default function App() {
   // XỬ LÝ LỌC TRANG THÁI THEO CÂY THƯ MỤC CỰC KỲ THÔNG MINH
   // =========================================================================
   const filteredAccounts = accounts.filter(acc => {
-    const matchTree = selectedCountry && selectedBatch 
+    // Khi CHƯA chọn Quốc gia/Lô cụ thể trên cây thư mục (hoặc cây đang bị thu
+    // gọn), coi như KHÔNG lọc theo cây -> hiển thị TOÀN BỘ tài khoản trong DB
+    // (đúng yêu cầu "view database đầy đủ"). Chỉ khi người dùng chủ động chọn
+    // 1 Lô cụ thể trên cây thì mới thu hẹp phạm vi lại.
+    const matchTree = (selectedCountry && selectedBatch)
       ? (acc.country === selectedCountry && acc.batch_tag === selectedBatch)
-      : false;
-      
+      : true;
+
     const matchStatus = statusFilter === 'ALL' || acc.status === statusFilter;
     return matchTree && matchStatus;
   });
@@ -371,6 +394,31 @@ export default function App() {
     }
   };
 
+  // =========================================================================
+  // ĐIỀU KHIỂN TOÀN CỤC: Bắt đầu / Tạm dừng / Tiếp tục / Dừng khẩn cấp
+  // =========================================================================
+  const callTaskControlApi = async (endpoint: string) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:8001/api/v1/tasks/${endpoint}`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || `Lỗi khi gọi ${endpoint}.`);
+      }
+    } catch (err) {
+      console.error(`Lỗi khi gọi ${endpoint}:`, err);
+      alert('Không thể kết nối tới backend.');
+    }
+  };
+
+  const handleGlobalStart = () => callTaskControlApi('start-global');
+  const handleGlobalPause = () => callTaskControlApi('pause-global');
+  const handleGlobalResume = () => callTaskControlApi('resume-global');
+  const handleGlobalStop = () => callTaskControlApi('stop-global');
+
+  // ĐIỀU KHIỂN TỪNG TÀI KHOẢN: Tạm dừng / Tiếp tục riêng lẻ
+  const handlePauseAccount = (accountId: string) => callTaskControlApi(`pause-account/${accountId}`);
+  const handleResumeAccount = (accountId: string) => callTaskControlApi(`resume-account/${accountId}`);
+
   const handleSelectBatch = (country: string, batch: string) => {
     setSelectedCountry(country);
     setSelectedBatch(batch);
@@ -394,147 +442,145 @@ export default function App() {
         concurrency={concurrency} 
         setConcurrency={setConcurrency} 
         avatarFolder={avatarFolder} 
-        setAvatarFolder={setAvatarFolder} 
+        setAvatarFolder={setAvatarFolder}
+        isGloballyPaused={isGloballyPaused}
+        onGlobalStart={handleGlobalStart}
+        onGlobalPause={handleGlobalPause}
+        onGlobalResume={handleGlobalResume}
+        onGlobalStop={handleGlobalStop}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1">
         
         {/* ===================================================================
             CÔT TRÁI (1 CỘT): SIDEBAR HOẶC CÂY THƯ MỤC TÙY TAB (SIÊU GỌN GÀNG)
+            Ở tab 'accounts', cây thư mục có thể bị THU GỌN HẲN (không chiếm
+            chỗ) qua nút bấm - lúc đó bảng tài khoản bên phải giãn full width.
             =================================================================== */}
-        <div className="lg:col-span-1">
-          {activeTab === 'accounts' ? (
-            <FolderTree
-              accounts={accounts}
-              selectedCountry={selectedCountry}
-              selectedBatch={selectedBatch}
-              expandedCountries={expandedCountries}
-              onSelectBatch={handleSelectBatch}
-              onToggleCountry={handleToggleCountry}
-              onOpenImportModal={() => setIsImportModalOpen(true)} // Mở modal nổi nạp tài khoản
-            />
-          ) : (
-            <Sidebar activeTab={activeTab} loading={loading} onFileUpload={handleFileUpload} />
-          )}
-        </div>
+        {!(activeTab === 'accounts' && isTreeCollapsed) && (
+          <div className="lg:col-span-1">
+            {activeTab === 'accounts' ? (
+              <FolderTree
+                accounts={accounts}
+                selectedCountry={selectedCountry}
+                selectedBatch={selectedBatch}
+                expandedCountries={expandedCountries}
+                onSelectBatch={handleSelectBatch}
+                onToggleCountry={handleToggleCountry}
+                onOpenImportModal={() => setIsImportModalOpen(true)} // Mở modal nổi nạp tài khoản
+                onCollapse={() => setIsTreeCollapsed(true)}
+              />
+            ) : (
+              <Sidebar activeTab={activeTab} loading={loading} onFileUpload={handleFileUpload} />
+            )}
+          </div>
+        )}
 
         {/* ===================================================================
-            CỘT PHẢI (3 CỘT): KHU VỰC LÀM VIỆC CHÍNH (MAIN WORKSPACE)
+            CỘT PHẢI: KHU VỰC LÀM VIỆC CHÍNH (MAIN WORKSPACE)
+            Giãn full 4 cột khi cây thư mục bị thu gọn, ngược lại chiếm 3 cột.
             =================================================================== */}
-        <div className="lg:col-span-3 flex flex-col gap-6">
+        <div className={(activeTab === 'accounts' && isTreeCollapsed) ? 'lg:col-span-4 flex flex-col gap-6' : 'lg:col-span-3 flex flex-col gap-6'}>
           
           {/* STATS SUMMARY */}
           <StatsCards accounts={accounts} proxies={proxies} />
 
           {activeTab === 'accounts' ? (
             <div className="flex flex-col gap-4 min-h-[450px]">
-              {selectedCountry && selectedBatch ? (
-                <>
-                  {/* THANH ĐIỀU KHIỂN & BỘ LỌC TRẠNG THÁI CỦA RIÊNG LÔ ĐANG CHỌN */}
-                  <div className="bg-[#0e1424] p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                      <div className="text-xs text-slate-300 font-bold flex items-center gap-1.5 uppercase tracking-wide">
-                        <Folder className="w-4 h-4 text-teal-400" />
+              {/* THANH ĐIỀU KHIỂN & BỘ LỌC TRẠNG THÁI - LUÔN HIỂN THỊ, KHÔNG CÒN
+                  BẮT BUỘC CHỌN LÔ MỚI THẤY BẢNG (view database đầy đủ mặc định) */}
+              <div className="bg-[#0e1424] p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="text-xs text-slate-300 font-bold flex items-center gap-1.5 uppercase tracking-wide">
+                    <Folder className="w-4 h-4 text-teal-400" />
+                    {selectedCountry && selectedBatch ? (
+                      <>
                         <span>Lô Đang Xem:</span>
                         <span className="text-teal-400">[{selectedCountry}]</span>
                         <span className="text-indigo-400 font-mono font-bold">{selectedBatch}</span>
-                        <span className="text-[10px] text-slate-500 font-medium">({filteredAccounts.length} accounts)</span>
-                      </div>
+                      </>
+                    ) : (
+                      <span className="text-slate-300">Toàn bộ tài khoản (Database đầy đủ)</span>
+                    )}
+                    <span className="text-[10px] text-slate-500 font-medium">({filteredAccounts.length} accounts)</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {isTreeCollapsed && (
+                      <button
+                        onClick={() => setIsTreeCollapsed(false)}
+                        className="text-[10px] font-bold text-teal-400 hover:text-teal-300 cursor-pointer"
+                      >
+                        📂 Hiện cây thư mục quốc gia
+                      </button>
+                    )}
+                    {selectedCountry && selectedBatch && (
                       <button 
                         onClick={() => { setSelectedCountry(null); setSelectedBatch(null); }}
                         className="text-[10px] font-black text-rose-500 hover:text-rose-400 cursor-pointer"
                       >
-                        ✕ ĐÓNG BẢNG LÔ
+                        ✕ BỎ LỌC LÔ (XEM LẠI TOÀN BỘ)
                       </button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Lọc nhanh:</span>
-                        <div className="flex gap-1">
-                          {['ALL', 'IDLE', 'RUNNING', 'QUEUED', 'SUCCESS', 'ERROR'].map((status) => (
-                            <button
-                              key={status}
-                              onClick={() => setStatusFilter(status)}
-                              className={`px-2.5 py-1 text-[9px] font-bold rounded-md border uppercase tracking-wider transition-all ${
-                                statusFilter === status 
-                                  ? 'bg-teal-500/20 text-teal-400 border-teal-500/40' 
-                                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
-                              }`}
-                            >
-                              {status} ({status === 'ALL' ? filteredAccounts.length : filteredAccounts.filter(a => a.status === status).length})
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          onClick={handleSelectUnupdatedProfiles}
-                          className="bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
-                        >
-                          ⚡ Chưa đổi Profile
-                        </button>
-                        <button
-                          onClick={handleSelectAllBanned}
-                          className="bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
-                        >
-                          🎯 Chọn Banned
-                        </button>
-                        {selectedAccountIds.length > 0 && (
-                          <button
-                            onClick={handleBulkDelete}
-                            className="bg-rose-600 hover:bg-rose-700 text-slate-100 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
-                          >
-                            🗑️ Xóa ({selectedAccountIds.length})
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* BẢNG TÀI KHOẢN CỦA LÔ */}
-                  <AccountsTable 
-                    accounts={filteredAccounts}
-                    proxies={proxies} 
-                    selectedAccountIds={selectedAccountIds}
-                    toggleSelectAll={toggleSelectAll}
-                    toggleSelectAccount={toggleSelectAccount}
-                    handleBindProxy={handleBindProxy}
-                    handleRowContextMenu={handleRowContextMenu}
-                  />
-                </>
-              ) : (
-                /* GIAO DIỆN TỔNG QUAN KHI CHƯA CHỌN THƯ MỤC LÔ */
-                <div className="bg-[#0e1424] rounded-2xl border border-slate-800 p-8 flex flex-col items-center justify-center text-center gap-4 flex-1 min-h-[380px]">
-                  <div className="w-16 h-16 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center animate-bounce shadow-inner">
-                    <Folder className="w-8 h-8 text-slate-500" />
-                  </div>
-                  <div className="space-y-1">
-                    <h4 className="font-bold text-slate-200 text-base">Bộ Quản Trị Hệ Thống TikTok Đa Luồng</h4>
-                    <p className="text-slate-400 text-xs max-w-md mx-auto leading-relaxed">
-                      Hệ thống đã phân rã cấu trúc tệp tin. Vui lòng chọn một **Lô hàng nhập** dưới nhánh **Quốc gia** tương ứng từ cây thư mục bên trái để làm việc.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 w-full max-w-md pt-4 border-t border-slate-800/60 mt-2 text-xs">
-                    <div className="p-3 bg-[#141b2e]/40 rounded-xl border border-slate-800/40">
-                      <Globe className="w-5 h-5 text-teal-400 mx-auto mb-1" />
-                      <span className="text-[10px] text-slate-500 font-bold block uppercase">Quốc gia</span>
-                      <span className="text-sm font-bold text-slate-200 mt-0.5 block">{Array.from(new Set(accounts.map(a => a.country))).length} nước</span>
-                    </div>
-                    <div className="p-3 bg-[#141b2e]/40 rounded-xl border border-slate-800/40">
-                      <Layers className="w-5 h-5 text-indigo-400 mx-auto mb-1" />
-                      <span className="text-[10px] text-slate-500 font-bold block uppercase">Tổng số Lô</span>
-                      <span className="text-sm font-bold text-slate-200 mt-0.5 block">{Array.from(new Set(accounts.map(a => a.batch_tag))).length} Lô</span>
-                    </div>
-                    <div className="p-3 bg-[#141b2e]/40 rounded-xl border border-slate-800/40">
-                      <Server className="w-5 h-5 text-purple-400 mx-auto mb-1" />
-                      <span className="text-[10px] text-slate-500 font-bold block uppercase">Mạng Proxy</span>
-                      <span className="text-sm font-bold text-slate-200 mt-0.5 block">{proxies.length} IP</span>
-                    </div>
+                    )}
                   </div>
                 </div>
-              )}
+
+                <div className="flex flex-wrap gap-2 items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Lọc nhanh:</span>
+                    <div className="flex gap-1">
+                      {['ALL', 'IDLE', 'RUNNING', 'QUEUED', 'SUCCESS', 'ERROR'].map((status) => (
+                        <button
+                          key={status}
+                          onClick={() => setStatusFilter(status)}
+                          className={`px-2.5 py-1 text-[9px] font-bold rounded-md border uppercase tracking-wider transition-all ${
+                            statusFilter === status 
+                              ? 'bg-teal-500/20 text-teal-400 border-teal-500/40' 
+                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                          }`}
+                        >
+                          {status} ({status === 'ALL' ? filteredAccounts.length : filteredAccounts.filter(a => a.status === status).length})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      onClick={handleSelectUnupdatedProfiles}
+                      className="bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
+                    >
+                      ⚡ Chưa đổi Profile
+                    </button>
+                    <button
+                      onClick={handleSelectAllBanned}
+                      className="bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
+                    >
+                      🎯 Chọn Banned
+                    </button>
+                    {selectedAccountIds.length > 0 && (
+                      <button
+                        onClick={handleBulkDelete}
+                        className="bg-rose-600 hover:bg-rose-700 text-slate-100 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
+                      >
+                        🗑️ Xóa ({selectedAccountIds.length})
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* BẢNG TÀI KHOẢN - LUÔN HIỂN THỊ (toàn bộ DB hoặc đã lọc theo Lô) */}
+              <AccountsTable 
+                accounts={filteredAccounts}
+                proxies={proxies} 
+                selectedAccountIds={selectedAccountIds}
+                toggleSelectAll={toggleSelectAll}
+                toggleSelectAccount={toggleSelectAccount}
+                handleBindProxy={handleBindProxy}
+                handleRowContextMenu={handleRowContextMenu}
+                onPauseAccount={handlePauseAccount}
+                onResumeAccount={handleResumeAccount}
+              />
             </div>
           ) : (
             <ProxiesTable proxies={proxies} />

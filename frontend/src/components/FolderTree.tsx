@@ -1,6 +1,6 @@
 // File: frontend/src/components/FolderTree.tsx
 import React from 'react';
-import { Folder, FolderOpen, ChevronDown, ChevronRight, Globe, Plus } from 'lucide-react'; // <-- ĐÃ THÊM PLUS VÀO IMPORT
+import { Folder, FolderOpen, ChevronDown, ChevronRight, Globe, Plus, PanelLeftClose } from 'lucide-react';
 import { Account } from '../types';
 import { getCountryFlagUrl } from '../utils/countries'; 
 
@@ -12,6 +12,7 @@ interface FolderTreeProps {
   onSelectBatch: (country: string, batch: string) => void;
   onToggleCountry: (country: string) => void;
   onOpenImportModal: () => void;
+  onCollapse: () => void;
 }
 
 export const FolderTree: React.FC<FolderTreeProps> = ({
@@ -21,7 +22,8 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
   expandedCountries,
   onSelectBatch,
   onToggleCountry,
-  onOpenImportModal
+  onOpenImportModal,
+  onCollapse
 }) => {
   // Phân nhóm tài khoản động
   const treeData: Record<string, Record<string, Account[]>> = {};
@@ -50,15 +52,26 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
           <h3 className="font-bold text-xs text-slate-300 uppercase tracking-wider">Cây Thư Mục Quốc Gia</h3>
         </div>
         
-        {/* NÚT BẤM KÍCH HOẠT POPUP IMPORT TINH TẾ */}
-        <button
-          onClick={onOpenImportModal}
-          className="bg-teal-500 hover:bg-teal-600 text-slate-950 rounded-lg p-1 px-2.5 text-[10px] font-bold flex items-center gap-1 transition-all shadow-md shadow-teal-500/10 cursor-pointer"
-          title="Nhập tài khoản hàng loạt (.txt)"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Nhập Acc</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          {/* NÚT BẤM KÍCH HOẠT POPUP IMPORT TINH TẾ */}
+          <button
+            onClick={onOpenImportModal}
+            className="bg-teal-500 hover:bg-teal-600 text-slate-950 rounded-lg p-1 px-2.5 text-[10px] font-bold flex items-center gap-1 transition-all shadow-md shadow-teal-500/10 cursor-pointer"
+            title="Nhập tài khoản hàng loạt (.txt)"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Nhập Acc</span>
+          </button>
+
+          {/* NÚT THU GỌN CÂY THƯ MỤC - ĐỂ NHƯỜNG CHỖ CHO BẢNG XEM FULL DATABASE */}
+          <button
+            onClick={onCollapse}
+            className="bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-lg p-1.5 transition-all cursor-pointer"
+            title="Thu gọn cây thư mục (xem toàn bộ tài khoản)"
+          >
+            <PanelLeftClose className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* 2. KHU VỰC HIỂN THỊ DANH SÁCH THƯ MỤC CÂY */}
