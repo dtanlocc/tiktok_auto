@@ -163,6 +163,8 @@ class DongVanEmailService(IEmailService):
                 logger.error(f"[-] Loi ket noi API dongvanfb khong xac dinh: {type(e).__name__} - {str(e)}")
 
             await asyncio.sleep(delay_seconds)
+            
+        return otp_code
 
-        logger.warning(f"[-] Qua thoi gian cho (Timeout) lay OTP MOI cho {email}.")
-        return None
+        # logger.warning(f"[-] Qua thoi gian cho (Timeout) lay OTP MOI cho {email}.")
+        # return None
