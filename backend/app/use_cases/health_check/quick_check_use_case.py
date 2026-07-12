@@ -15,6 +15,7 @@ HOAN TOAN KHONG dinh gi toi self.semaphore cua ConcurrentTaskDispatcher.
 """
 import asyncio
 import logging
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from playwright.async_api import async_playwright, Page
@@ -35,11 +36,34 @@ class QuickHealthCheckService:
         self.total: int = 0
         self.completed: int = 0
 
+        # =================================================================
+        # CHE DO LIEN TUC (Continuous Mode): tu dong lap lai quet toan bo
+        # account dang co health_status="ALIVE", hoan toan tach biet, khong
+        # dinh gi toi ConcurrentTaskDispatcher/InteractionScheduler. Chi la
+        # 1 vong lap asyncio don gian, tu goi lai run_batch() theo chu ky.
+        # =================================================================
+        self._continuous_task: Optional[asyncio.Task] = None
+        self._continuous_active: bool = False
+        self._continuous_gap_seconds: int = 3   # Nghỉ tối thiểu giữa 2 vòng quét - KHÔNG phải chu kỳ chờ dài
+        self._continuous_concurrency: int = 15  # Nhiều luồng song song để quét nhanh
+        self._cycle_count: int = 0
+        self._last_cycle_at: Optional[str] = None
+
     def get_status(self) -> Dict[str, Any]:
         return {
             "is_running": self.is_running,
             "total": self.total,
             "completed": self.completed,
+        }
+
+    def get_continuous_status(self) -> Dict[str, Any]:
+        return {
+            "is_active": self._continuous_active,
+            "gap_seconds": self._continuous_gap_seconds,
+            "concurrency_limit": self._continuous_concurrency,
+            "cycle_count": self._cycle_count,
+            "last_cycle_at": self._last_cycle_at,
+            "is_running_now": self.is_running,
         }
 
     async def _check_one_page(self, page: Page, username: str) -> Optional[str]:
@@ -130,8 +154,13 @@ class QuickHealthCheckService:
                         account.health_status = "ALIVE"
                         account.current_step = "🔍 Check nhanh: SỐNG (nick trắng, chưa tương tác)"
                     elif ket_qua == "DIE":
-                        account.health_status = "DEAD"
-                        account.current_step = "☠️ Check nhanh: DIE"
+                        # THONG NHAT VOI LUONG LOGIN: dung chung gia tri "BANNED"
+                        # (dung y het khi AccountBannedException duoc bat trong
+                        # task_dispatcher.py), khong con tach rieng "DEAD" nua -
+                        # ca 2 luong deu chi con dung DUY NHAT 1 tap gia tri
+                        # health_status: ALIVE / BANNED / (giu nguyen cu neu loi mang).
+                        account.health_status = "BANNED"
+                        account.current_step = "☠️ Check nhanh: DIE (đánh dấu BANNED)"
                     else:
                         # Loi mang/Captcha - KHONG doi health_status cu, chi ghi chu
                         account.current_step = "⏸️ Check nhanh: Lỗi mạng/Captcha (đã bỏ qua, giữ nguyên trạng thái cũ)"
@@ -151,6 +180,72 @@ class QuickHealthCheckService:
                 finally:
                     await context.close()
                     self.completed += 1
+
+    async def _continuous_loop(self) -> None:
+        """Vòng lặp chạy nền LIÊN TỤC KHÔNG NGHỈ: hết 1 vòng quét toàn bộ
+        account ALIVE là chạy ngay vòng kế tiếp (chỉ nghỉ tối thiểu
+        _continuous_gap_seconds để nhường event loop / tránh spam DB liên
+        tục), lặp mãi tới khi stop_continuous() được gọi."""
+        while self._continuous_active:
+            try:
+                with Session(engine) as session:
+                    repo = SQLiteAccountRepository(session)
+                    all_accounts = repo.get_all()
+                    alive_ids = [a.id for a in all_accounts if a.health_status == "ALIVE"]
+
+                if alive_ids:
+                    logger.info(
+                        f"[*] [Continuous Check] Bắt đầu vòng #{self._cycle_count + 1} "
+                        f"cho {len(alive_ids)} account đang ALIVE ({self._continuous_concurrency} luồng song song)."
+                    )
+                    await self.run_batch(alive_ids, concurrency_limit=self._continuous_concurrency)
+                    self._cycle_count += 1
+                    self._last_cycle_at = datetime.now().isoformat()
+                    await ws_manager.broadcast({
+                        "event": "QUICK_CHECK_CONTINUOUS_CYCLE_DONE",
+                        "data": self.get_continuous_status()
+                    })
+                else:
+                    logger.info("[*] [Continuous Check] Không có account nào đang ALIVE, đợi ít giây rồi kiểm tra lại.")
+            except Exception as e:
+                logger.error(f"[-] Lỗi trong vòng lặp Check nhanh liên tục: {str(e)}")
+
+            # CHỈ nghỉ tối thiểu vài giây (KHÔNG phải chờ hàng chục phút) -
+            # đủ để nhường event loop và tránh vòng lặp trắng (rỗng account)
+            # ăn CPU liên tục, vẫn giữ tinh thần "chạy liên tục" như yêu cầu.
+            for _ in range(max(1, self._continuous_gap_seconds)):
+                if not self._continuous_active:
+                    break
+                await asyncio.sleep(1)
+
+        logger.info("[-] [Continuous Check] Vòng lặp liên tục đã dừng hẳn.")
+
+    def start_continuous(self, gap_seconds: int = 3, concurrency_limit: int = 15) -> bool:
+        """Bật chế độ quét LIÊN TỤC toàn bộ account ALIVE (đa luồng, hết vòng
+        chạy ngay vòng kế). Trả về False nếu đã đang bật sẵn (idempotent,
+        không tạo task chồng chéo)."""
+        if self._continuous_active:
+            return False
+        self._continuous_active = True
+        self._continuous_gap_seconds = max(0, gap_seconds)
+        self._continuous_concurrency = max(1, concurrency_limit)
+        self._cycle_count = 0
+        self._continuous_task = asyncio.create_task(self._continuous_loop())
+        logger.info(
+            f"[+] [Continuous Check] Đã bật chế độ quét LIÊN TỤC "
+            f"({self._continuous_concurrency} luồng song song, nghỉ {self._continuous_gap_seconds}s giữa các vòng)."
+        )
+        return True
+
+    def stop_continuous(self) -> bool:
+        if not self._continuous_active:
+            return False
+        self._continuous_active = False
+        # KHÔNG cancel() task đang chạy dở run_batch() giữa chừng - để nó tự
+        # hoàn tất đợt hiện tại cho gọn gàng, chỉ ngăn nó lặp thêm chu kỳ mới
+        # (vòng poll mỗi giây phía trên sẽ tự thoát trong tối đa 1 giây).
+        logger.info("[-] [Continuous Check] Đã tắt chế độ liên tục (sẽ dừng hẳn sau khi xong chu kỳ hiện tại, tối đa vài giây).")
+        return True
 
     async def run_batch(self, account_ids: List[str], concurrency_limit: int = 5) -> None:
         if self.is_running:

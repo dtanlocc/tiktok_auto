@@ -4,7 +4,7 @@ import { FileInput, FolderSync, Files, Plus } from 'lucide-react';
 import { SUPPORTED_COUNTRIES } from '../utils/countries'; // <-- IMPORT DANH SÁCH ĐỘNG
 
 interface SidebarProps {
-  activeTab: 'accounts' | 'proxies';
+  activeTab: 'accounts' | 'proxies' | 'interactions';
   loading: boolean;
   onFileUpload: (event: React.ChangeEvent<HTMLInputElement>, type: 'accounts' | 'proxies', country?: string, batchTag?: string) => void;
 }

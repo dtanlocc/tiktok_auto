@@ -10,6 +10,7 @@ import { Sidebar } from './components/Sidebar';
 import { StatsCards } from './components/StatsCards';
 import { AccountsTable } from './components/AccountsTable';
 import { ProxiesTable } from './components/ProxiesTable';
+import { InteractionPanel } from './components/InteractionPanel';
 import { TerminalConsole } from './components/TerminalConsole';
 import { ContextMenu } from './components/ContextMenu';
 import { FolderTree } from './components/FolderTree';
@@ -24,7 +25,7 @@ interface LogMessage {
 
 export default function App() {
   const { accounts, proxies, setAccounts, setProxies } = useAppStore();
-  const [activeTab, setActiveTab] = useState<'accounts' | 'proxies'>('accounts');
+  const [activeTab, setActiveTab] = useState<'accounts' | 'proxies' | 'interactions'>('accounts');
   
   // Bộ điều khiển trung tâm (Control Panel)
   const [concurrency, setConcurrency] = useState<number>(4);
@@ -490,32 +491,41 @@ export default function App() {
         {/* ===================================================================
             CÔT TRÁI (1 CỘT): SIDEBAR HOẶC CÂY THƯ MỤC TÙY TAB (SIÊU GỌN GÀNG)
             Ở tab 'accounts', cây thư mục có thể bị THU GỌN HẲN (không chiếm
-            chỗ) qua nút bấm - lúc đó bảng tài khoản bên phải giãn full width.
+            chỗ) qua nút bấm. Tab 'interactions' KHÔNG có cột trái, luôn full
+            width vì không cần cây thư mục/sidebar.
             =================================================================== */}
-        {!(activeTab === 'accounts' && isTreeCollapsed) && (
-          <div className="lg:col-span-1">
-            {activeTab === 'accounts' ? (
-              <FolderTree
-                accounts={accounts}
-                selectedCountry={selectedCountry}
-                selectedBatch={selectedBatch}
-                expandedCountries={expandedCountries}
-                onSelectBatch={handleSelectBatch}
-                onToggleCountry={handleToggleCountry}
-                onOpenImportModal={() => setIsImportModalOpen(true)} // Mở modal nổi nạp tài khoản
-                onCollapse={() => setIsTreeCollapsed(true)}
-              />
-            ) : (
-              <Sidebar activeTab={activeTab} loading={loading} onFileUpload={handleFileUpload} />
-            )}
-          </div>
-        )}
+        {(() => {
+          const showLeftColumn = (activeTab === 'accounts' && !isTreeCollapsed) || activeTab === 'proxies';
+          if (!showLeftColumn) return null;
+          return (
+            <div className="lg:col-span-1">
+              {activeTab === 'accounts' ? (
+                <FolderTree
+                  accounts={accounts}
+                  selectedCountry={selectedCountry}
+                  selectedBatch={selectedBatch}
+                  expandedCountries={expandedCountries}
+                  onSelectBatch={handleSelectBatch}
+                  onToggleCountry={handleToggleCountry}
+                  onOpenImportModal={() => setIsImportModalOpen(true)} // Mở modal nổi nạp tài khoản
+                  onCollapse={() => setIsTreeCollapsed(true)}
+                />
+              ) : (
+                <Sidebar activeTab={activeTab} loading={loading} onFileUpload={handleFileUpload} />
+              )}
+            </div>
+          );
+        })()}
 
         {/* ===================================================================
             CỘT PHẢI: KHU VỰC LÀM VIỆC CHÍNH (MAIN WORKSPACE)
-            Giãn full 4 cột khi cây thư mục bị thu gọn, ngược lại chiếm 3 cột.
+            Giãn full 4 cột khi không có cột trái, ngược lại chiếm 3 cột.
             =================================================================== */}
-        <div className={(activeTab === 'accounts' && isTreeCollapsed) ? 'lg:col-span-4 flex flex-col gap-6' : 'lg:col-span-3 flex flex-col gap-6'}>
+        <div className={
+          ((activeTab === 'accounts' && !isTreeCollapsed) || activeTab === 'proxies')
+            ? 'lg:col-span-3 flex flex-col gap-6'
+            : 'lg:col-span-4 flex flex-col gap-6'
+        }>
           
           {/* STATS SUMMARY */}
           <StatsCards accounts={accounts} proxies={proxies} />
@@ -609,6 +619,7 @@ export default function App() {
                 accounts={filteredAccounts}
                 proxies={proxies} 
                 selectedAccountIds={selectedAccountIds}
+                setSelectedAccountIds={setSelectedAccountIds}
                 toggleSelectAll={toggleSelectAll}
                 toggleSelectAccount={toggleSelectAccount}
                 handleBindProxy={handleBindProxy}
@@ -617,6 +628,8 @@ export default function App() {
                 onResumeAccount={handleResumeAccount}
               />
             </div>
+          ) : activeTab === 'interactions' ? (
+            <InteractionPanel accounts={accounts} selectedAccountIds={selectedAccountIds} />
           ) : (
             <ProxiesTable proxies={proxies} />
           )}

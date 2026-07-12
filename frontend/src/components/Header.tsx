@@ -1,9 +1,9 @@
 import React from 'react';
-import { Users, Globe } from 'lucide-react';
+import { Users, Globe, Heart } from 'lucide-react';
 
 interface HeaderProps {
-  activeTab: 'accounts' | 'proxies';
-  setActiveTab: (tab: 'accounts' | 'proxies') => void;
+  activeTab: 'accounts' | 'proxies' | 'interactions';
+  setActiveTab: (tab: 'accounts' | 'proxies' | 'interactions') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
@@ -23,6 +23,12 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
           className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'accounts' ? 'bg-teal-500 text-slate-950' : 'text-slate-400 hover:text-slate-100'}`}
         >
           <Users className="w-3.5 h-3.5" /> Quản lý Tài Khoản
+        </button>
+        <button
+          onClick={() => setActiveTab('interactions')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'interactions' ? 'bg-teal-500 text-slate-950' : 'text-slate-400 hover:text-slate-100'}`}
+        >
+          <Heart className="w-3.5 h-3.5" /> Tương Tác Video
         </button>
         <button
           onClick={() => setActiveTab('proxies')}

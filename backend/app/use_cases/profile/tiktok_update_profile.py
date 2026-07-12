@@ -135,7 +135,11 @@ class TikTokUpdateProfileUseCase:
         # =====================================================================
         except AccountBannedException as e_ban:
             logger.error(f"[!] Nhận diện tài khoản bị cấm (Banned) khi đổi Profile: {str(e_ban)}")
-            account.status = "BANNED"
+            # SỬA LỖI GÁN NHẦM FIELD: "BANNED" phải nằm ở health_status (giống
+            # hệt tiktok_login.py) - "status" là field khác, dùng cho vòng đời
+            # phiên chạy (RUNNING/QUEUED/SUCCESS/ERROR), không phải sức khỏe nick.
+            account.status = "ERROR"
+            account.health_status = "BANNED"
             account.cookies = [] # Xóa sạch cookies hỏng
             account.current_step = "Tài khoản bị Banned"
             self.account_repo.save(account)

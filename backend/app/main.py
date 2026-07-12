@@ -22,7 +22,9 @@ from app.infrastructure.websocket.socket_manager import ws_manager
 from app.interfaces.api.accounts_router import router as accounts_router
 from app.interfaces.api.proxies_router import router as proxies_router  
 from app.interfaces.api.tasks_router import router as tasks_router
+from app.interfaces.api.interactions_router import router as interactions_router
 from app.use_cases.orchestration.task_dispatcher import ConcurrentTaskDispatcher
+from app.infrastructure.scheduler.interaction_scheduler import InteractionScheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Application")
@@ -41,10 +43,17 @@ async def lifespan(app: FastAPI):
     app.state.dispatcher = dispatcher
     logger.info("[+] Khởi tạo ConcurrentTaskDispatcher thành công.")
 
+    # 2b. Khởi tạo Interaction Scheduler (lập lịch chiến dịch tương tác video lặp chu kỳ)
+    interaction_scheduler = InteractionScheduler(dispatcher)
+    interaction_scheduler.start()
+    app.state.interaction_scheduler = interaction_scheduler
+    logger.info("[+] Khởi tạo InteractionScheduler thành công.")
+
     yield
 
     # 3. Dọn dẹp dập tắt các luồng chạy ngầm khi đóng app
     logger.info("[-] Hệ thống đang tắt...")
+    app.state.interaction_scheduler.shutdown()
     await app.state.dispatcher.stop()
     logger.info("[-] Đã tắt ConcurrentTaskDispatcher an toàn.")
 
@@ -66,6 +75,7 @@ app.add_middleware(
 app.include_router(accounts_router, prefix=settings.API_V1_STR)
 app.include_router(proxies_router, prefix=settings.API_V1_STR)  
 app.include_router(tasks_router, prefix=settings.API_V1_STR)
+app.include_router(interactions_router, prefix=settings.API_V1_STR)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

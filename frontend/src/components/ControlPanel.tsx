@@ -1,6 +1,6 @@
 // File: frontend/src/components/ControlPanel.tsx
-import React, { useState } from 'react';
-import { FolderOpen, Play, Pause, Square, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { FolderOpen, Play, Pause, Square, RotateCcw, RadioTower } from 'lucide-react';
 
 interface ControlPanelProps {
   concurrency: number;
@@ -14,6 +14,17 @@ interface ControlPanelProps {
   onGlobalStop: () => void;
 }
 
+interface ContinuousCheckStatus {
+  is_active: boolean;
+  gap_seconds: number;
+  concurrency_limit: number;
+  cycle_count: number;
+  last_cycle_at: string | null;
+  is_running_now: boolean;
+}
+
+const TASKS_API = 'http://127.0.0.1:8001/api/v1/tasks';
+
 export const ControlPanel: React.FC<ControlPanelProps> = ({
   concurrency,
   setConcurrency,
@@ -26,6 +37,55 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onGlobalStop
 }) => {
   const [loading, setLoading] = useState<boolean>(false);
+
+  // =========================================================================
+  // CHẾ ĐỘ CHECK NHANH LIÊN TỤC - hoàn toàn độc lập với dispatcher chính,
+  // tự quản lý state/polling riêng bên trong widget này.
+  // =========================================================================
+  const [continuousStatus, setContinuousStatus] = useState<ContinuousCheckStatus | null>(null);
+  const [continuousGapSeconds, setContinuousGapSeconds] = useState<number>(3);
+  const [continuousConcurrency, setContinuousConcurrency] = useState<number>(15);
+
+  const loadContinuousStatus = async () => {
+    try {
+      const res = await fetch(`${TASKS_API}/quick-health-check/continuous-status`);
+      if (res.ok) setContinuousStatus(await res.json());
+    } catch (err) {
+      console.error('Lỗi tải trạng thái Check nhanh liên tục:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadContinuousStatus();
+    const interval = setInterval(loadContinuousStatus, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStartContinuous = async () => {
+    try {
+      const res = await fetch(`${TASKS_API}/quick-health-check/start-continuous`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gap_seconds: continuousGapSeconds, concurrency_limit: continuousConcurrency }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data.detail || 'Có lỗi xảy ra.');
+      loadContinuousStatus();
+    } catch (err) {
+      alert('Không thể kết nối tới backend.');
+    }
+  };
+
+  const handleStopContinuous = async () => {
+    try {
+      const res = await fetch(`${TASKS_API}/quick-health-check/stop-continuous`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) alert(data.detail || 'Có lỗi xảy ra.');
+      loadContinuousStatus();
+    } catch (err) {
+      alert('Không thể kết nối tới backend.');
+    }
+  };
 
   // GỌI CẦU NỐI API ĐỂ BẬT WINDOWS FOLDER PICKER
   const handleBrowseFolder = async () => {
@@ -140,6 +200,68 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <span>{loading ? 'Đang chọn...' : 'Chọn thư mục'}</span>
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* CHECK NHANH LIÊN TỤC - Quét lặp lại toàn bộ account đang ALIVE theo
+          chu kỳ, hoàn toàn tách biệt (Chromium riêng, semaphore riêng, không
+          đụng gì tới hàng đợi/luồng đăng nhập chính). */}
+      <div className="bg-[#0e1424] p-4 rounded-2xl border border-slate-800 flex flex-col gap-3">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+            <RadioTower className="w-3.5 h-3.5 text-sky-400" /> Check Nhanh Liên Tục (toàn bộ acc đang SỐNG)
+          </span>
+          {continuousStatus?.is_active && (
+            <span className="text-[10px] text-sky-400 font-bold bg-sky-500/10 border border-sky-500/30 px-2 py-1 rounded-md animate-pulse">
+              ● ĐANG BẬT — đã chạy {continuousStatus.cycle_count} chu kỳ
+              {continuousStatus.is_running_now ? ' (đang quét...)' : ''}
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] text-slate-400 font-semibold">Nghỉ giữa 2 vòng (giây):</label>
+            <input
+              type="number" min={0} max={60}
+              value={continuousGapSeconds}
+              onChange={(e) => setContinuousGapSeconds(parseInt(e.target.value) || 0)}
+              disabled={!!continuousStatus?.is_active}
+              className="w-16 bg-[#182032] border border-slate-700 rounded-lg p-1.5 text-xs text-center font-bold text-sky-400 disabled:opacity-50 focus:outline-none"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] text-slate-400 font-semibold">Luồng song song:</label>
+            <input
+              type="number" min={1} max={50}
+              value={continuousConcurrency}
+              onChange={(e) => setContinuousConcurrency(parseInt(e.target.value) || 15)}
+              disabled={!!continuousStatus?.is_active}
+              className="w-16 bg-[#182032] border border-slate-700 rounded-lg p-1.5 text-xs text-center font-bold text-sky-400 disabled:opacity-50 focus:outline-none"
+            />
+          </div>
+
+          {continuousStatus?.is_active ? (
+            <button
+              onClick={handleStopContinuous}
+              className="flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all"
+            >
+              <Square className="w-3.5 h-3.5" /> Tắt liên tục
+            </button>
+          ) : (
+            <button
+              onClick={handleStartContinuous}
+              className="flex items-center gap-1.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all"
+            >
+              <Play className="w-3.5 h-3.5" /> Bật liên tục
+            </button>
+          )}
+
+          {continuousStatus?.last_cycle_at && (
+            <span className="text-[10px] text-slate-500 ml-auto">
+              Chu kỳ gần nhất: {new Date(continuousStatus.last_cycle_at).toLocaleTimeString()}
+            </span>
+          )}
         </div>
       </div>
     </div>

@@ -180,13 +180,23 @@ class ConcurrentTaskDispatcher:
             "queued_count": self.queue.qsize(),
         }
 
-    async def submit_task(self, account_id: str, task_type: str, avatar_folder: Optional[str] = None) -> None:
-        """Gửi tác vụ vào hàng đợi kèm theo loại tác vụ (task_type)"""
+    async def submit_task(
+        self,
+        account_id: str,
+        task_type: str,
+        avatar_folder: Optional[str] = None,
+        extra_config: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Gửi tác vụ vào hàng đợi kèm theo loại tác vụ (task_type).
+        extra_config: cấu hình bổ sung tuỳ loại tác vụ - hiện dùng cho
+        INTERACT_VIDEOS (mode, hashtag, duration_minutes, xác suất tym/cmt,
+        danh sách câu bình luận...)."""
         await self._update_account_status(account_id, "QUEUED", step_desc="Đang xếp hàng...")
         await self.queue.put({
             "account_id": account_id,
-            "task_type": task_type,  # Ví dụ: LOGIN_COOKIE, LOGIN_CREDENTIAL, UPDATE_PROFILE
-            "avatar_folder": avatar_folder
+            "task_type": task_type,  # Ví dụ: LOGIN_COOKIE, LOGIN_CREDENTIAL, UPDATE_PROFILE, INTERACT_VIDEOS
+            "avatar_folder": avatar_folder,
+            "extra_config": extra_config or {},
         })
         logger.info(f"[+] Tài khoản {account_id} | Tác vụ {task_type} đã được đưa vào hàng đợi.")
 
@@ -213,6 +223,7 @@ class ConcurrentTaskDispatcher:
                 account_id = task_payload["account_id"]
                 task_type = task_payload["task_type"]
                 avatar_folder = task_payload["avatar_folder"]
+                extra_config = task_payload.get("extra_config") or {}
 
                 await self.semaphore.acquire()
 
@@ -222,7 +233,7 @@ class ConcurrentTaskDispatcher:
                     assigned_avatar = self._allocate_avatar_from_folder(avatar_folder, len(self.active_tasks))
 
                 worker_task = asyncio.create_task(
-                    self._execute_worker_with_semaphore(account_id, task_type, assigned_avatar)
+                    self._execute_worker_with_semaphore(account_id, task_type, assigned_avatar, extra_config)
                 )
                 self.active_tasks[account_id] = worker_task
                 self.queue.task_done()
@@ -262,7 +273,9 @@ class ConcurrentTaskDispatcher:
         return assigned_image
 
     # Tìm kiếm hàm _execute_worker_with_semaphore của task_dispatcher.py và dán đè bằng đoạn mã sau:
-    async def _execute_worker_with_semaphore(self, account_id: str, task_type: str, avatar_path: Optional[str]) -> None:
+    async def _execute_worker_with_semaphore(
+        self, account_id: str, task_type: str, avatar_path: Optional[str], extra_config: Optional[Dict[str, Any]] = None
+    ) -> None:
         logger.info(f"[*] Khởi chạy trình duyệt cho tài khoản: {account_id} | Tác vụ: {task_type}")
         
         with Session(engine) as session:
@@ -328,6 +341,33 @@ class ConcurrentTaskDispatcher:
                         step_logger=log_step
                     )
                     success = await use_case.execute(account_id, avatar_path)
+
+                elif task_type == "INTERACT_VIDEOS":
+                    from app.use_cases.interaction.tiktok_video_interaction import TikTokVideoInteractionUseCase
+                    from app.use_cases.auth.login_strategies import CookieLoginStrategy
+
+                    # Tuong tac video chi hop ly voi account DA co cookie tu truoc
+                    # (khong ep dang nhap Credential+OTP moi lan, qua ton kem/rui ro).
+                    login_strategy = CookieLoginStrategy()
+
+                    use_case = TikTokVideoInteractionUseCase(
+                        account_repo=account_repo,
+                        browser_service=browser_service,
+                        login_strategy=login_strategy,
+                        email_service=email_service,
+                        step_logger=log_step,
+                    )
+                    success = await use_case.execute(
+                        account_id,
+                        mode=extra_config.get("mode", "foryou"),
+                        hashtag=extra_config.get("hashtag"),
+                        duration_minutes=extra_config.get("duration_minutes", 10),
+                        like_probability=extra_config.get("like_probability", 0.4),
+                        comment_probability=extra_config.get("comment_probability", 0.05),
+                        comment_list=extra_config.get("comment_list", []),
+                        min_watch_seconds=extra_config.get("min_watch_seconds", 3.0),
+                        max_watch_seconds=extra_config.get("max_watch_seconds", 15.0),
+                    )
 
                 if success:
                     # NÂNG CẤP ĐỘNG: Nạp lại tài khoản từ DB để lấy đúng trạng thái chuyên biệt
