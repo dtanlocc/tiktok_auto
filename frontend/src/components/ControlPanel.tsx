@@ -1,6 +1,7 @@
 // File: frontend/src/components/ControlPanel.tsx
 import React, { useState, useEffect } from 'react';
 import { FolderOpen, Play, Pause, Square, RotateCcw, RadioTower } from 'lucide-react';
+import { Account } from '../types';
 
 interface ControlPanelProps {
   concurrency: number;
@@ -12,6 +13,10 @@ interface ControlPanelProps {
   onGlobalPause: () => void;
   onGlobalResume: () => void;
   onGlobalStop: () => void;
+  // NÂNG CẤP: Check nhanh liên tục giờ chạy trên đúng acc đang được CHỌN
+  // trên bảng, không còn quét toàn bộ DB nữa.
+  accounts: Account[];
+  selectedAccountIds: string[];
 }
 
 interface ContinuousCheckStatus {
@@ -34,7 +39,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onGlobalStart,
   onGlobalPause,
   onGlobalResume,
-  onGlobalStop
+  onGlobalStop,
+  accounts,
+  selectedAccountIds,
 }) => {
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -62,11 +69,19 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   }, []);
 
   const handleStartContinuous = async () => {
+    if (selectedAccountIds.length === 0) {
+      alert('Vui lòng chọn ít nhất 1 tài khoản ở bảng bên dưới trước khi bật Check nhanh liên tục.');
+      return;
+    }
     try {
       const res = await fetch(`${TASKS_API}/quick-health-check/start-continuous`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gap_seconds: continuousGapSeconds, concurrency_limit: continuousConcurrency }),
+        body: JSON.stringify({
+          account_ids: selectedAccountIds,
+          gap_seconds: continuousGapSeconds,
+          concurrency_limit: continuousConcurrency,
+        }),
       });
       const data = await res.json();
       if (!res.ok) alert(data.detail || 'Có lỗi xảy ra.');
@@ -251,9 +266,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           ) : (
             <button
               onClick={handleStartContinuous}
-              className="flex items-center gap-1.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all"
+              disabled={selectedAccountIds.length === 0}
+              title={selectedAccountIds.length === 0 ? 'Chọn ít nhất 1 tài khoản ở bảng bên dưới trước' : undefined}
+              className="flex items-center gap-1.5 bg-sky-500/10 hover:bg-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed border border-sky-500/30 text-sky-400 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all"
             >
-              <Play className="w-3.5 h-3.5" /> Bật liên tục
+              <Play className="w-3.5 h-3.5" /> Bật liên tục ({selectedAccountIds.length} acc đã chọn)
             </button>
           )}
 

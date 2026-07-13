@@ -202,15 +202,19 @@ async def get_quick_health_check_status():
 # tới ConcurrentTaskDispatcher hay InteractionScheduler.
 # =============================================================================
 class ContinuousCheckRequest(BaseModel):
+    account_ids: List[str]
     gap_seconds: int = 3
     concurrency_limit: int = 15
 
 
 @router.post("/quick-health-check/start-continuous")
 async def start_continuous_quick_check(payload: ContinuousCheckRequest):
-    """Bật chế độ quét LIÊN TỤC (không nghỉ dài) toàn bộ account đang ALIVE,
-    đa luồng, hết vòng chạy ngay vòng kế tiếp - tới khi bấm dừng."""
+    """Bật chế độ quét LIÊN TỤC (không nghỉ dài) CHỈ cho danh sách account_ids
+    được chọn, đa luồng, hết vòng chạy ngay vòng kế tiếp - tới khi bấm dừng."""
+    if not payload.account_ids:
+        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản trước khi bật Check nhanh liên tục.")
     started = quick_health_check_service.start_continuous(
+        account_ids=payload.account_ids,
         gap_seconds=payload.gap_seconds,
         concurrency_limit=payload.concurrency_limit,
     )
@@ -218,7 +222,7 @@ async def start_continuous_quick_check(payload: ContinuousCheckRequest):
         raise HTTPException(status_code=409, detail="Chế độ liên tục đã đang bật sẵn rồi.")
     return {
         "status": "SUCCESS",
-        "message": f"Đã bật Check nhanh liên tục ({payload.concurrency_limit} luồng song song).",
+        "message": f"Đã bật Check nhanh liên tục cho {len(payload.account_ids)} tài khoản đã chọn ({payload.concurrency_limit} luồng song song).",
     }
 
 

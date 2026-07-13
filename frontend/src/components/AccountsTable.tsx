@@ -43,6 +43,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
   setSelectedAccountIds,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [batchSize, setBatchSize] = useState<number>(10);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
@@ -145,6 +146,30 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
               <X className="w-3 h-3" /> Bỏ chọn
             </button>
           )}
+
+          {/* CHỌN NHANH THEO LÔ - mặc định 10 acc mỗi lần bấm, tự động lấy
+              N tài khoản TIẾP THEO (đang hiển thị, chưa được chọn) cộng dồn
+              vào lựa chọn hiện tại. Bấm liên tiếp để chọn 10, rồi 10 tiếp
+              theo, rồi 10 tiếp theo nữa... */}
+          <div className="flex items-center gap-1.5 bg-[#182032] border border-slate-700 rounded-lg pl-2 pr-1 py-1">
+            <span className="text-[10px] text-slate-400 font-semibold">Chọn nhanh mỗi lần:</span>
+            <input
+              type="number" min={1} max={200}
+              value={batchSize}
+              onChange={(e) => setBatchSize(parseInt(e.target.value) || 10)}
+              className="w-12 bg-transparent text-xs text-center font-bold text-teal-400 focus:outline-none"
+            />
+            <button
+              onClick={() => {
+                const remaining = displayedAccounts.filter((a) => !selectedAccountIds.includes(a.id));
+                const nextBatch = remaining.slice(0, batchSize).map((a) => a.id);
+                setSelectedAccountIds([...selectedAccountIds, ...nextBatch]);
+              }}
+              className="bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 text-[10px] font-bold px-2 py-1 rounded-md transition-all whitespace-nowrap"
+            >
+              + Chọn {batchSize} tiếp theo
+            </button>
+          </div>
         </div>
 
         {/* Ô TÌM NHANH */}
