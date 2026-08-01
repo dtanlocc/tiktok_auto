@@ -34,6 +34,8 @@ class ConcurrentTaskDispatcher:
         self.active_tasks: Dict[str, asyncio.Task] = {}
         self._loop_task: Optional[asyncio.Task] = None
         self.is_running = False
+        
+        self.global_task_counter = 0
 
         # =================================================================
         # CO CHE TAM DUNG / TIEP TUC (Toan cuc + Tung account)
@@ -230,7 +232,9 @@ class ConcurrentTaskDispatcher:
                 # Phân phối tuần tự ảnh đại diện từ thư mục được chỉ định (nếu là tác vụ đổi profile)
                 assigned_avatar = None
                 if task_type == "UPDATE_PROFILE":
-                    assigned_avatar = self._allocate_avatar_from_folder(avatar_folder, len(self.active_tasks))
+                    # Sử dụng bộ đếm tịnh tiến liên tục để lấy ảnh
+                    assigned_avatar = self._allocate_avatar_from_folder(avatar_folder, self.global_task_counter)
+                    self.global_task_counter += 1
 
                 worker_task = asyncio.create_task(
                     self._execute_worker_with_semaphore(account_id, task_type, assigned_avatar, extra_config)
@@ -386,7 +390,7 @@ class ConcurrentTaskDispatcher:
                     # =========================================================
                     # ĐẶC QUYỀN KIỂM THỬ THƯƠNG MẠI: GIỮ TRÌNH DUYỆT MỞ KHI LOGIN COOKIE
                     # =========================================================
-                    if task_type == "LOGIN_COOKIE":
+                    if task_type in ("LOGIN_COOKIE", "LOGIN_CREDENTIAL"):
                         # Bắn thông báo hướng dẫn lên Web UI Dashboard
                         await log_step("⚠️ Trình duyệt đang được giữ lại để kiểm thử. Hãy tự tay đóng cửa sổ khi test xong.")
                         logger.info(f"[!] [Test Mode] Giữ nguyên trình duyệt hoạt động cho {account_id}. Đợi đóng thủ công...")

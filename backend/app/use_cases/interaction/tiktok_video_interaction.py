@@ -169,8 +169,9 @@ class TikTokVideoInteractionUseCase:
                 # nhảy tức thời, cùng tinh thần với cách humanize=True xử lý
                 # chuyển động chuột ở phần khởi tạo trình duyệt.
                 try:
-                    scroll_amount = random.randint(700, 950)
-                    await page.mouse.wheel(0, scroll_amount)
+                    # scroll_amount = random.randint(700, 950)
+                    # await page.mouse.wheel(0, scroll_amount)
+                    await page.keyboard.press("ArrowDown")
                     await asyncio.sleep(random.uniform(0.8, 1.8))
                 except Exception as e_scroll:
                     logger.warning(f"[!] Lỗi khi lướt video kế tiếp: {str(e_scroll)}")

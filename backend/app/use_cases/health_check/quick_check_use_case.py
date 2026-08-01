@@ -1,3 +1,5 @@
+# File: tiktok_auto/backend/app/use_cases/health_check/quick_check_use_case.py
+
 """
 LUONG XU LY DOC LAP HOAN TOAN VOI ConcurrentTaskDispatcher (theo yeu cau:
 "tach rieng hoan toan, khong qua Dispatcher/Semaphore hien tai").
@@ -147,7 +149,39 @@ class QuickHealthCheckService:
                 page = await context.new_page()
 
                 try:
+                    # Lần kiểm tra đầu tiên
                     ket_qua = await self._check_one_page(page, account.username)
+
+                    # CHIẾN LƯỢC KIỂM TRA LẠI (RETRY STRATEGY):
+                    # Nếu phát hiện nghi ngờ bị BAN (DIE), tiến hành kiểm tra lại 3 lần nữa để chắc chắn
+                    if ket_qua == "DIE":
+                        logger.info(f"[*] Phát hiện @{account.username} có tín hiệu DIE. Tiến hành kiểm tra lại 3 lần để xác nhận...")
+                        retries = 3
+                        confirmed_die = True
+
+                        for attempt in range(retries):
+                            try:
+                                # Giải phóng tài nguyên trang cũ và khởi tạo trang mới tránh bám cache
+                                await page.close()
+                                page = await context.new_page()
+
+                                # Nghỉ ngắn giữa các lần thử lại nhằm tránh dính cơ chế chặn tần suất (Rate Limit/WAF)
+                                await asyncio.sleep(2)
+
+                                retry_res = await self._check_one_page(page, account.username)
+                                logger.info(f"    -> Thử lại lần {attempt + 1}/{retries} cho @{account.username}: {retry_res}")
+
+                                if retry_res != "DIE":
+                                    # Nếu có bất kỳ kết quả nào khác DIE (ví dụ: ALIVE hoặc lỗi mạng tạm thời),
+                                    # hủy nhãn DIE để không đánh dấu sai tài khoản.
+                                    ket_qua = retry_res
+                                    confirmed_die = False
+                                    break
+                            except Exception as retry_err:
+                                logger.warning(f"[!] Gặp lỗi trong quá trình thử lại lần {attempt + 1}: {str(retry_err)}")
+
+                        if confirmed_die:
+                            ket_qua = "DIE"
 
                     if ket_qua == "SONG_DA_TUONG_TAC":
                         account.health_status = "ALIVE"
@@ -157,16 +191,10 @@ class QuickHealthCheckService:
                         account.health_status = "ALIVE"
                         account.current_step = "🔍 Check nhanh: SỐNG (nick trắng, chưa tương tác)"
                     elif ket_qua == "DIE":
-                        # THONG NHAT VOI LUONG LOGIN: dung chung gia tri "BANNED"
-                        # (dung y het khi AccountBannedException duoc bat trong
-                        # task_dispatcher.py), khong con tach rieng "DEAD" nua -
-                        # ca 2 luong deu chi con dung DUY NHAT 1 tap gia tri
-                        # health_status: ALIVE / BANNED / (giu nguyen cu neu loi mang).
                         account.health_status = "BANNED"
-                        account.current_step = "☠️ Check nhanh: DIE (đánh dấu BANNED)"
+                        account.current_step = "☠️ Check nhanh: DIE (đã xác thực lại 3 lần)"
                     else:
-                        # Loi mang/Captcha - KHONG doi health_status cu, chi ghi chu
-                        account.current_step = "⏸️ Check nhanh: Lỗi mạng/Captcha (đã bỏ qua, giữ nguyên trạng thái cũ)"
+                        account.current_step = "⏸️ Check nhanh: Lỗi mạng/Captcha (giữ nguyên trạng thái)"
 
                     repo.save(account)
 
@@ -195,19 +223,20 @@ class QuickHealthCheckService:
                 with Session(engine) as session:
                     repo = SQLiteAccountRepository(session)
                     all_accounts = repo.get_all()
-                    # CHỈ lấy trong đúng danh sách account đã chọn lúc bật -
-                    # đồng thời vẫn lọc health_status="ALIVE" để tự động loại
-                    # bỏ những account vừa bị phát hiện BANNED giữa các vòng
-                    # (không cần check lại account đã biết chắc là banned).
-                    alive_ids = [a.id for a in all_accounts if a.id in target_id_set and a.health_status == "ALIVE"]
+                    
+                    # TUÂN THỦ NGUYÊN TẮC THƯƠNG MẠI:
+                    # Lấy toàn bộ tài khoản nằm trong danh sách được chọn (target_id_set)
+                    # mà không lọc loại trừ health_status == "ALIVE".
+                    # Vòng lặp sau vẫn sẽ kiểm tra lại các tài khoản BANNED bình thường.
+                    target_ids = [a.id for a in all_accounts if a.id in target_id_set]
 
-                if alive_ids:
+                if target_ids:
                     logger.info(
                         f"[*] [Continuous Check] Bắt đầu vòng #{self._cycle_count + 1} "
-                        f"cho {len(alive_ids)}/{len(target_id_set)} account đã chọn đang ALIVE "
+                        f"cho {len(target_ids)} account đã chọn "
                         f"({self._continuous_concurrency} luồng song song)."
                     )
-                    await self.run_batch(alive_ids, concurrency_limit=self._continuous_concurrency)
+                    await self.run_batch(target_ids, concurrency_limit=self._continuous_concurrency)
                     self._cycle_count += 1
                     self._last_cycle_at = datetime.now().isoformat()
                     await ws_manager.broadcast({
@@ -215,7 +244,7 @@ class QuickHealthCheckService:
                         "data": self.get_continuous_status()
                     })
                 else:
-                    logger.info("[*] [Continuous Check] Không còn account nào (trong danh sách đã chọn) đang ALIVE, đợi ít giây rồi kiểm tra lại.")
+                    logger.info("[*] [Continuous Check] Không có account nào trong danh sách được chọn, đợi ít giây rồi kiểm tra lại.")
             except Exception as e:
                 logger.error(f"[-] Lỗi trong vòng lặp Check nhanh liên tục: {str(e)}")
 
@@ -232,8 +261,7 @@ class QuickHealthCheckService:
     def start_continuous(self, account_ids: List[str], gap_seconds: int = 3, concurrency_limit: int = 15) -> bool:
         """Bật chế độ quét LIÊN TỤC CHỈ cho danh sách account_ids được chỉ
         định (do người dùng tự chọn trên UI) - đa luồng, hết vòng chạy ngay
-        vòng kế. Trả về False nếu đã đang bật sẵn (idempotent, không tạo
-        task chồng chéo) hoặc nếu account_ids rỗng."""
+        vòng kế tiếp - tới khi bấm dừng."""
         if self._continuous_active:
             return False
         if not account_ids:
