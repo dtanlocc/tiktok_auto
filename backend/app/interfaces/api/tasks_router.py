@@ -14,12 +14,17 @@ router = APIRouter(prefix="/tasks", tags=["Tasks"])
 class BulkLoginRequest(BaseModel):
     account_ids: List[str]
     login_method: str = "COOKIE" # COOKIE hoặc CREDENTIAL
-    concurrency_limit: int = 4
+    # So luong chay DONG THOI TREN MOI PROXY (thay cho "so luong tong" truoc day).
+    proxy_concurrency: int = 2
 
 class BulkUpdateProfileRequest(BaseModel):
     account_ids: List[str]
     avatar_folder: Optional[str] = None
-    concurrency_limit: int = 4
+    proxy_concurrency: int = 2
+
+
+class ProxyConcurrencyRequest(BaseModel):
+    limit: int = 2
 
 class QuickHealthCheckRequest(BaseModel):
     account_ids: List[str]
@@ -35,13 +40,13 @@ async def start_bulk_login(
     if not payload.account_ids:
         raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
     
-    dispatcher.set_concurrency_limit(payload.concurrency_limit)
+    dispatcher.set_proxy_concurrency_limit(payload.proxy_concurrency)
     queued_count = 0
     for acc_id in payload.account_ids:
         account = account_repo.get_by_id(acc_id)
         if not account:
             continue
-        
+
         # Đẩy tác vụ LOGIN vào hàng đợi
         await dispatcher.submit_task(
             account_id=acc_id,
@@ -62,13 +67,13 @@ async def start_bulk_update_profile(
     if not payload.account_ids:
         raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
     
-    dispatcher.set_concurrency_limit(payload.concurrency_limit)
+    dispatcher.set_proxy_concurrency_limit(payload.proxy_concurrency)
     queued_count = 0
     for acc_id in payload.account_ids:
         account = account_repo.get_by_id(acc_id)
         if not account:
             continue
-        
+
         # Đẩy tác vụ UPDATE_PROFILE vào hàng đợi
         await dispatcher.submit_task(
             account_id=acc_id,
@@ -90,6 +95,24 @@ async def get_global_status(
 ):
     """Trạng thái hiện tại của dispatcher - dùng để đồng bộ UI khi tải lại trang."""
     return dispatcher.get_global_status()
+
+
+@router.post("/proxy-concurrency")
+async def set_proxy_concurrency(
+    payload: ProxyConcurrencyRequest,
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+):
+    """Chỉnh SỐ LUỒNG CHẠY ĐỒNG THỜI TỐI ĐA / 1 PROXY ngay lập tức từ Web UI
+    (thay cho 'số luồng chạy' tổng cũ). Áp dụng cho các tác vụ chạy sau đó."""
+    if payload.limit <= 0:
+        raise HTTPException(status_code=400, detail="Số luồng/proxy phải >= 1.")
+    dispatcher.set_proxy_concurrency_limit(payload.limit)
+    await dispatcher.broadcast_global_state()
+    return {
+        "status": "SUCCESS",
+        "proxy_max_concurrent": payload.limit,
+        "message": f"Đã đặt tối đa {payload.limit} luồng chạy đồng thời trên mỗi proxy.",
+    }
 
 
 @router.post("/start-global")

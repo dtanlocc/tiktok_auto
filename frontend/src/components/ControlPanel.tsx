@@ -182,15 +182,19 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       {/* CẤU HÌNH SONG SONG + AVATAR FOLDER */}
       <div className="bg-[#0e1424] p-4 rounded-2xl border border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
         <div>
-          <label className="text-xs text-slate-400 block mb-1 font-semibold">Cấu hình số luồng chạy song song (Threads):</label>
+          <label className="text-xs text-slate-400 block mb-1 font-semibold">Số luồng tối đa chạy đồng thời / 1 proxy:</label>
           <input
             type="number"
             min={1}
-            max={20}
+            max={10}
             value={concurrency}
-            onChange={(e) => setConcurrency(parseInt(e.target.value) || 4)}
+            onChange={(e) => setConcurrency(parseInt(e.target.value) || 1)}
             className="w-full bg-[#182032] border border-slate-700 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 font-bold text-teal-400 text-center"
           />
+          <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+            Mỗi proxy chỉ chạy tối đa bấy nhiêu account cùng lúc (tránh quá tải 1 proxy).
+            Account thứ N+1 trên cùng proxy sẽ chờ tới lượt.
+          </p>
         </div>
 
         <div className="md:col-span-2">

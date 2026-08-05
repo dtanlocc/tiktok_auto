@@ -78,6 +78,17 @@ class ConcurrentTaskDispatcher:
         self.semaphore = asyncio.Semaphore(limit)
         logger.info(f"[+] Đã cập nhật giới hạn luồng chạy song song thành: {limit}")
 
+    def set_proxy_concurrency_limit(self, limit: int) -> None:
+        """Cap nhat dong so luong chay DONG THOI TREN MOI PROXY tu Web UI.
+        Xoa cac semaphore proxy cu -> proxy se tao lai voi gioi han moi khi gap
+        lan toi. Task DANG chay giu tham chieu semaphore RIENG cua no nen release
+        trong finally van tro dung doi tuong cu (khong bi over-release)."""
+        if limit <= 0:
+            return
+        self.proxy_max_concurrent = limit
+        self.proxy_semaphores = {}
+        logger.info(f"[+] Đã cập nhật giới hạn luồng chạy đồng thời / 1 proxy thành: {limit}")
+
     def _get_proxy_semaphore(self, proxy_id: str) -> asyncio.Semaphore:
         """Lay (hoac tao lazy) semaphore RIENG cho 1 proxy_id, gioi han so luong
         chay dong thoi tren proxy do = self.proxy_max_concurrent."""
@@ -200,6 +211,8 @@ class ConcurrentTaskDispatcher:
             "paused_account_ids": list(self.paused_account_ids),
             "active_count": len(self.active_tasks),
             "queued_count": self.queue.qsize(),
+            "proxy_max_concurrent": self.proxy_max_concurrent,   # so luong toi da / 1 proxy
+            "machine_max_tabs": self.max_tabs,                   # tran tong toan may
         }
 
     async def submit_task(

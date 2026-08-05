@@ -30,7 +30,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'accounts' | 'proxies' | 'interactions' | 'screens'>('accounts');
   
   // Bộ điều khiển trung tâm (Control Panel)
-  const [concurrency, setConcurrency] = useState<number>(4);
+  // concurrency = SỐ LUỒNG TỐI ĐA / 1 PROXY (thay cho "số luồng tổng" trước đây).
+  const [concurrency, setConcurrency] = useState<number>(2);
   const [avatarFolder, setAvatarFolder] = useState<string>('');
 
   // ĐIỀU KHIỂN TOÀN CỤC: Bắt đầu / Tạm dừng / Tiếp tục / Dừng khẩn cấp
@@ -164,8 +165,29 @@ export default function App() {
 
     fetch('http://127.0.0.1:9000/api/v1/tasks/status')
       .then((res) => res.json())
-      .then((data) => setIsGloballyPaused(!!data.is_globally_paused))
+      .then((data) => {
+        setIsGloballyPaused(!!data.is_globally_paused);
+        // Đồng bộ ô "số luồng / proxy" với giá trị hiện tại của backend.
+        if (typeof data.proxy_max_concurrent === 'number') {
+          setConcurrency(data.proxy_max_concurrent);
+        }
+      })
       .catch((err) => console.error('Lỗi tải trạng thái dispatcher:', err));
+  };
+
+  // Lưu ngay giá trị "số luồng tối đa / 1 proxy" xuống backend khi user chỉnh.
+  const handleSetProxyConcurrency = async (val: number) => {
+    setConcurrency(val); // cập nhật UI ngay
+    if (!val || val < 1) return;
+    try {
+      await fetch('http://127.0.0.1:9000/api/v1/tasks/proxy-concurrency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: val }),
+      });
+    } catch {
+      // im lặng - sẽ được áp dụng lại khi bấm chạy tác vụ
+    }
   };
 
   // Kích hoạt Custom Context Menu khi người dùng click chuột phải lên hàng tài khoản
@@ -340,7 +362,7 @@ export default function App() {
         body: JSON.stringify({
           account_ids: selectedAccountIds,
           login_method: method,
-          concurrency_limit: typeof concurrency === 'string' ? 4 : concurrency
+          proxy_concurrency: typeof concurrency === 'string' ? 2 : concurrency
         }),
       });
 
@@ -370,7 +392,7 @@ export default function App() {
         body: JSON.stringify({
           account_ids: selectedAccountIds,
           avatar_folder: avatarFolder || null,
-          concurrency_limit: typeof concurrency === 'string' ? 4 : concurrency
+          proxy_concurrency: typeof concurrency === 'string' ? 2 : concurrency
         }),
       });
 
@@ -632,10 +654,10 @@ export default function App() {
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* 2. CONTROL PANEL COMPONENT (Chứa nút chọn thư mục ảnh cao cấp) */}
-      <ControlPanel 
-        concurrency={concurrency} 
-        setConcurrency={setConcurrency} 
-        avatarFolder={avatarFolder} 
+      <ControlPanel
+        concurrency={concurrency}
+        setConcurrency={handleSetProxyConcurrency}
+        avatarFolder={avatarFolder}
         setAvatarFolder={setAvatarFolder}
         isGloballyPaused={isGloballyPaused}
         onGlobalStart={handleGlobalStart}
