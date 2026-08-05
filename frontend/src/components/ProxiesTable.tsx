@@ -16,15 +16,14 @@ export const ProxiesTable: React.FC<ProxiesTableProps> = ({ proxies }) => {
           <thead>
             <tr className="bg-[#141b2e] text-xs font-semibold text-slate-400 uppercase">
               <th className="p-4">Giao thức</th>
-              <th className="p-4">Địa chỉ IP / Host</th>
-              <th className="p-4">Cổng (Port)</th>
+              <th className="p-4">Địa chỉ Proxy (Host : Port)</th>
               <th className="p-4">Tài khoản xác thực</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800 text-xs text-slate-300">
             {proxies.length === 0 ? (
               <tr>
-                <td colSpan={4} className="p-8 text-center text-slate-500 font-semibold">
+                <td colSpan={3} className="p-8 text-center text-slate-500 font-semibold">
                   Chưa có proxy nào. Vui lòng tải lên file proxies.txt để nhập hàng loạt.
                 </td>
               </tr>
@@ -32,8 +31,7 @@ export const ProxiesTable: React.FC<ProxiesTableProps> = ({ proxies }) => {
               proxies.map((p) => (
                 <tr key={p.id} className="hover:bg-slate-900/40 font-mono">
                   <td className="p-4"><span className="bg-teal-500/10 text-teal-400 border border-teal-500/30 px-2 py-0.5 rounded font-bold text-[10px]">{p.protocol.toUpperCase()}</span></td>
-                  <td className="p-4 text-slate-100 font-bold">{p.host}</td>
-                  <td className="p-4 text-slate-300">{p.port}</td>
+                  <td className="p-4 text-slate-100 font-bold">{p.host}<span className="text-slate-500">:</span><span className="text-teal-300">{p.port}</span></td>
                   <td className="p-4 text-slate-500">{p.username ? p.username : 'Không có'}</td>
                 </tr>
               ))

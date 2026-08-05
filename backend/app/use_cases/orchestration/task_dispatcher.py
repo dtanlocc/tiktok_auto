@@ -346,6 +346,7 @@ class ConcurrentTaskDispatcher:
                 # 1. Truy vấn thông tin tài khoản và cấu hình Proxy động liên kết
                 account = account_repo.get_by_id(account_id)
                 proxy_config = None
+                proxy_key = None
                 if account and account.proxy_id:
                     proxy = proxy_repo.get_by_id(account.proxy_id)
                     if proxy:
@@ -354,15 +355,21 @@ class ConcurrentTaskDispatcher:
                             "username": proxy.username,
                             "password": proxy.password
                         }
+                        # DINH DANH proxy = host:port (KHONG dung proxy_id nua):
+                        # 2 proxy cung host khac PORT -> 2 key khac nhau (dung, la
+                        # 2 proxy that su); nhieu dong trung Y HET host:port ->
+                        # cung 1 key (gop dung vi thuc chat la 1 proxy vat ly) ->
+                        # khong con "hieu lam" host giong nhau la 1 proxy.
+                        proxy_key = f"{proxy.host}:{proxy.port}"
 
                 # =========================================================
-                # GIANH SLOT PROXY: moi proxy toi da self.proxy_max_concurrent
-                # luong cung luc. Neu proxy dang du tai -> CHO tra slot (van
-                # dang giu 1 slot TONG - chap nhan, vi so proxy thuong it hon
-                # so luong tong nen day moi la nut that that su user muon).
+                # GIANH SLOT PROXY: moi proxy (host:port) toi da
+                # self.proxy_max_concurrent luong cung luc. Neu proxy dang du tai
+                # -> CHO tra slot (van dang giu 1 slot TONG - chap nhan, vi so
+                # proxy thuong it hon so luong tong nen day moi la nut that user muon).
                 # =========================================================
-                if account and account.proxy_id:
-                    proxy_sem = self._get_proxy_semaphore(account.proxy_id)
+                if proxy_key is not None:
+                    proxy_sem = self._get_proxy_semaphore(proxy_key)
                     if proxy_sem.locked():
                         # Proxy dang chay du proxy_max_concurrent luong -> bao cho.
                         await self._update_account_status(
