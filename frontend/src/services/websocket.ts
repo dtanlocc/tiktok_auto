@@ -4,7 +4,7 @@ let socket: WebSocket | null = null;
 
 const getWsUrl = () => {
   if (import.meta.env.DEV) {
-    return 'ws://127.0.0.1:8001/ws'; // Dev port
+    return 'ws://127.0.0.1:9000/ws'; // Dev port
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}/ws`; // Production

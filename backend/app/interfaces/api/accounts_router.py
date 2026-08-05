@@ -7,6 +7,7 @@ import shutil
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body, status, UploadFile, File
+from pydantic import BaseModel
 
 from app.domain.ports.repository import IAccountRepository, IProxyRepository
 from app.domain.entities.account import TikTokAccount
@@ -140,22 +141,25 @@ async def import_raw_account(
     """API Phân tích cú pháp chuỗi text dán (Tự động cấp phát ID hệ thống độc nhất)"""
     try:
         parts = raw_text.strip().split("|")
-        if len(parts) < 7:
+        # Toi thieu 6 truong: username|password|email|email_password|refresh_token|client_id
+        # Truong thu 7 (cookies JSON) la TUY CHON - cac acc dang nhap bang
+        # Credential+OTP khong can cookies san.
+        if len(parts) < 6:
             raise HTTPException(
-                status_code=400, 
-                detail="Định dạng dữ liệu không hợp lệ."
+                status_code=400,
+                detail="Định dạng dữ liệu không hợp lệ (cần tối thiểu 6 trường: username|password|email|email_password|refresh_token|client_id)."
             )
 
         username = parts[0].strip()
         password = parts[1].strip()
         email = parts[2].strip()
         email_password = parts[3].strip()
-        refresh_token = parts[4].strip()  
-        client_id = parts[5].strip()      
-        cookies_raw = parts[6].strip()
+        refresh_token = parts[4].strip()
+        client_id = parts[5].strip()
+        cookies_raw = parts[6].strip() if len(parts) > 6 else ""
 
         try:
-            cookies = json.loads(cookies_raw)
+            cookies = json.loads(cookies_raw) if cookies_raw else []
         except json.JSONDecodeError:
             cookies = []
 
@@ -235,19 +239,21 @@ async def import_accounts_from_files(
                 if not line.strip():
                     continue
                 parts = line.strip().split("|")
-                if len(parts) < 7:
+                # Toi thieu 6 truong (cookies o truong 7 la TUY CHON). Cac dong
+                # thieu truong bat buoc se bi bo qua.
+                if len(parts) < 6:
                     continue
 
                 username = parts[0].strip()
                 password = parts[1].strip()
                 email = parts[2].strip()
                 email_password = parts[3].strip()
-                refresh_token = parts[4].strip()  
-                client_id = parts[5].strip()      
-                cookies_raw = parts[6].strip()
+                refresh_token = parts[4].strip()
+                client_id = parts[5].strip()
+                cookies_raw = parts[6].strip() if len(parts) > 6 else ""
 
                 try:
-                    cookies = json.loads(cookies_raw)
+                    cookies = json.loads(cookies_raw) if cookies_raw else []
                 except json.JSONDecodeError:
                     cookies = []
 
@@ -414,6 +420,164 @@ async def delete_account(
         "data": {"id": account_id}
     })
     return {"status": "SUCCESS", "message": "Đã xóa tài khoản thành công."}
+
+
+class UpdateAccountRequest(BaseModel):
+    """Cac truong CO THE SUA truc tiep tren UI (chi cap nhat truong duoc truyen)."""
+    username: Optional[str] = None
+    password: Optional[str] = None
+    email: Optional[str] = None
+    email_password: Optional[str] = None
+    refresh_token: Optional[str] = None
+    client_id: Optional[str] = None
+    country: Optional[str] = None
+    batch_tag: Optional[str] = None
+    # Trang thai (sua tay tren UI): PENDING/COMPLETED, ALIVE/BANNED/UNKNOWN, IDLE/SUCCESS/ERROR...
+    profile_status: Optional[str] = None
+    health_status: Optional[str] = None
+    status: Optional[str] = None
+
+
+@router.patch("/{account_id}", response_model=AccountOut)
+async def update_account_fields(
+    account_id: str,
+    payload: UpdateAccountRequest,
+    account_repo: IAccountRepository = Depends(get_account_repository)
+):
+    """Cap nhat truc tiep 1 hoac nhieu truong cua account (sua tren UI). Chi cap
+    nhat truong duoc gui len (exclude_unset). Phat WebSocket de UI dong bo ngay."""
+    account = account_repo.get_by_id(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản.")
+
+    data = payload.model_dump(exclude_unset=True)
+    changed = {}
+    for field, value in data.items():
+        if value is None:
+            continue
+        val = value.strip() if isinstance(value, str) else value
+        if field == "country":
+            val = str(val).upper().strip()
+        setattr(account, field, val)
+        changed[field] = val
+
+    if not changed:
+        raise HTTPException(status_code=400, detail="Không có trường nào để cập nhật.")
+
+    try:
+        saved = account_repo.save(account)
+    except Exception as e:
+        # Thuong do trung username (unique) -> rollback + bao loi ro rang.
+        if hasattr(account_repo, "session"):
+            try: account_repo.session.rollback()
+            except Exception: pass
+        raise HTTPException(status_code=400, detail=f"Không thể cập nhật (có thể trùng username): {str(e)}")
+
+    await ws_manager.broadcast({
+        "event": "ACCOUNT_UPDATED",
+        "data": {"id": account_id, **changed},
+    })
+    return AccountOut(
+        id=saved.id, username=saved.username, status=saved.status,
+        health_status=saved.health_status, profile_status=saved.profile_status,
+        current_step=saved.current_step, proxy_id=saved.proxy_id,
+        has_cookies=len(saved.cookies) > 0, country=saved.country,
+        batch_tag=saved.batch_tag, created_at=saved.created_at or "",
+    )
+
+
+@router.post("/clear-cookies", status_code=status.HTTP_200_OK)
+async def clear_cookies(
+    account_ids: List[str] = Body(..., embed=True),
+    account_repo: IAccountRepository = Depends(get_account_repository)
+):
+    """XOA COOKIES cua cac account da chon (giu nguyen account, chi xoa cookies ->
+    lan sau bat buoc login lai bang Credential+OTP)."""
+    cleared = 0
+    for aid in account_ids:
+        account = account_repo.get_by_id(aid)
+        if not account:
+            continue
+        account.cookies = []
+        account_repo.save(account)
+        cleared += 1
+        await ws_manager.broadcast({
+            "event": "ACCOUNT_UPDATED",
+            "data": {"id": aid, "has_cookies": False},
+        })
+    return {"status": "SUCCESS", "cleared": cleared,
+            "message": f"Đã xóa cookies của {cleared} tài khoản."}
+
+
+@router.post("/export", status_code=status.HTTP_200_OK)
+async def export_accounts(
+    account_ids: List[str] = Body(..., embed=True),
+    quantity: Optional[int] = Body(default=None, embed=True),
+    account_repo: IAccountRepository = Depends(get_account_repository)
+):
+    """Xuat account ra file txt (dinh dang DAY DU, import lai duoc) roi XOA khoi DB.
+
+    - account_ids: kho ung vien (acc DA CHON, hoac toan bo acc trong LO dang hien).
+    - quantity: None = xuat het account_ids; N = chi lay N acc DAU trong kho.
+      Neu N > so acc co san -> lay HET so co san (co co took_all_available=True).
+
+    Tra ve noi dung file + so lieu de UI hien popup (da lay bao nhieu / con lai bao nhieu).
+    File dinh dang: username|password|email|email_password|refresh_token|client_id|cookies_json
+    """
+    # 1. Loc ra cac account hop le (con ton tai trong DB), giu dung thu tu truyen vao.
+    pool = []
+    for aid in account_ids:
+        acc = account_repo.get_by_id(aid)
+        if acc:
+            pool.append(acc)
+
+    available = len(pool)
+    if available == 0:
+        raise HTTPException(status_code=400, detail="Không có tài khoản hợp lệ nào để xuất.")
+
+    # 2. Xac dinh so luong lay ra.
+    if quantity is None:
+        take = pool
+    else:
+        take = pool[: max(0, quantity)]
+    took = len(take)
+    took_all_available = quantity is not None and quantity > available
+
+    # 3. Dung noi dung file (dinh dang day du = giong format import).
+    lines = []
+    for acc in take:
+        cookies_str = json.dumps(acc.cookies or [], ensure_ascii=False)
+        line = "|".join([
+            acc.username or "",
+            acc.password or "",
+            acc.email or "",
+            acc.email_password or "",
+            acc.refresh_token or "",
+            acc.client_id or "",
+            cookies_str,
+        ])
+        lines.append(line)
+    content = "\n".join(lines)
+
+    # 4. XOA cac account da xuat khoi DB (theo lua chon: xuat = lay ra khoi kho).
+    for acc in take:
+        try:
+            account_repo.delete(acc.id)
+            await ws_manager.broadcast({"event": "ACCOUNT_DELETED", "data": {"id": acc.id}})
+        except Exception as e:
+            logger.warning(f"Lỗi khi xóa acc {acc.id} sau khi xuất: {str(e)}")
+
+    filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{took}acc.txt"
+    return {
+        "status": "SUCCESS",
+        "content": content,
+        "filename": filename,
+        "exported_count": took,
+        "available_before": available,
+        "remaining_count": available - took,
+        "requested": quantity,
+        "took_all_available": took_all_available,
+    }
 
 
 @router.post("/bulk-delete", status_code=status.HTTP_200_OK)

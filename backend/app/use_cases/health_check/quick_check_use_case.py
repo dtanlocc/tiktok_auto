@@ -1,33 +1,95 @@
 # File: tiktok_auto/backend/app/use_cases/health_check/quick_check_use_case.py
 
 """
-LUONG XU LY DOC LAP HOAN TOAN VOI ConcurrentTaskDispatcher (theo yeu cau:
-"tach rieng hoan toan, khong qua Dispatcher/Semaphore hien tai").
+CHECK NHANH SONG/CHET - LUONG DOC LAP HOAN TOAN voi ConcurrentTaskDispatcher.
 
-Dung Chromium THUONG (khong phai Invisible Firefox chong do van tay), vi
-day chi la thao tac DOC CONG KHAI title trang tiktok.com/@username - khong
-can dang nhap, khong can gia lap nguoi that, nen khong can toi bo may
-chong-bot nang cua invisible_playwright.
+CHIEN LUOC (thiet ke lai): KHONG dung browser nua. Chi FETCH HTML THO cua trang
+profile tiktok.com/@username bang HTTPX, QUA PROXY cua chinh account.
 
-Co che dong thoi RIENG: 1 browser Chromium DUY NHAT duoc mo (nhe, dung
-chung 1 tien trinh), moi account check chay trong 1 BrowserContext rieng
-(cach ly cookie/cache nhu 1 "tab an danh" doc lap), gioi han so luong
-context chay song song bang asyncio.Semaphore rieng cua chinh module nay -
-HOAN TOAN KHONG dinh gi toi self.semaphore cua ConcurrentTaskDispatcher.
+Ly do:
+- TikTok NHUNG SAN du lieu user trong HTML (statusCode, uniqueId, videoCount,
+  avatarLarger) -> chi can parse HTML la biet SONG/CHET, khong can render SPA.
+- Fetch qua PROXY cua account (IP mobile/residential) -> KHONG bi WAF challenge
+  (IP datacenter cua server thi bi chan bang "SlardarWAF / Please wait..." khi
+  check nhieu -> truoc day ket luan nham).
+- Khong browser -> cuc nhe, nhanh, chay nhieu account song song thoai mai.
+
+Phan loai (_classify_profile_html):
+  statusCode==0 & uniqueId khop @username  -> SONG (co video/avatar that = DA_TUONG_TAC,
+                                               nick trang = SONG_TRANG).
+  statusCode!=0 & khong co userInfo         -> DIE (10221 = user not found).
+  WAF stub / khong ro                       -> None (KHONG ket luan, giu nguyen).
 """
+import re
 import asyncio
 import logging
+import random
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from urllib.parse import quote
 
-from playwright.async_api import async_playwright, Page
+import httpx
 from sqlmodel import Session
 
 from app.infrastructure.database.connection import engine
-from app.infrastructure.database.sqlite_repository import SQLiteAccountRepository
+from app.infrastructure.database.sqlite_repository import SQLiteAccountRepository, SQLiteProxyRepository
 from app.infrastructure.websocket.socket_manager import ws_manager
 
 logger = logging.getLogger("QuickHealthCheck")
+
+# Header gia lap trinh duyet cho request HTML.
+_HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+# Regex boc du lieu nhung san trong HTML profile TikTok.
+_RE_UNIQUE_ID = re.compile(r'"uniqueId":"([^"]+)"')
+_RE_STATUS = re.compile(r'"statusCode":\s*(\d+)')
+_RE_VIDEO_COUNT = re.compile(r'"videoCount":\s*(\d+)')
+_RE_AVATAR = re.compile(r'"avatarLarger":"([^"]+)"')
+
+
+def _classify_profile_html(html: str, username: str) -> Optional[str]:
+    """Phan loai account tu HTML THO cua trang profile (khong can browser).
+    TikTok nhung san du lieu user trong HTML:
+      - statusCode: 0 = ton tai;  10221/khac 0 = khong tim thay (die/banned).
+      - uniqueId: neu khop @username -> account SONG.
+    Tra ve 'SONG_DA_TUONG_TAC' | 'SONG_TRANG' | 'DIE' | None (WAF/khong ro)."""
+    if not html:
+        return None
+    low = html.lower()
+
+    # 1. WAF challenge stub (IP bi chan) -> KHONG ket luan.
+    #    (Trang WAF rat ngan + chua 'slardarwaf' / '_wafchallengeid'.)
+    if len(html) < 4000 or "slardarwaf" in low or "_wafchallengeid" in low:
+        return None
+
+    m_uid = _RE_UNIQUE_ID.search(html)
+    uid = m_uid.group(1) if m_uid else None
+    has_userinfo = '"userinfo"' in low
+
+    # 2. SONG: uniqueId khop dung @username (account ton tai voi ten do).
+    if uid and uid.lower() == username.lower():
+        m_vc = _RE_VIDEO_COUNT.search(html)
+        video_count = int(m_vc.group(1)) if m_vc else 0
+        m_av = _RE_AVATAR.search(html)
+        avatar = m_av.group(1) if m_av else ""
+        is_default_avatar = (not avatar) or any(x in avatar for x in (
+            "tiktok-obj", "100x100", "musically-maliva-obj", "1594805258216454",
+        ))
+        interacted = video_count > 0 or (avatar and not is_default_avatar)
+        return "SONG_DA_TUONG_TAC" if interacted else "SONG_TRANG"
+
+    # 3. DIE: khong co userInfo VA statusCode bao loi (10221 = user not found).
+    m_st = _RE_STATUS.search(html)
+    status = int(m_st.group(1)) if m_st else None
+    if (not has_userinfo) and status is not None and status != 0:
+        return "DIE"
+
+    # 4. Khong ro -> KHONG ket luan.
+    return None
 
 
 class QuickHealthCheckService:
@@ -49,7 +111,9 @@ class QuickHealthCheckService:
         self._continuous_active: bool = False
         self._continuous_account_ids: List[str] = []  # Danh sach account CO ĐỊNH do người dùng chọn lúc bật
         self._continuous_gap_seconds: int = 3   # Nghỉ tối thiểu giữa 2 vòng quét - KHÔNG phải chu kỳ chờ dài
-        self._continuous_concurrency: int = 15  # Nhiều luồng song song để quét nhanh
+        # Giảm 15 -> 6: quá nhiều luồng cùng lúc từ 1 IP khiến TikTok chặn bằng
+        # CAPTCHA (Drag the slider) -> tất cả trả None. Ít luồng hơn = ít captcha hơn.
+        self._continuous_concurrency: int = 6
         self._cycle_count: int = 0
         self._last_cycle_at: Optional[str] = None
 
@@ -71,70 +135,44 @@ class QuickHealthCheckService:
             "is_running_now": self.is_running,
         }
 
-    async def _check_one_page(self, page: Page, username: str) -> Optional[str]:
-        """Ban dich async cua ham check_tiktok_playwright() trong script goc.
-        Tra ve: 'SONG_DA_TUONG_TAC' | 'SONG_TRANG' | 'DIE' | None (loi mang/captcha)."""
-        url = f"https://www.tiktok.com/@{username}"
+    def _build_proxy_url(self, session: Session, proxy_id: Optional[str]) -> Optional[str]:
+        """Dung URL proxy (co auth) cho httpx tu proxy cua account.
+        None = khong co proxy -> di truc tiep (IP server, de bi WAF)."""
+        if not proxy_id:
+            return None
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            proxy = SQLiteProxyRepository(session).get_by_id(proxy_id)
+        except Exception:
+            proxy = None
+        if not proxy or not proxy.host:
+            return None
+        scheme = (proxy.protocol or "socks5").strip()
+        if proxy.username:
+            auth = f"{quote(str(proxy.username), safe='')}:{quote(str(proxy.password or ''), safe='')}@"
+        else:
+            auth = ""
+        return f"{scheme}://{auth}{proxy.host}:{proxy.port}"
 
-            title = ""
-            for _ in range(5):
-                await page.wait_for_timeout(1000)
-                title = await page.title()
-                if title not in ("TikTok", "TikTok - Make Your Day", ""):
-                    break
-
-            logger.info(f"   [Log] @{username} - Title bat duoc: '{title}'")
-
-            if "Just a moment" in title or "Please wait" in title:
-                return None  # Ket WAF/Captcha -> bo qua, khong ket luan
-
-            is_alive = False
-            if f"@{username.lower()}" in title.lower() or username.lower() in title.lower():
-                is_alive = True
-            elif title in ("TikTok", "TikTok - Make Your Day"):
-                return "DIE"
-            else:
-                return "DIE"
-
-            if is_alive:
-                co_video = False
-                doi_avatar = False
-                try:
-                    await page.wait_for_selector(
-                        '[data-e2e="user-post-item"], [data-e2e="user-avatar"]', timeout=3000
-                    )
-                    so_luong_video = await page.locator('[data-e2e="user-post-item"]').count()
-                    if so_luong_video > 0:
-                        co_video = True
-
-                    avatar_elements = page.locator('[data-e2e="user-avatar"] img')
-                    if await avatar_elements.count() > 0:
-                        avatar_src = await avatar_elements.first.get_attribute('src')
-                        if avatar_src:
-                            is_default_avatar = (
-                                "tiktok-obj" in avatar_src or
-                                "100x100" in avatar_src or
-                                "default" in avatar_src.lower() or
-                                "musically-maliva-obj" in avatar_src or
-                                "1594805258216454" in avatar_src
-                            )
-                            if not is_default_avatar:
-                                doi_avatar = True
-                except Exception:
-                    pass
-
-                return "SONG_DA_TUONG_TAC" if (co_video or doi_avatar) else "SONG_TRANG"
-
+    async def _fetch_and_classify(self, client: httpx.AsyncClient, username: str) -> Optional[str]:
+        """GET HTML trang profile @username (QUA PROXY account) roi phan loai bang
+        _classify_profile_html - KHONG can browser. Proxy IP mobile it bi WAF nen
+        thuong tra HTML that ngay."""
+        url = f"https://www.tiktok.com/@{quote(username, safe='')}"
+        try:
+            r = await client.get(url)
+            return _classify_profile_html(r.text or "", username)
         except Exception as e:
-            logger.warning(f"⚠️ Lỗi mạng khi check @{username}: {str(e)}")
+            logger.warning(f"⚠️ Loi mang khi check @{username}: {type(e).__name__}: {str(e)[:80]}")
             return None
 
-    async def _process_one_account(self, browser, semaphore: asyncio.Semaphore, account_id: str) -> None:
+    async def _process_one_account(
+        self, clients: Dict[Optional[str], httpx.AsyncClient],
+        semaphore: asyncio.Semaphore, account_id: str
+    ) -> None:
         async with semaphore:
-            # Moi account tu mo Session DB rieng - SQLAlchemy Session KHONG
-            # an toan de dung chung giua cac coroutine chay song song.
+            # Gian nhe dau moi lan check de rai deu request (du qua proxy mobile it
+            # bi WAF, van nen rai de dep).
+            await asyncio.sleep(random.uniform(0.1, 1.0))
             with Session(engine) as session:
                 repo = SQLiteAccountRepository(session)
                 account = repo.get_by_id(account_id)
@@ -142,46 +180,29 @@ class QuickHealthCheckService:
                     self.completed += 1
                     return
 
-                context = await browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    viewport={'width': 1280, 'height': 720}
-                )
-                page = await context.new_page()
+                # Lay/tai su dung httpx client theo proxy (tai su dung ket noi cho nhanh).
+                proxy_url = self._build_proxy_url(session, account.proxy_id)
+                client = clients.get(proxy_url)
+                if client is None:
+                    client = httpx.AsyncClient(
+                        proxy=proxy_url, headers=_HTTP_HEADERS, timeout=25.0,
+                        follow_redirects=True, trust_env=False,
+                    )
+                    clients[proxy_url] = client
 
                 try:
-                    # Lần kiểm tra đầu tiên
-                    ket_qua = await self._check_one_page(page, account.username)
+                    ket_qua = await self._fetch_and_classify(client, account.username)
 
-                    # CHIẾN LƯỢC KIỂM TRA LẠI (RETRY STRATEGY):
-                    # Nếu phát hiện nghi ngờ bị BAN (DIE), tiến hành kiểm tra lại 3 lần nữa để chắc chắn
-                    if ket_qua == "DIE":
-                        logger.info(f"[*] Phát hiện @{account.username} có tín hiệu DIE. Tiến hành kiểm tra lại 3 lần để xác nhận...")
-                        retries = 3
-                        confirmed_die = True
-
-                        for attempt in range(retries):
-                            try:
-                                # Giải phóng tài nguyên trang cũ và khởi tạo trang mới tránh bám cache
-                                await page.close()
-                                page = await context.new_page()
-
-                                # Nghỉ ngắn giữa các lần thử lại nhằm tránh dính cơ chế chặn tần suất (Rate Limit/WAF)
-                                await asyncio.sleep(2)
-
-                                retry_res = await self._check_one_page(page, account.username)
-                                logger.info(f"    -> Thử lại lần {attempt + 1}/{retries} cho @{account.username}: {retry_res}")
-
-                                if retry_res != "DIE":
-                                    # Nếu có bất kỳ kết quả nào khác DIE (ví dụ: ALIVE hoặc lỗi mạng tạm thời),
-                                    # hủy nhãn DIE để không đánh dấu sai tài khoản.
-                                    ket_qua = retry_res
-                                    confirmed_die = False
-                                    break
-                            except Exception as retry_err:
-                                logger.warning(f"[!] Gặp lỗi trong quá trình thử lại lần {attempt + 1}: {str(retry_err)}")
-
-                        if confirmed_die:
-                            ket_qua = "DIE"
+                    # RETRY khi KHONG RO (None: WAF/loi mang tam thoi) - thu lai toi
+                    # 2 lan, nghi ngan giua cac lan. Ket qua SONG/DIE tu HTML da rat
+                    # chac chan (statusCode) nen khong can retry them.
+                    if ket_qua is None:
+                        for _attempt in range(2):
+                            await asyncio.sleep(random.uniform(1.5, 3.0))
+                            retry = await self._fetch_and_classify(client, account.username)
+                            if retry is not None:
+                                ket_qua = retry
+                                break
 
                     if ket_qua == "SONG_DA_TUONG_TAC":
                         account.health_status = "ALIVE"
@@ -192,12 +213,11 @@ class QuickHealthCheckService:
                         account.current_step = "🔍 Check nhanh: SỐNG (nick trắng, chưa tương tác)"
                     elif ket_qua == "DIE":
                         account.health_status = "BANNED"
-                        account.current_step = "☠️ Check nhanh: DIE (đã xác thực lại 3 lần)"
+                        account.current_step = "☠️ Check nhanh: DIE (không tìm thấy tài khoản)"
                     else:
-                        account.current_step = "⏸️ Check nhanh: Lỗi mạng/Captcha (giữ nguyên trạng thái)"
+                        account.current_step = "⏸️ Check nhanh: Không rõ (WAF/lỗi mạng) - giữ nguyên"
 
                     repo.save(account)
-
                     await ws_manager.broadcast({
                         "event": "ACCOUNT_STATUS_CHANGED",
                         "data": {
@@ -205,11 +225,10 @@ class QuickHealthCheckService:
                             "status": account.status,
                             "health_status": account.health_status,
                             "profile_status": account.profile_status,
-                            "current_step": account.current_step
-                        }
+                            "current_step": account.current_step,
+                        },
                     })
                 finally:
-                    await context.close()
                     self.completed += 1
 
     async def _continuous_loop(self) -> None:
@@ -289,7 +308,10 @@ class QuickHealthCheckService:
         logger.info("[-] [Continuous Check] Đã tắt chế độ liên tục (sẽ dừng hẳn sau khi xong chu kỳ hiện tại, tối đa vài giây).")
         return True
 
-    async def run_batch(self, account_ids: List[str], concurrency_limit: int = 5) -> None:
+    async def run_batch(self, account_ids: List[str], concurrency_limit: int = 8) -> None:
+        """Check hang loat bang httpx (KHONG browser) - moi account fetch HTML profile
+        QUA PROXY cua chinh no roi phan loai. Nhe, nhanh, it bi WAF hon nhieu so voi
+        mo browser tu IP server."""
         if self.is_running:
             logger.warning("[!] Da co 1 dot Check nhanh dang chay, bo qua yeu cau moi.")
             return
@@ -297,25 +319,24 @@ class QuickHealthCheckService:
         self.is_running = True
         self.total = len(account_ids)
         self.completed = 0
+        clients: Dict[Optional[str], httpx.AsyncClient] = {}
 
         try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=['--disable-blink-features=AutomationControlled']
-                )
-                try:
-                    semaphore = asyncio.Semaphore(max(1, concurrency_limit))
-                    tasks = [
-                        self._process_one_account(browser, semaphore, acc_id)
-                        for acc_id in account_ids
-                    ]
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                finally:
-                    await browser.close()
+            semaphore = asyncio.Semaphore(max(1, concurrency_limit))
+            tasks = [
+                self._process_one_account(clients, semaphore, acc_id)
+                for acc_id in account_ids
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
             logger.error(f"[-] Lỗi tổng quát khi chạy Check nhanh hàng loạt: {str(e)}")
         finally:
+            # Dong tat ca httpx client (tai su dung theo proxy).
+            for cl in clients.values():
+                try:
+                    await cl.aclose()
+                except Exception:
+                    pass
             self.is_running = False
             await ws_manager.broadcast({
                 "event": "QUICK_CHECK_FINISHED",

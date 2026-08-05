@@ -21,7 +21,7 @@ interface ScheduleItem {
   created_at: string;
 }
 
-const API_BASE = 'http://127.0.0.1:8001/api/v1/interactions';
+const API_BASE = 'http://127.0.0.1:9000/api/v1/interactions';
 
 export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, selectedAccountIds }) => {
   const [mode, setMode] = useState<'foryou' | 'hashtag'>('foryou');

@@ -1,6 +1,6 @@
 // File: frontend/src/components/AccountsTable.tsx
 import React, { useMemo, useState } from 'react';
-import { CheckSquare, Square, Folder, Pause, Play, Search, ArrowUp, ArrowDown, ArrowUpDown, Copy, X } from 'lucide-react';
+import { CheckSquare, Square, Folder, Pause, Play, Search, ArrowUp, ArrowDown, ArrowUpDown, Copy, X, Bug, Square as StopSquare } from 'lucide-react';
 import { Account, Proxy } from '../types';
 import { getCountryFlagUrl } from '../utils/countries'; // <-- NẠP TẬP TRUNG TỪ UTILS CHUẨN XÁC
 
@@ -17,6 +17,12 @@ interface AccountsTableProps {
   // NÂNG CẤP: cho phép App.tsx set thẳng danh sách đã chọn (cần cho Shift+Click
   // chọn cả dải và click-đâu-cũng-chọn kiểu bảng SQL view)
   setSelectedAccountIds: (ids: string[]) => void;
+  // Sửa trường trực tiếp trên UI (username/country/batch_tag) -> cập nhật ngay.
+  onUpdateAccount: (accountId: string, fields: Partial<Account>) => void;
+  // CHẾ ĐỘ DEBUG: mở trình duyệt HIỆN, login rồi giữ mở để thao tác tay.
+  onDebugLogin: (accountId: string) => void;
+  onStopDebug: (accountId: string) => void;
+  debugActiveIds: string[];
 }
 
 type SortKey = 'username' | 'country' | 'batch_tag' | 'status' | 'health_status' | 'profile_status' | 'created_at';
@@ -41,12 +47,65 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
   onPauseAccount,
   onResumeAccount,
   setSelectedAccountIds,
+  onUpdateAccount,
+  onDebugLogin,
+  onStopDebug,
+  debugActiveIds,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [batchSize, setBatchSize] = useState<number>(10);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
+
+  // =========================================================================
+  // SỬA TRƯỜNG TRỰC TIẾP (inline edit): double-click 1 ô -> hiện input ->
+  // Enter/blur lưu ngay (gọi onUpdateAccount), Esc hủy.
+  // =========================================================================
+  const [editing, setEditing] = useState<{ id: string; field: 'username' | 'country' | 'batch_tag' } | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
+
+  const startEdit = (e: React.MouseEvent, id: string, field: 'username' | 'country' | 'batch_tag', current: string) => {
+    e.stopPropagation();
+    setEditing({ id, field });
+    setEditValue(current || '');
+  };
+  const commitEdit = () => {
+    if (!editing) return;
+    const val = editValue.trim();
+    const acc = accounts.find((a) => a.id === editing.id);
+    if (acc && val && val !== String(acc[editing.field] ?? '')) {
+      onUpdateAccount(editing.id, { [editing.field]: val } as Partial<Account>);
+    }
+    setEditing(null);
+  };
+  const renderEditable = (acc: Account, field: 'username' | 'country' | 'batch_tag', node: React.ReactNode) => {
+    if (editing && editing.id === acc.id && editing.field === field) {
+      return (
+        <input
+          autoFocus
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={commitEdit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitEdit();
+            else if (e.key === 'Escape') setEditing(null);
+          }}
+          className="bg-[#0e1424] border border-teal-500 rounded px-1.5 py-0.5 text-xs text-teal-300 focus:outline-none w-full max-w-[180px]"
+        />
+      );
+    }
+    return (
+      <span
+        onDoubleClick={(e) => startEdit(e, acc.id, field, String(acc[field] ?? ''))}
+        title="Nhấp đúp để sửa"
+        className="cursor-text hover:bg-slate-700/40 rounded px-0.5"
+      >
+        {node}
+      </span>
+    );
+  };
 
   // =========================================================================
   // TÌM NHANH (giống thanh search của 1 bảng SQL view) - lọc theo username/ID
@@ -254,7 +313,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
 
                     <td className="p-4 font-medium text-slate-200">
                       <div className="flex items-center gap-1.5 group">
-                        <span>{acc.username}</span>
+                        {renderEditable(acc, 'username', acc.username)}
                         <button
                           onClick={(e) => handleCopyUsername(e, acc.username)}
                           className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-teal-400 transition-opacity"
@@ -275,10 +334,12 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                           className="w-4.5 h-3.5 object-cover rounded-sm border border-slate-800 shadow-sm shrink-0"
                           onError={(e) => { e.currentTarget.style.display = 'none'; }}
                         />
-                        <span className="text-[11px] uppercase tracking-wider">{acc.country}</span>
+                        <span className="text-[11px] uppercase tracking-wider">
+                          {renderEditable(acc, 'country', acc.country)}
+                        </span>
                       </div>
                       <div className="text-[10px] text-slate-400 font-medium mt-1 flex items-center gap-1">
-                        <Folder className="w-3 h-3 text-slate-500" /> {acc.batch_tag}
+                        <Folder className="w-3 h-3 text-slate-500" /> {renderEditable(acc, 'batch_tag', acc.batch_tag)}
                       </div>
                       <div className="text-[9px] text-slate-500 font-mono mt-0.5">
                         📅 {acc.created_at || "N/A"}
@@ -315,14 +376,20 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </span>
                     </td>
 
-                    <td className="p-4 text-center">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
-                        acc.profile_status === 'COMPLETED'
-                          ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
-                          : 'bg-slate-700/20 text-slate-400 border-slate-700/40'
-                      }`}>
+                    <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => onUpdateAccount(acc.id, {
+                          profile_status: acc.profile_status === 'COMPLETED' ? 'PENDING' : 'COMPLETED',
+                        })}
+                        title="Nhấp để đổi trạng thái (ĐÃ ĐỔI ⇄ CHƯA ĐỔI)"
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border cursor-pointer transition-all hover:brightness-125 ${
+                          acc.profile_status === 'COMPLETED'
+                            ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
+                            : 'bg-slate-700/20 text-slate-400 border-slate-700/40'
+                        }`}
+                      >
                         {acc.profile_status === 'COMPLETED' ? '✓ ĐÃ ĐỔI PROFILE' : '⚡ CHƯA ĐỔI'}
-                      </span>
+                      </button>
                     </td>
 
                     <td className="p-4" onClick={(e) => e.stopPropagation()}>
@@ -350,29 +417,48 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       )}
                     </td>
 
-                    {/* NÚT TẠM DỪNG / TIẾP TỤC RIÊNG TỪNG ACCOUNT */}
+                    {/* NÚT TẠM DỪNG / TIẾP TỤC RIÊNG + DEBUG (mở trình duyệt HIỆN) */}
                     <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
-                      {(acc.status === 'RUNNING' || acc.is_paused) ? (
-                        acc.is_paused ? (
+                      <div className="flex flex-col items-center gap-1.5">
+                        {(acc.status === 'RUNNING' || acc.is_paused) ? (
+                          acc.is_paused ? (
+                            <button
+                              onClick={() => onResumeAccount(acc.id)}
+                              className="inline-flex items-center gap-1 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all animate-pulse"
+                              title="Tiếp tục lại tài khoản này"
+                            >
+                              <Play className="w-3 h-3" /> Tiếp tục
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => onPauseAccount(acc.id)}
+                              className="inline-flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all"
+                              title="Tạm dừng tài khoản này tại checkpoint gần nhất để can thiệp thủ công"
+                            >
+                              <Pause className="w-3 h-3" /> Tạm dừng
+                            </button>
+                          )
+                        ) : null}
+
+                        {/* DEBUG: mở trình duyệt HIỆN lên, login rồi giữ để thao tác tay. */}
+                        {debugActiveIds.includes(acc.id) ? (
                           <button
-                            onClick={() => onResumeAccount(acc.id)}
-                            className="inline-flex items-center gap-1 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all animate-pulse"
-                            title="Tiếp tục lại tài khoản này"
+                            onClick={() => onStopDebug(acc.id)}
+                            className="inline-flex items-center gap-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all animate-pulse"
+                            title="Đóng cửa sổ debug đang mở"
                           >
-                            <Play className="w-3 h-3" /> Tiếp tục
+                            <StopSquare className="w-3 h-3" /> Dừng debug
                           </button>
                         ) : (
                           <button
-                            onClick={() => onPauseAccount(acc.id)}
-                            className="inline-flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all"
-                            title="Tạm dừng tài khoản này tại checkpoint gần nhất để can thiệp thủ công"
+                            onClick={() => onDebugLogin(acc.id)}
+                            className="inline-flex items-center gap-1 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 border border-fuchsia-500/30 text-fuchsia-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all"
+                            title="Mở trình duyệt HIỆN, tự login rồi dừng lại để bạn thao tác tay tới khi đóng"
                           >
-                            <Pause className="w-3 h-3" /> Tạm dừng
+                            <Bug className="w-3 h-3" /> Debug
                           </button>
-                        )
-                      ) : (
-                        <span className="text-slate-600 text-[10px]">—</span>
-                      )}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

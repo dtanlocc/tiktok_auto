@@ -1,4 +1,24 @@
-uv run uvicorn --app-dir backend app.main:app --reload --port 8000
+uv run uvicorn --app-dir backend app.main:app --port 9000
+
+
+# =============================================================================
+# QUAN TRONG (WINDOWS): TUYET DOI KHONG DUNG --reload
+# =============================================================================
+# uvicorn --reload (hoac --workers>1) bat use_subprocess=True. Tren Windows,
+# uvicorn khi do EP dung asyncio.SelectorEventLoop (xem uvicorn/loops/asyncio.py:
+#   if win32 and not use_subprocess -> ProactorEventLoop; else SelectorEventLoop).
+# SelectorEventLoop KHONG ho tro spawn subprocess -> Playwright khong mo duoc
+# tien trinh Firefox -> asyncio.create_subprocess_exec nem NotImplementedError
+# -> tac vu chuyen RUNNING roi ERROR "Lỗi kẹt" NGAY (message rong nen khong ro).
+#
+# Bo --reload => uvicorn dung ProactorEventLoop => Playwright mo browser binh thuong.
+# (Dong set_event_loop_policy trong main.py KHONG cuu duoc vi uvicorn tu tao
+#  SelectorEventLoop truc tiep, bo qua policy.)
+#
+# - Frontend (Vite: npm run dev) VAN tu hot-reload rieng, KHONG bi anh huong.
+# - Neu sua code backend Python: Ctrl+C roi chay lai lenh tren (restart tay).
+# - Voi app dieu khien browser, --reload con co hai (restart giet browser
+#   dang chay giua chung), nen bo han la dung.
 
 
 cd frontend

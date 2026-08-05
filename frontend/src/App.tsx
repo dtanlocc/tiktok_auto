@@ -15,6 +15,8 @@ import { TerminalConsole } from './components/TerminalConsole';
 import { ContextMenu } from './components/ContextMenu';
 import { FolderTree } from './components/FolderTree';
 import { ImportModal } from './components/ImportModal'; // <-- IMPORT MODAL NỔI MỚI THÊM
+import { ExportModal } from './components/ExportModal';
+import { LiveScreens } from './components/LiveScreens';
 import { Folder, Globe, Server, Layers } from 'lucide-react';
 
 interface LogMessage {
@@ -24,8 +26,8 @@ interface LogMessage {
 }
 
 export default function App() {
-  const { accounts, proxies, setAccounts, setProxies } = useAppStore();
-  const [activeTab, setActiveTab] = useState<'accounts' | 'proxies' | 'interactions'>('accounts');
+  const { accounts, proxies, setAccounts, setProxies, updateAccountFields } = useAppStore();
+  const [activeTab, setActiveTab] = useState<'accounts' | 'proxies' | 'interactions' | 'screens'>('accounts');
   
   // Bộ điều khiển trung tâm (Control Panel)
   const [concurrency, setConcurrency] = useState<number>(4);
@@ -40,6 +42,8 @@ export default function App() {
   
   // Danh sách ID tài khoản được chọn (Checkbox Selection)
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  // Danh sách account đang có phiên DEBUG mở (để đổi nút Debug <-> Dừng debug).
+  const [debugActiveIds, setDebugActiveIds] = useState<string[]>([]);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   
   // Bộ lọc dữ liệu đa chiều
@@ -52,6 +56,7 @@ export default function App() {
   const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
   const [expandedCountries, setExpandedCountries] = useState<string[]>([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false); // <-- TRẠNG THÁI POPUP IMPORT
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false); // <-- POPUP XUẤT ACC
 
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -63,6 +68,11 @@ export default function App() {
 
     const handleWsEvents = (event: MessageEvent) => {
       try {
+        // Bo qua som cac frame anh man hinh (tan suat cao, kich thuoc lon) - da
+        // duoc component LiveScreens xu ly bang WebSocket rieng. Tranh parse JSON
+        // nang o day gay giat bang tai khoan.
+        if (typeof event.data === 'string' && event.data.indexOf('BROWSER_FRAME') !== -1) return;
+
         const message = JSON.parse(event.data);
         if (message.event === 'TASK_STEP_UPDATED') {
           const { id, current_step } = message.data;
@@ -92,6 +102,12 @@ export default function App() {
           useAppStore.setState((state) => ({
             accounts: state.accounts.map(acc => acc.id === id ? { ...acc, is_paused } : acc)
           }));
+        } else if (message.event === 'ACCOUNT_UPDATED') {
+          // Sửa trường trực tiếp (username/country/batch_tag...) hoặc xóa cookies
+          const { id, ...fields } = message.data;
+          useAppStore.setState((state) => ({
+            accounts: state.accounts.map(acc => acc.id === id ? { ...acc, ...fields } : acc)
+          }));
         } else if (message.event === 'QUICK_CHECK_FINISHED') {
           const { completed, total } = message.data;
           setLogs((prev) => [...prev, {
@@ -105,7 +121,7 @@ export default function App() {
       }
     };
 
-    const activeWs = new WebSocket('ws://127.0.0.1:8001/ws');
+    const activeWs = new WebSocket('ws://127.0.0.1:9000/ws');
     activeWs.onmessage = handleWsEvents;
 
     // Tải dữ liệu ban đầu
@@ -126,19 +142,27 @@ export default function App() {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
+  // Đồng bộ định kỳ danh sách phiên debug đang mở (bắt trường hợp user tự ĐÓNG
+  // cửa sổ debug -> nút tự trở lại "Debug").
+  useEffect(() => {
+    refreshDebugSessions();
+    const t = setInterval(refreshDebugSessions, 4000);
+    return () => clearInterval(t);
+  }, []);
+
   // Hàm tải dữ liệu từ API Backend
   const loadData = () => {
-    fetch('http://127.0.0.1:8001/api/v1/accounts/')
+    fetch('http://127.0.0.1:9000/api/v1/accounts/')
       .then((res) => res.json())
       .then((data) => setAccounts(data))
       .catch((err) => console.error('Lỗi tải danh sách tài khoản:', err));
 
-    fetch('http://127.0.0.1:8001/api/v1/proxies/')
+    fetch('http://127.0.0.1:9000/api/v1/proxies/')
       .then((res) => res.json())
       .then((data) => setProxies(data))
       .catch((err) => console.error('Lỗi tải danh sách proxy:', err));
 
-    fetch('http://127.0.0.1:8001/api/v1/tasks/status')
+    fetch('http://127.0.0.1:9000/api/v1/tasks/status')
       .then((res) => res.json())
       .then((data) => setIsGloballyPaused(!!data.is_globally_paused))
       .catch((err) => console.error('Lỗi tải trạng thái dispatcher:', err));
@@ -171,7 +195,7 @@ export default function App() {
 
     try {
       setLoading(true);
-      const response = await fetch('http://127.0.0.1:8001/api/v1/accounts/bulk-delete', {
+      const response = await fetch('http://127.0.0.1:9000/api/v1/accounts/bulk-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ account_ids: selectedAccountIds }),
@@ -263,9 +287,9 @@ export default function App() {
     if (type === 'accounts') {
       const targetCountry = country || 'US';
       const targetBatch = batchTag ? encodeURIComponent(batchTag) : '';
-      url = `http://127.0.0.1:8001/api/v1/accounts/import-file?country=${targetCountry}&batch_tag=${targetBatch}`;
+      url = `http://127.0.0.1:9000/api/v1/accounts/import-file?country=${targetCountry}&batch_tag=${targetBatch}`;
     } else {
-      url = 'http://127.0.0.1:8001/api/v1/proxies/import-file';
+      url = 'http://127.0.0.1:9000/api/v1/proxies/import-file';
     }
 
     try {
@@ -310,7 +334,7 @@ export default function App() {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:8001/api/v1/tasks/bulk-login', {
+      const response = await fetch('http://127.0.0.1:9000/api/v1/tasks/bulk-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -340,7 +364,7 @@ export default function App() {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:8001/api/v1/tasks/bulk-update-profile', {
+      const response = await fetch('http://127.0.0.1:9000/api/v1/tasks/bulk-update-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -368,7 +392,7 @@ export default function App() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8001/api/v1/accounts/auto-allocate-proxies', {
+      const response = await fetch('http://127.0.0.1:9000/api/v1/accounts/auto-allocate-proxies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ account_ids: selectedAccountIds }),
@@ -387,11 +411,102 @@ export default function App() {
     }
   };
 
+  // SỬA TRƯỜNG TRỰC TIẾP TRÊN UI (inline edit) - cập nhật store NGAY (không reload)
+  // rồi gọi API PATCH lưu xuống DB. Nếu API lỗi -> khôi phục giá trị cũ.
+  const handleUpdateAccount = async (accountId: string, fields: Partial<Account>) => {
+    const before = accounts.find((a) => a.id === accountId);
+    updateAccountFields(accountId, fields); // optimistic - đổi ngay trên UI
+    try {
+      const res = await fetch(`http://127.0.0.1:9000/api/v1/accounts/${accountId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || 'Lỗi cập nhật.');
+        if (before) updateAccountFields(accountId, before); // rollback UI
+      }
+    } catch (err) {
+      alert('Không kết nối được backend.');
+      if (before) updateAccountFields(accountId, before);
+    }
+  };
+
+  // XÓA COOKIES các account đang chọn (giữ account, chỉ xóa cookies)
+  const handleClearCookies = async () => {
+    if (selectedAccountIds.length === 0) {
+      alert('Vui lòng chọn ít nhất một tài khoản.');
+      return;
+    }
+    if (!window.confirm(`Xóa cookies của ${selectedAccountIds.length} tài khoản đã chọn? (Account vẫn giữ, chỉ xóa cookies)`)) return;
+    try {
+      const res = await fetch('http://127.0.0.1:9000/api/v1/accounts/clear-cookies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_ids: selectedAccountIds }),
+      });
+      const data = await res.json();
+      if (res.ok) alert(data.message);
+      else alert(data.detail || 'Lỗi xóa cookies.');
+    } catch (err) {
+      alert('Không kết nối được backend.');
+    }
+  };
+
+  // =========================================================================
+  // CHẾ ĐỘ DEBUG: mở trình duyệt HIỆN, tự login rồi GIỮ mở để thao tác tay.
+  // Tách riêng hoàn toàn với luồng mở trình duyệt ẩn (dispatcher).
+  // =========================================================================
+  const refreshDebugSessions = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:9000/api/v1/tasks/debug-login/active');
+      const data = await res.json();
+      setDebugActiveIds(Array.isArray(data.active_ids) ? data.active_ids : []);
+    } catch {
+      // im lặng - backend có thể chưa chạy
+    }
+  };
+
+  const handleDebugLogin = async (accountId: string) => {
+    // Cập nhật lạc quan để nút đổi ngay sang "Dừng debug".
+    setDebugActiveIds((prev) => (prev.includes(accountId) ? prev : [...prev, accountId]));
+    try {
+      const res = await fetch('http://127.0.0.1:9000/api/v1/tasks/debug-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.detail || 'Không mở được phiên debug.');
+        setDebugActiveIds((prev) => prev.filter((id) => id !== accountId));
+      }
+    } catch {
+      alert('Không kết nối được backend.');
+      setDebugActiveIds((prev) => prev.filter((id) => id !== accountId));
+    }
+  };
+
+  const handleStopDebug = async (accountId: string) => {
+    try {
+      await fetch('http://127.0.0.1:9000/api/v1/tasks/debug-login/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId }),
+      });
+    } catch {
+      // bỏ qua
+    } finally {
+      setDebugActiveIds((prev) => prev.filter((id) => id !== accountId));
+    }
+  };
+
   // Gán Proxy thủ công qua Dropdown
   const handleBindProxy = async (accountId: string, proxyId: string) => {
     try {
       const targetProxyId = proxyId === 'none' ? null : proxyId;
-      await fetch(`http://127.0.0.1:8001/api/v1/accounts/${accountId}/proxy`, {
+      await fetch(`http://127.0.0.1:9000/api/v1/accounts/${accountId}/proxy`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ proxy_id: targetProxyId }),
@@ -407,7 +522,7 @@ export default function App() {
   // =========================================================================
   const callTaskControlApi = async (endpoint: string) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8001/api/v1/tasks/${endpoint}`, { method: 'POST' });
+      const res = await fetch(`http://127.0.0.1:9000/api/v1/tasks/${endpoint}`, { method: 'POST' });
       if (!res.ok) {
         const err = await res.json();
         alert(err.detail || `Lỗi khi gọi ${endpoint}.`);
@@ -434,7 +549,7 @@ export default function App() {
       return;
     }
     try {
-      const response = await fetch('http://127.0.0.1:8001/api/v1/tasks/quick-health-check', {
+      const response = await fetch('http://127.0.0.1:9000/api/v1/tasks/quick-health-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -604,6 +719,20 @@ export default function App() {
                     >
                       🎯 Chọn Banned
                     </button>
+                    <button
+                      onClick={() => setIsExportModalOpen(true)}
+                      className="bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
+                    >
+                      📤 Xuất acc
+                    </button>
+                    {selectedAccountIds.length > 0 && (
+                      <button
+                        onClick={handleClearCookies}
+                        className="bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
+                      >
+                        🍪 Xóa cookies ({selectedAccountIds.length})
+                      </button>
+                    )}
                     {selectedAccountIds.length > 0 && (
                       <button
                         onClick={handleBulkDelete}
@@ -628,10 +757,16 @@ export default function App() {
                 handleRowContextMenu={handleRowContextMenu}
                 onPauseAccount={handlePauseAccount}
                 onResumeAccount={handleResumeAccount}
+                onUpdateAccount={handleUpdateAccount}
+                onDebugLogin={handleDebugLogin}
+                onStopDebug={handleStopDebug}
+                debugActiveIds={debugActiveIds}
               />
             </div>
           ) : activeTab === 'interactions' ? (
             <InteractionPanel accounts={accounts} selectedAccountIds={selectedAccountIds} />
+          ) : activeTab === 'screens' ? (
+            <LiveScreens />
           ) : (
             <ProxiesTable proxies={proxies} />
           )}
@@ -659,11 +794,20 @@ export default function App() {
       {/* ===================================================================
           9. MODAL NỔI NẠP TÀI KHOẢN (POPUP DIALOG CHUẨN SAAS)
           =================================================================== */}
-      <ImportModal 
+      <ImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         loading={loading}
         onFileUpload={handleFileUpload}
+      />
+
+      {/* MODAL XUẤT ACC RA FILE TXT */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        selectedAccountIds={selectedAccountIds}
+        displayedAccountIds={filteredAccounts.map((a) => a.id)}
+        onExported={loadData}
       />
 
     </div>

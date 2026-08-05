@@ -1,15 +1,29 @@
+import re
+import json
 import httpx
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 from app.domain.ports.email import IEmailService
 
 logger = logging.getLogger("DongVanEmailService")
 
 # Dinh dang thoi gian tra ve trong field "date" cua API dongvanfb, vi du:
-# "22:43 - 15/04/2022"
+# "22:43 - 15/04/2022". LUU Y: chi co gio:phut, KHONG co giay -> do chinh xac
+# doi chieu thoi gian chi toi don vi PHUT (sai so +-60s la ban chat cua API).
 _DONGVAN_DATE_FORMAT = "%H:%M - %d/%m/%Y"
+
+# Regex bat 1 cum DUNG 6 chu so doc lap (khong dinh so khac 2 ben) - dung de
+# tu boc ma OTP 6 so tu noi dung mail/response, thay vi tin tuong field "code"
+# ma API tu parse (co the sai).
+_OTP_6_DIGITS = re.compile(r"(?<!\d)(\d{6})(?!\d)")
+
+# Cac key trong response CO KHA NANG chua noi dung mail/tieu de -> uu tien quet
+# ma OTP o day truoc, vi day la noi ma that su xuat hien.
+_TEXT_CANDIDATE_KEYS = (
+    "message", "content", "body", "text", "subject", "title", "mail", "html", "snippet",
+)
 
 
 class DongVanEmailService(IEmailService):
@@ -22,15 +36,56 @@ class DongVanEmailService(IEmailService):
         )
 
     @staticmethod
+    def _extract_otp_digits(data: Any) -> Optional[str]:
+        """
+        Tu boc ma OTP 6 SO tu response cua dongvanfb thay vi tin tuong thang field
+        "code" (API tu parse co the sai). Chien luoc uu tien:
+          1. Quet cac field CO KHA NANG chua noi dung mail (message/content/body/...)
+             tim cum dung 6 chu so.
+          2. Neu khong co, thu ngay field "code" (boc lay 6 so trong do).
+          3. Cuoi cung fallback: quet toan bo JSON response tim cum 6 so.
+        Tra ve chuoi 6 chu so hoac None.
+        """
+        if isinstance(data, dict):
+            # 1. Uu tien cac field noi dung
+            for key in _TEXT_CANDIDATE_KEYS:
+                val = data.get(key)
+                if isinstance(val, str):
+                    m = _OTP_6_DIGITS.search(val)
+                    if m:
+                        return m.group(1)
+            # 2. Field "code" do API tu parse (chi lay dung 6 so ben trong)
+            code_val = data.get("code")
+            if code_val is not None:
+                m = _OTP_6_DIGITS.search(str(code_val))
+                if m:
+                    return m.group(1)
+
+        # 3. Fallback: quet toan bo response da serialize
+        try:
+            blob = json.dumps(data, ensure_ascii=False)
+        except Exception:
+            blob = str(data)
+        m = _OTP_6_DIGITS.search(blob)
+        return m.group(1) if m else None
+
+    @staticmethod
     def _is_otp_fresh(
         date_str: Optional[str],
         request_started_at: datetime,
         freshness_window_seconds: int,
         clock_skew_tolerance_seconds: int,
+        backward_tolerance_seconds: int,
     ) -> Tuple[bool, str]:
         """
         Kiem tra OTP tra ve co thuc su la ma MOI hay khong, dua vao field "date"
         cua response (thoi diem email duoc ghi nhan boi he thong dongvanfb).
+
+        LUON LUI MOC bat dau xin ma ve DAU PHUT truoc khi so sanh: vi field "date"
+        cua dongvanfb chi co gio:phut (khong co giay), 1 email gui luc 6h40'05" se
+        hien la "06:40" - neu minh bam xin ma luc 6h40'15" ma so sanh theo giay se
+        loai nham email do. Vi vay ta floor moc ve 6h40'00" roi tru them
+        backward_tolerance_seconds de bat duoc ca email den som hon vai chuc giay.
 
         Tra ve (is_fresh: bool, reason: str) de log ro nguyen nhan chap nhan/tu choi.
         """
@@ -45,13 +100,16 @@ class DongVanEmailService(IEmailService):
             return True, f"khong_parse_duoc_dinh_dang_date: '{date_str}'"
 
         now = datetime.now()
-        lower_bound = request_started_at - timedelta(seconds=clock_skew_tolerance_seconds)
+        # LUI MOC ve dau phut (bo giay/micro giay) roi tru them cua so lui cho phep.
+        floored = request_started_at.replace(second=0, microsecond=0)
+        lower_bound = floored - timedelta(seconds=backward_tolerance_seconds)
         upper_bound = now + timedelta(seconds=clock_skew_tolerance_seconds)
 
-        # 1. Email co truoc khi minh BAT DAU xin ma -> chac chan la ma CU con sot lai.
+        # 1. Email co truoc CA cua so lui cho phep -> chac chan la ma CU con sot lai.
         if email_dt < lower_bound:
             return False, (
-                f"ma_CU: thoi_gian_email={email_dt} som_hon_thoi_diem_bat_dau_xin_ma={lower_bound}"
+                f"ma_CU: thoi_gian_email={email_dt} som_hon_gioi_han_lui={lower_bound} "
+                f"(moc_goc={request_started_at}, floor={floored}, lui={backward_tolerance_seconds}s)"
             )
 
         # 2. Email co thoi gian trong tuong lai xa hon muc dung sai lech gio cho phep
@@ -78,8 +136,9 @@ class DongVanEmailService(IEmailService):
         refresh_token: str,
         client_id: str,
         otp_requested_at: Optional[datetime] = None,
-        freshness_window_seconds: int = 180,
+        freshness_window_seconds: int = 240,     # cho phep ma tuoi toi ~4 phut so voi hien tai
         clock_skew_tolerance_seconds: int = 30,
+        backward_tolerance_seconds: int = 120,   # chap nhan OTP cu toi 2 PHUT truoc thoi diem xin ma
     ) -> Optional[str]:
         """
         Goi API dongvanfb su dung co che OAuth2 Microsoft Graph API.
@@ -125,15 +184,25 @@ class DongVanEmailService(IEmailService):
 
                 if response.status_code == 200:
                     data = response.json()
-                    if data.get("status") is True and data.get("code"):
-                        otp_code = str(data["code"]).strip()
+                    # TU BOC 6 SO tu response (khong tin thang field "code" vi co the sai).
+                    otp_code = self._extract_otp_digits(data)
+                    if data.get("status") is True and otp_code:
                         email_date_str = data.get("date")
+                        # Log ro ca ma API tu parse (neu co) de doi chieu khi no lech
+                        # voi 6 so minh tu boc duoc - giup phat hien API parse sai.
+                        api_code = str(data.get("code")).strip() if data.get("code") is not None else None
+                        if api_code and api_code != otp_code:
+                            logger.warning(
+                                f"[!] Ma API tu parse ('{api_code}') LECH voi 6 so minh tu boc "
+                                f"('{otp_code}') -> uu tien dung 6 so tu boc."
+                            )
 
                         is_fresh, reason = self._is_otp_fresh(
                             email_date_str,
                             request_started_at,
                             freshness_window_seconds,
                             clock_skew_tolerance_seconds,
+                            backward_tolerance_seconds,
                         )
 
                         if is_fresh:
@@ -163,8 +232,9 @@ class DongVanEmailService(IEmailService):
                 logger.error(f"[-] Loi ket noi API dongvanfb khong xac dinh: {type(e).__name__} - {str(e)}")
 
             await asyncio.sleep(delay_seconds)
-            
-        return otp_code
 
-        # logger.warning(f"[-] Qua thoi gian cho (Timeout) lay OTP MOI cho {email}.")
-        # return None
+        # Het toan bo so lan thu ma van khong boc duoc ma MOI hop le -> tra None.
+        # (Truoc day dong nay la `return otp_code` -> gay UnboundLocalError khi
+        # chua lan nao gan otp_code, hoac tra nham ma CU da bi loai.)
+        logger.warning(f"[-] Qua so lan thu ({max_attempts}) nhung khong lay duoc OTP MOI hop le cho {email}.")
+        return otp_code

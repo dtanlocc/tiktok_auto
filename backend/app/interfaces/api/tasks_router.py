@@ -6,6 +6,7 @@ from app.use_cases.orchestration.task_dispatcher import ConcurrentTaskDispatcher
 from app.interfaces.api.deps import get_task_dispatcher, get_account_repository
 from app.domain.ports.repository import IAccountRepository
 from app.use_cases.health_check.quick_check_use_case import quick_health_check_service
+from app.use_cases.debug.debug_login_service import debug_login_service
 
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
@@ -239,4 +240,44 @@ async def stop_continuous_quick_check():
 @router.get("/quick-health-check/continuous-status")
 async def get_continuous_quick_check_status():
     return quick_health_check_service.get_continuous_status()
+
+
+# =============================================================================
+# CHE DO DEBUG (thao tac tay): mo trinh duyet HIEN, dang nhap roi GIU cua so mo
+# de user tu tay thao tac toi khi tu dong. TACH RIENG hoan toan voi luong mo
+# trinh duyet AN (dispatcher) - moi account toi da 1 phien debug.
+# =============================================================================
+class DebugLoginRequest(BaseModel):
+    account_id: str
+
+
+@router.post("/debug-login")
+async def start_debug_login(payload: DebugLoginRequest):
+    """Mo 1 phien DEBUG: trinh duyet HIEN len man hinh, tu dang nhap (uu tien
+    cookie, fallback OTP) roi DUNG lai giu cua so mo de ban thao tac tay. Phien
+    ket thuc khi ban DONG cua so hoac goi /debug-login/stop."""
+    if debug_login_service.is_running(payload.account_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Tài khoản này đã có 1 phiên debug đang mở. Hãy đóng cửa sổ đó trước."
+        )
+    started = debug_login_service.start(payload.account_id)
+    if not started:
+        raise HTTPException(status_code=409, detail="Không thể khởi tạo phiên debug (đã đang chạy).")
+    return {"status": "SUCCESS", "message": "Đã mở phiên debug — trình duyệt sẽ hiện lên để bạn thao tác tay."}
+
+
+@router.post("/debug-login/stop")
+async def stop_debug_login(payload: DebugLoginRequest):
+    """Dong cua so debug tu xa (thay vi bam X tren cua so vat ly)."""
+    stopped = await debug_login_service.stop(payload.account_id)
+    if not stopped:
+        raise HTTPException(status_code=404, detail="Không có phiên debug nào đang mở cho tài khoản này.")
+    return {"status": "SUCCESS", "message": "Đã yêu cầu đóng phiên debug."}
+
+
+@router.get("/debug-login/active")
+async def get_active_debug_sessions():
+    """Danh sach account_id dang co phien debug mo (de UI hien nut Dung/Mo dung)."""
+    return {"active_ids": debug_login_service.active_ids()}
 

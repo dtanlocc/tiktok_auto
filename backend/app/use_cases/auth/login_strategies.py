@@ -117,15 +117,18 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             await tab_btn.first.click()
             await asyncio.sleep(3)
 
-            # Buoc 5: Dien Email/Username tu tu tung phim mot (delay 120ms)
+            # Buoc 5: Dien EMAIL tu tu tung phim mot (delay 120ms).
+            # Dung account.email de dang nhap (thay vi username) - on dinh hon.
+            # Fallback ve username neu account thieu email.
+            login_identifier = account.email or account.username
             if step_logger:
-                await step_logger(f"Dang tu dong go Email: {account.username}...")
+                await step_logger(f"Dang tu dong go Email dang nhap: {login_identifier}...")
             email_input = page.locator('input[placeholder*="Email"], input[name="username"], .eapcad11')
             await email_input.first.wait_for(state="visible", timeout=10000)
             await email_input.first.click()
             await asyncio.sleep(1.2)
 
-            await email_input.first.press_sequentially(account.username, delay=random.randint(100, 200))
+            await email_input.first.press_sequentially(login_identifier, delay=random.randint(100, 200))
             await asyncio.sleep(1.5)
 
             # Buoc 6: Dien Password tu tu tung phim mot (delay 140ms)
@@ -286,3 +289,51 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 await step_logger(f"Loi luong dang nhap Form: {str(e)}")
             logger.error(f"[-] Loi dang nhap Form: {str(e)}")
             return False
+
+
+class CookieThenCredentialLoginStrategy(ITikTokLoginStrategy):
+    """
+    CHIEN LUOC TONG HOP (uu tien toc do + tiet kiem OTP):
+      1. Neu account CO cookies -> THU dang nhap bang Cookie truoc (nhanh, mien phi).
+      2. Neu Cookie THANH CONG -> dung luon, KHONG can OTP.
+      3. Neu Cookie that bai (het han/khong co) -> FALLBACK sang Credential + OTP.
+      4. Neu Cookie phat hien tai khoan BANNED -> NEM luon (khong fallback vo ich).
+    Dung cho luong doi Profile/Avatar de tranh login OTP khong can thiet.
+    """
+    async def login(
+        self,
+        browser: IBrowserService,
+        account: TikTokAccount,
+        step_logger: Optional[Any] = None,
+        email_service: Optional[IEmailService] = None,
+        custom_avatar_path: Optional[str] = None
+    ) -> bool:
+        # 1. Uu tien Cookie neu co
+        if account.cookies:
+            if step_logger:
+                await step_logger("Thu dang nhap bang COOKIES truoc (tiet kiem OTP)...")
+            try:
+                ok = await CookieLoginStrategy().login(
+                    browser, account, step_logger=step_logger, email_service=email_service
+                )
+                if ok:
+                    if step_logger:
+                        await step_logger("[+] Dang nhap COOKIES thanh cong -> bo qua OTP.")
+                    return True
+                if step_logger:
+                    await step_logger("[!] Cookies het han/khong dung -> chuyen sang login OTP.")
+            except AccountBannedException as e_ban:
+                # Banned -> khong fallback (login OTP cung se banned).
+                raise e_ban
+            except Exception as e:
+                logger.warning(f"[!] Loi khi thu Cookie login: {str(e)} -> fallback OTP.")
+                if step_logger:
+                    await step_logger(f"[!] Loi login Cookie: {str(e)} -> chuyen sang OTP.")
+        else:
+            if step_logger:
+                await step_logger("Tai khoan chua co Cookies -> dung login OTP.")
+
+        # 2. Fallback: Credential + OTP
+        return await CredentialEmailOtpLoginStrategy().login(
+            browser, account, step_logger=step_logger, email_service=email_service
+        )

@@ -1,4 +1,4 @@
-from typing import Protocol, List, Dict, Any, Optional
+from typing import Protocol, List, Dict, Any, Optional, Tuple
 
 class IBrowserService(Protocol):
     """Port định nghĩa các hành vi bắt buộc của một trình duyệt tự động hóa"""
@@ -24,12 +24,15 @@ class IBrowserService(Protocol):
 
     # Bổ sung vào cuối class IBrowserService:
     async def update_profile(
-        self, 
-        avatar_path: Optional[str] = None, 
+        self,
+        avatar_path: Optional[str] = None,
         bio: Optional[str] = None,
-        step_logger: Optional[Any] = None
-    ) -> bool:
-        """Tự động đi tới trang cá nhân, tải ảnh đại diện và sửa đổi phần tiểu sử (Bio)"""
+        step_logger: Optional[Any] = None,
+        db_username: Optional[str] = None,
+    ) -> Tuple[bool, Optional[str]]:
+        """Tự động đi tới trang cá nhân, đổi Avatar/Bio/Username.
+        Trả về (success, username_for_db): username_for_db != None nghĩa là cần
+        cập nhật username trong DB thành giá trị đó (Rule B)."""
         ...
 
     async def check_login_status(self) -> bool:

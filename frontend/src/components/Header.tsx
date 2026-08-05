@@ -1,9 +1,9 @@
 import React from 'react';
-import { Users, Globe, Heart } from 'lucide-react';
+import { Users, Globe, Heart, MonitorPlay } from 'lucide-react';
 
 interface HeaderProps {
-  activeTab: 'accounts' | 'proxies' | 'interactions';
-  setActiveTab: (tab: 'accounts' | 'proxies' | 'interactions') => void;
+  activeTab: 'accounts' | 'proxies' | 'interactions' | 'screens';
+  setActiveTab: (tab: 'accounts' | 'proxies' | 'interactions' | 'screens') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
@@ -29,6 +29,12 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
           className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'interactions' ? 'bg-teal-500 text-slate-950' : 'text-slate-400 hover:text-slate-100'}`}
         >
           <Heart className="w-3.5 h-3.5" /> Tương Tác Video
+        </button>
+        <button
+          onClick={() => setActiveTab('screens')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'screens' ? 'bg-teal-500 text-slate-950' : 'text-slate-400 hover:text-slate-100'}`}
+        >
+          <MonitorPlay className="w-3.5 h-3.5" /> Màn Hình Trực Tiếp
         </button>
         <button
           onClick={() => setActiveTab('proxies')}

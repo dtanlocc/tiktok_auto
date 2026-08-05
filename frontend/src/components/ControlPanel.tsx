@@ -28,7 +28,7 @@ interface ContinuousCheckStatus {
   is_running_now: boolean;
 }
 
-const TASKS_API = 'http://127.0.0.1:8001/api/v1/tasks';
+const TASKS_API = 'http://127.0.0.1:9000/api/v1/tasks';
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
   concurrency,
@@ -106,7 +106,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const handleBrowseFolder = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8001/api/v1/accounts/select-local-folder', {
+      const res = await fetch('http://127.0.0.1:9000/api/v1/accounts/select-local-folder', {
         method: 'POST'
       });
       if (res.ok) {

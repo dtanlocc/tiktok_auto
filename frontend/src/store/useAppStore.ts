@@ -15,7 +15,8 @@ interface AppState {
   updateAccountStatus: (id: string, status: string, current_step?: string, health_status?: string, profile_status?: string) => void;
   updateAccountStep: (id: string, current_step: string) => void;
   updateAccountProxy: (id: string, proxyId: string | null) => void;
-  deleteAccount: (id: string) => void; 
+  updateAccountFields: (id: string, fields: Partial<Account>) => void;
+  deleteAccount: (id: string) => void;
   
   addLog: (log: LogMessage) => void;
   clearLogs: () => void;
@@ -62,8 +63,15 @@ export const useAppStore = create<AppState>((set) => ({
   })),
 
   updateAccountProxy: (id, proxyId) => set((state) => ({
-    accounts: state.accounts.map((acc) => 
+    accounts: state.accounts.map((acc) =>
       acc.id === id ? { ...acc, proxy_id: proxyId } : acc
+    )
+  })),
+
+  // Cap nhat truc tiep 1 hoac nhieu truong (sua inline tren UI, khong reload).
+  updateAccountFields: (id, fields) => set((state) => ({
+    accounts: state.accounts.map((acc) =>
+      acc.id === id ? { ...acc, ...fields } : acc
     )
   })),
 

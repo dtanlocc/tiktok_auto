@@ -1,4 +1,4 @@
-const BASE_URL = 'http://127.0.0.1:8001/api/v1';
+const BASE_URL = 'http://127.0.0.1:9000/api/v1';
 
 export const apiClient = {
   // 1. Lấy dữ liệu
@@ -72,5 +72,29 @@ export const apiClient = {
       body: JSON.stringify({ account_ids: accountIds }),
     });
     return res.json();
-  }
+  },
+
+  // 7. CHẾ ĐỘ DEBUG: mở trình duyệt HIỆN, login rồi giữ mở để thao tác tay.
+  startDebugLogin: async (accountId: string) => {
+    const res = await fetch(`${BASE_URL}/tasks/debug-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId }),
+    });
+    return res.json();
+  },
+
+  stopDebugLogin: async (accountId: string) => {
+    const res = await fetch(`${BASE_URL}/tasks/debug-login/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId }),
+    });
+    return res.json();
+  },
+
+  getActiveDebugSessions: async () => {
+    const res = await fetch(`${BASE_URL}/tasks/debug-login/active`);
+    return res.json();
+  },
 };

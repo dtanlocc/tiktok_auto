@@ -248,8 +248,10 @@ class ConcurrentTaskDispatcher:
                 # Nếu vẫn còn tài khoản tiếp theo trong hàng đợi, thực hiện giãn cách ngẫu nhiên
                 # để tránh CPU/RAM tăng vọt và qua mặt hệ thống quét hành vi đồng thời của TikTok
                 if not self.queue.empty():
-                    # Trễ ngẫu nhiên trong khoảng từ 8 đến 15 giây (bạn có thể điều chỉnh lại)
-                    stagger_delay = random.uniform(30.0, 60.0)
+                    # Giãn cách cấu hình được qua config (STAGGER_MIN/MAX_SECONDS).
+                    _lo = getattr(settings, "STAGGER_MIN_SECONDS", 30.0)
+                    _hi = getattr(settings, "STAGGER_MAX_SECONDS", 60.0)
+                    stagger_delay = random.uniform(_lo, max(_lo, _hi))
                     logger.info(f"[*] [Stagger Delay] Đang giãn cách luồng tiếp theo trong {stagger_delay:.1f} giây...")
                     await asyncio.sleep(stagger_delay)
 
@@ -290,7 +292,10 @@ class ConcurrentTaskDispatcher:
             # Khởi tạo hòm thư dongvanfb chuyên dụng để sẵn sàng quét OTP
             from app.infrastructure.email.dongvan_service import DongVanEmailService
             email_service = DongVanEmailService()
-            
+
+            # Task chup & stream anh man hinh trinh duyet ve Dashboard (neu bat).
+            streamer_task: Optional[asyncio.Task] = None
+
             async def log_step(step_desc: str):
                 # CHECKPOINT PAUSE: neu dang bi tam dung (toan cuc hoac rieng
                 # account nay), worker se dung ngay tai day cho toi khi duoc
@@ -318,6 +323,20 @@ class ConcurrentTaskDispatcher:
                 seed_val = _uuid_to_seed(account_id)
                 await browser_service.initialize(proxy_config=proxy_config, seed=seed_val)
 
+                # STREAM man hinh: bat dau chup dinh ky page hien tai va day ve
+                # Dashboard qua WebSocket (event BROWSER_FRAME) de xem da luong.
+                if settings.SCREEN_STREAM_ENABLED:
+                    from app.infrastructure.streaming.screen_streamer import stream_browser_frames
+                    _uname = account.username if account else account_id
+                    streamer_task = asyncio.create_task(
+                        stream_browser_frames(
+                            lambda: browser_service._page,
+                            account_id,
+                            _uname,
+                            get_hwnd=lambda: getattr(browser_service, "_hwnd", None),
+                        )
+                    )
+
                 # 3. THỰC THI USE CASE TƯƠNG ỨNG (Không chứa lệnh khởi chạy trùng lặp ở trong nữa)
                 if task_type.startswith("LOGIN"):
                     method = task_type.split("_")[1]  # COOKIE hoặc CREDENTIAL
@@ -332,10 +351,11 @@ class ConcurrentTaskDispatcher:
 
                 elif task_type == "UPDATE_PROFILE":
                     from app.use_cases.profile.tiktok_update_profile import TikTokUpdateProfileUseCase
-                    from app.use_cases.auth.login_strategies import CredentialEmailOtpLoginStrategy
-                    
-                    # Tự động inject Strategy đăng nhập bằng thông tin tài khoản và OTP cho kịch bản đổi profile
-                    login_strategy = CredentialEmailOtpLoginStrategy()
+                    from app.use_cases.auth.login_strategies import CookieThenCredentialLoginStrategy
+
+                    # UU TIEN COOKIE: thu login bang cookie truoc (nhanh, tiet kiem OTP),
+                    # chi khi cookie het han/khong co moi fallback sang Credential+OTP.
+                    login_strategy = CookieThenCredentialLoginStrategy()
                     
                     use_case = TikTokUpdateProfileUseCase(
                         account_repo=account_repo,
@@ -344,7 +364,8 @@ class ConcurrentTaskDispatcher:
                         email_service=email_service,
                         step_logger=log_step
                     )
-                    success = await use_case.execute(account_id, avatar_path)
+                    # Truyen proxy_config de use case pre-check username qua proxy account.
+                    success = await use_case.execute(account_id, avatar_path, proxy_config=proxy_config)
 
                 elif task_type == "INTERACT_VIDEOS":
                     from app.use_cases.interaction.tiktok_video_interaction import TikTokVideoInteractionUseCase
@@ -377,7 +398,15 @@ class ConcurrentTaskDispatcher:
                     # NÂNG CẤP ĐỘNG: Nạp lại tài khoản từ DB để lấy đúng trạng thái chuyên biệt
                     updated_account = account_repo.get_by_id(account_id)
                     final_status = updated_account.status if updated_account else "LOGGED_IN"
-                    
+
+                    # SUA BUG KET RUNNING: neu use case tra ve True nhung KHONG doi
+                    # status (vd nhanh guard "da COMPLETED, bo qua"), thi status van
+                    # con la "RUNNING"/"QUEUED" do chinh lan chay nay set luc dau ->
+                    # account se ket cung o RUNNING mai. 1 tac vu THANH CONG khong bao
+                    # gio duoc ket thuc o trang thai dang chay -> ep ve SUCCESS.
+                    if final_status in ("RUNNING", "QUEUED", "IDLE"):
+                        final_status = "SUCCESS"
+
                     # ĐỒNG BỘ SỨC KHỎE NICK: Bắt buộc truyền thêm health_status="ALIVE" khi thành công
                     await self._update_account_status(
                         account_id, 
@@ -390,7 +419,12 @@ class ConcurrentTaskDispatcher:
                     # =========================================================
                     # ĐẶC QUYỀN KIỂM THỬ THƯƠNG MẠI: GIỮ TRÌNH DUYỆT MỞ KHI LOGIN COOKIE
                     # =========================================================
-                    if task_type in ("LOGIN_COOKIE", "LOGIN_CREDENTIAL"):
+                    # CHI giu browser mo khi cua so THUC SU NHIN THAY DUOC (headed
+                    # VA khong bi day ra ngoai man hinh). Neu headless (cloak) hoac
+                    # off-screen -> user khong the dong tay -> wait_for_event("close")
+                    # cho VO HAN -> ket semaphore mai mai.
+                    _window_visible = (not settings.BROWSER_HEADLESS) and (not getattr(settings, "HIDE_BROWSER_OFFSCREEN", True))
+                    if task_type in ("LOGIN_COOKIE", "LOGIN_CREDENTIAL") and _window_visible:
                         # Bắn thông báo hướng dẫn lên Web UI Dashboard
                         await log_step("⚠️ Trình duyệt đang được giữ lại để kiểm thử. Hãy tự tay đóng cửa sổ khi test xong.")
                         logger.info(f"[!] [Test Mode] Giữ nguyên trình duyệt hoạt động cho {account_id}. Đợi đóng thủ công...")
@@ -402,6 +436,19 @@ class ConcurrentTaskDispatcher:
                         except Exception as e_close:
                             logger.info(f"[*] Trình duyệt kiểm thử {account_id} đã được đóng: {str(e_close)}")
                 else:
+                    # Use case tra ve False (khong raise). Bao chi tiet len terminal
+                    # Dashboard de nhin thay ngay (truoc day chi hien "Thất bại").
+                    try:
+                        await ws_manager.broadcast({
+                            "event": "TERMINAL_LOG",
+                            "data": {
+                                "account_id": account_id,
+                                "username": account.username if account else account_id,
+                                "message": f"❌ Tác vụ {task_type} trả về THẤT BẠI (xem các bước log phía trên để biết lý do).",
+                            },
+                        })
+                    except Exception:
+                        pass
                     await self._update_account_status(account_id, "ERROR", step_desc="Thất bại", session=session)
 
             except asyncio.CancelledError:
@@ -419,8 +466,34 @@ class ConcurrentTaskDispatcher:
                 raise
 
             except Exception as e:
-                logger.error(f"[-] Thất bại chung cuộc cho tài khoản {account_id}: {str(e)}")
-                
+                # In FULL traceback ra terminal backend (truoc day chi in str(e)
+                # -> mat stack, kho biet loi o dau).
+                logger.exception(f"[-] Thất bại chung cuộc cho tài khoản {account_id}")
+
+                # Va DAY chi tiet loi + noi phat sinh len terminal Dashboard de
+                # nhin thay NGAY nguyen nhan (giai quyet "khong co gi ben terminal").
+                import traceback as _tb
+                _err_detail = f"{type(e).__name__}: {str(e)}"
+                _last_frame = ""
+                try:
+                    _tbs = _tb.extract_tb(e.__traceback__)
+                    if _tbs:
+                        _f = _tbs[-1]
+                        _last_frame = f" [{_f.filename.split(chr(92))[-1].split('/')[-1]}:{_f.lineno} {_f.name}]"
+                except Exception:
+                    pass
+                try:
+                    await ws_manager.broadcast({
+                        "event": "TERMINAL_LOG",
+                        "data": {
+                            "account_id": account_id,
+                            "username": account.username if account else account_id,
+                            "message": f"❌ LỖI ({task_type}): {_err_detail}{_last_frame}",
+                        },
+                    })
+                except Exception:
+                    pass
+
                 health_val = None
                 
                 # KHỚP CHUẨN XÁC NGOẠI LỆ BANNED ĐỂ GÁN TRẠNG THÁI VẬT LÝ LÀ BANNED CHUYÊN BIỆT
@@ -446,6 +519,19 @@ class ConcurrentTaskDispatcher:
                 )
 
             finally:
+                # Dung stream anh truoc khi dong browser (tranh screenshot vao
+                # page dang bi dong -> loi rac).
+                if streamer_task is not None:
+                    streamer_task.cancel()
+                    try:
+                        await streamer_task
+                    except BaseException:
+                        # QUAN TRONG: CancelledError la BaseException (KHONG phai
+                        # Exception). Neu chi bat "except Exception" thi CancelledError
+                        # se lot ra, BO QUA browser_service.close() + semaphore.release()
+                        # ben duoi -> ro ri slot semaphore + browser -> dispatcher het
+                        # slot -> task moi ket cung. Phai bat BaseException.
+                        pass
                 await browser_service.close()
                 self.semaphore.release()
                 self.active_tasks.pop(account_id, None)
