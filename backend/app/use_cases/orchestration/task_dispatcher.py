@@ -2,6 +2,8 @@ import asyncio
 import logging
 import glob
 import os
+import time
+import random
 from typing import Dict, Any, Optional, List
 from sqlmodel import Session
 
@@ -36,13 +38,24 @@ class ConcurrentTaskDispatcher:
         # =================================================================
         # GIOI HAN DONG THOI THEO TUNG PROXY (moi proxy toi da N luong cung luc)
         # =================================================================
-        # semaphore TONG (self.semaphore) chi khong che tong so luong tren MAY.
-        # No KHONG biet 2 luong co dung chung 1 proxy hay khong -> co the 3-4
-        # account cung dam 1 proxy -> qua tai. proxy_semaphores them 1 lop khong
-        # che RIENG cho tung proxy: moi proxy_id co 1 Semaphore(PROXY_MAX_CONCURRENT).
-        # Account phai gianh CA slot tong LAN slot proxy moi duoc mo browser.
+        # semaphore TONG (self.semaphore) chi khong che tong so luong tren MAY,
+        # KHONG biet 2 luong co dung chung 1 proxy hay khong. proxy_max_concurrent
+        # gioi han so phien chay dong thoi tren MOI proxy (host:port) - duoc thuc
+        # thi qua bo phan phoi proxy dong ben duoi (_acquire_balanced_proxy).
         self.proxy_max_concurrent: int = max(1, getattr(settings, "PROXY_MAX_CONCURRENT", 2))
-        self.proxy_semaphores: Dict[str, asyncio.Semaphore] = {}
+
+        # PHAN PHOI PROXY DONG (khong gan proxy truoc): khi 1 account toi luot chay,
+        # dispatcher chon proxy IT TAI NHAT trong kho (con slot duoi proxy_max_concurrent)
+        # -> tai duoc phan DEU ra cac proxy, khong bi don cuc vao 1 proxy. _proxy_running
+        # dem so phien dang chay tren tung proxy (host:port); _proxy_cond de cho/danh
+        # thuc khi co slot proxy tro trong.
+        self._proxy_running: Dict[str, int] = {}
+        self._proxy_cond: asyncio.Condition = asyncio.Condition()
+
+        # Moc thoi gian (monotonic) lan MO GAN NHAT tren tung proxy (host:port).
+        # Dung cho GIAN CACH THEO PROXY: 2 proxy KHAC nhau mo song song ngay, chi
+        # gian cach khi mo lien tiep tren CUNG 1 proxy (tranh dam 1 IP don dap).
+        self._last_launch_monotonic: Dict[str, float] = {}
         self._loop_task: Optional[asyncio.Task] = None
         self.is_running = False
         
@@ -79,24 +92,68 @@ class ConcurrentTaskDispatcher:
         logger.info(f"[+] Đã cập nhật giới hạn luồng chạy song song thành: {limit}")
 
     def set_proxy_concurrency_limit(self, limit: int) -> None:
-        """Cap nhat dong so luong chay DONG THOI TREN MOI PROXY tu Web UI.
-        Xoa cac semaphore proxy cu -> proxy se tao lai voi gioi han moi khi gap
-        lan toi. Task DANG chay giu tham chieu semaphore RIENG cua no nen release
-        trong finally van tro dung doi tuong cu (khong bi over-release)."""
+        """Cap nhat dong so luong chay DONG THOI TREN MOI PROXY tu Web UI. Vi viec
+        chon proxy doc self.proxy_max_concurrent moi lan nen thay doi co hieu luc
+        NGAY cho cac lan gan proxy tiep theo. Danh thuc cac account dang cho slot
+        de chung danh gia lai voi gioi han moi."""
         if limit <= 0:
             return
         self.proxy_max_concurrent = limit
-        self.proxy_semaphores = {}
         logger.info(f"[+] Đã cập nhật giới hạn luồng chạy đồng thời / 1 proxy thành: {limit}")
 
-    def _get_proxy_semaphore(self, proxy_id: str) -> asyncio.Semaphore:
-        """Lay (hoac tao lazy) semaphore RIENG cho 1 proxy_id, gioi han so luong
-        chay dong thoi tren proxy do = self.proxy_max_concurrent."""
-        sem = self.proxy_semaphores.get(proxy_id)
-        if sem is None:
-            sem = asyncio.Semaphore(self.proxy_max_concurrent)
-            self.proxy_semaphores[proxy_id] = sem
-        return sem
+        async def _wake():
+            async with self._proxy_cond:
+                self._proxy_cond.notify_all()
+        try:
+            asyncio.get_running_loop().create_task(_wake())
+        except RuntimeError:
+            pass  # khong co event loop (vd goi tu test dong bo) -> bo qua
+
+    def _load_all_proxies(self) -> List[Any]:
+        """Doc toan bo proxy trong kho (session rieng, dong bo, nhanh)."""
+        try:
+            with Session(engine) as s:
+                return SQLiteProxyRepository(s).get_all()
+        except Exception as e:
+            logger.warning(f"[-] Khong doc duoc kho proxy: {str(e)}")
+            return []
+
+    async def _acquire_balanced_proxy(self, account_id: str, session: Session):
+        """Chon proxy IT TAI NHAT con slot (duoi proxy_max_concurrent) va tang bo
+        dem. CHO neu tat ca proxy da day. Tra ve (proxy_entity, proxy_key='host:port')
+        hoac (None, None) neu kho KHONG co proxy nao (-> chay truc tiep khong proxy)."""
+        proxies = self._load_all_proxies()
+        if not proxies:
+            return None, None
+        waited_logged = False
+        async with self._proxy_cond:
+            while True:
+                best = best_key = best_run = None
+                for p in proxies:
+                    key = f"{p.host}:{p.port}"
+                    run = self._proxy_running.get(key, 0)
+                    if run < self.proxy_max_concurrent and (best is None or run < best_run):
+                        best, best_key, best_run = p, key, run
+                if best is not None:
+                    self._proxy_running[best_key] = self._proxy_running.get(best_key, 0) + 1
+                    return best, best_key
+                # Tat ca proxy da day -> cho slot tro trong.
+                if not waited_logged:
+                    waited_logged = True
+                    await self._update_account_status(
+                        account_id, "QUEUED",
+                        step_desc=f"⏳ Mọi proxy đang đủ {self.proxy_max_concurrent} luồng, chờ slot trống...",
+                        session=session,
+                    )
+                await self._proxy_cond.wait()
+
+    async def _release_proxy(self, proxy_key: Optional[str]) -> None:
+        """Tra 1 slot cua proxy (host:port) va danh thuc account dang cho."""
+        if not proxy_key:
+            return
+        async with self._proxy_cond:
+            self._proxy_running[proxy_key] = max(0, self._proxy_running.get(proxy_key, 0) - 1)
+            self._proxy_cond.notify_all()
 
     # =====================================================================
     # DIEU KHIEN TOAN CUC: Tam dung / Tiep tuc / Dung khan cap
@@ -250,8 +307,6 @@ class ConcurrentTaskDispatcher:
 
 
     async def _process_queue_loop(self) -> None:
-        import random  # Đảm bảo đã import thư viện random để sinh số ngẫu nhiên
-
         while self.is_running:
             try:
                 task_payload = await self.queue.get()
@@ -275,18 +330,10 @@ class ConcurrentTaskDispatcher:
                 self.active_tasks[account_id] = worker_task
                 self.queue.task_done()
 
-                # =============================================================
-                # CẬP NHẬT THƯƠNG MẠI: CƠ CHẾ GIÃN CÁCH THỜI GIAN (STAGGER LAUNCH)
-                # =============================================================
-                # Nếu vẫn còn tài khoản tiếp theo trong hàng đợi, thực hiện giãn cách ngẫu nhiên
-                # để tránh CPU/RAM tăng vọt và qua mặt hệ thống quét hành vi đồng thời của TikTok
-                if not self.queue.empty():
-                    # Giãn cách cấu hình được qua config (STAGGER_MIN/MAX_SECONDS).
-                    _lo = getattr(settings, "STAGGER_MIN_SECONDS", 30.0)
-                    _hi = getattr(settings, "STAGGER_MAX_SECONDS", 60.0)
-                    stagger_delay = random.uniform(_lo, max(_lo, _hi))
-                    logger.info(f"[*] [Stagger Delay] Đang giãn cách luồng tiếp theo trong {stagger_delay:.1f} giây...")
-                    await asyncio.sleep(stagger_delay)
+                # LUU Y: KHONG con giãn cách TOÀN CỤC ở đây nữa. Giãn cách được
+                # chuyển vào worker và tính THEO TỪNG PROXY (xem stagger theo proxy
+                # trong _execute_worker_with_semaphore) -> 2 proxy khác nhau mở
+                # song song NGAY, không phải chờ nhau 30-60s như trước.
 
             except asyncio.CancelledError:
                 break
@@ -329,10 +376,11 @@ class ConcurrentTaskDispatcher:
             # Task chup & stream anh man hinh trinh duyet ve Dashboard (neu bat).
             streamer_task: Optional[asyncio.Task] = None
 
-            # Semaphore RIENG cua proxy account nay (neu co proxy). proxy_acquired
-            # danh dau da gianh duoc slot proxy hay chua -> chi release trong finally
-            # khi THUC SU da acquire (tranh over-release neu bi cancel luc dang cho).
-            proxy_sem: Optional[asyncio.Semaphore] = None
+            # proxy_key = host:port cua proxy DUOC GAN DONG cho lan chay nay (chon
+            # luc chay, khong dung proxy gan san). proxy_acquired danh dau da gianh
+            # duoc slot proxy hay chua -> chi tra slot trong finally khi THUC SU da
+            # gianh (tranh tra nham neu bi cancel luc dang cho).
+            proxy_key: Optional[str] = None
             proxy_acquired: bool = False
 
             async def log_step(step_desc: str):
@@ -345,40 +393,52 @@ class ConcurrentTaskDispatcher:
             try:
                 # 1. Truy vấn thông tin tài khoản và cấu hình Proxy động liên kết
                 account = account_repo.get_by_id(account_id)
-                proxy_config = None
-                proxy_key = None
-                if account and account.proxy_id:
-                    proxy = proxy_repo.get_by_id(account.proxy_id)
-                    if proxy:
-                        proxy_config = {
-                            "server": proxy.connection_string,
-                            "username": proxy.username,
-                            "password": proxy.password
-                        }
-                        # DINH DANH proxy = host:port (KHONG dung proxy_id nua):
-                        # 2 proxy cung host khac PORT -> 2 key khac nhau (dung, la
-                        # 2 proxy that su); nhieu dong trung Y HET host:port ->
-                        # cung 1 key (gop dung vi thuc chat la 1 proxy vat ly) ->
-                        # khong con "hieu lam" host giong nhau la 1 proxy.
-                        proxy_key = f"{proxy.host}:{proxy.port}"
 
                 # =========================================================
-                # GIANH SLOT PROXY: moi proxy (host:port) toi da
-                # self.proxy_max_concurrent luong cung luc. Neu proxy dang du tai
-                # -> CHO tra slot (van dang giu 1 slot TONG - chap nhan, vi so
-                # proxy thuong it hon so luong tong nen day moi la nut that user muon).
+                # GAN PROXY DONG luc chay (KHONG dung proxy gan san truoc): chon
+                # proxy IT TAI NHAT trong kho, ton trong gioi han self.proxy_max_concurrent
+                # luong / proxy. -> tu dong phan DEU cac account dang chay ra cac
+                # proxy, khong bi don cuc vao 1 proxy. CHO neu moi proxy da day.
                 # =========================================================
-                if proxy_key is not None:
-                    proxy_sem = self._get_proxy_semaphore(proxy_key)
-                    if proxy_sem.locked():
-                        # Proxy dang chay du proxy_max_concurrent luong -> bao cho.
+                proxy_config = None
+                proxy_entity, proxy_key = await self._acquire_balanced_proxy(account_id, session)
+                proxy_acquired = proxy_key is not None
+                if proxy_entity is not None:
+                    proxy_config = {
+                        "server": proxy_entity.connection_string,
+                        "username": proxy_entity.username,
+                        "password": proxy_entity.password,
+                    }
+                    # Ghi lai proxy THUC SU dung lan nay vao account (de UI hien dung
+                    # + biet no dang chay qua proxy nao). Chi luu + bao neu khac cu.
+                    if account and account.proxy_id != proxy_entity.id:
+                        account.proxy_id = proxy_entity.id
+                        account_repo.save(account)
+                        await ws_manager.broadcast({
+                            "event": "ACCOUNT_PROXY_CHANGED",
+                            "data": {"id": account_id, "proxy_id": proxy_entity.id},
+                        })
+
+                # =========================================================
+                # GIÃN CÁCH THEO PROXY: không mở 2 phiên liên tiếp trên CÙNG 1
+                # proxy quá sát nhau (tránh đấm 1 IP dồn dập). Proxy KHÁC không
+                # bị ảnh hưởng -> 2 proxy khác nhau mở SONG SONG ngay. Chỉ chờ
+                # phần còn lại nếu proxy này vừa được mở gần đây.
+                # =========================================================
+                stagger_key = proxy_key if proxy_key is not None else "__direct__"
+                _last = self._last_launch_monotonic.get(stagger_key)
+                if _last is not None:
+                    _lo = getattr(settings, "STAGGER_MIN_SECONDS", 30.0)
+                    _hi = getattr(settings, "STAGGER_MAX_SECONDS", 60.0)
+                    _remain = random.uniform(_lo, max(_lo, _hi)) - (time.monotonic() - _last)
+                    if _remain > 0:
                         await self._update_account_status(
                             account_id, "QUEUED",
-                            step_desc=f"⏳ Proxy đang đủ {self.proxy_max_concurrent} luồng, chờ tới lượt...",
+                            step_desc=f"⏳ Giãn cách {_remain:.0f}s (cùng proxy) trước khi mở...",
                             session=session,
                         )
-                    await proxy_sem.acquire()
-                    proxy_acquired = True
+                        await asyncio.sleep(_remain)
+                self._last_launch_monotonic[stagger_key] = time.monotonic()
 
                 await self._update_account_status(account_id, "RUNNING", step_desc="Đang khởi chạy...", session=session)
 
@@ -597,10 +657,10 @@ class ConcurrentTaskDispatcher:
                         # slot -> task moi ket cung. Phai bat BaseException.
                         pass
                 await browser_service.close()
-                # Nha slot PROXY truoc (neu da giu) roi moi nha slot TONG -> account
+                # Tra slot PROXY truoc (neu da gianh) roi moi nha slot TONG -> account
                 # khac dang cho proxy nay duoc chay ngay khi slot tong con trong.
-                if proxy_acquired and proxy_sem is not None:
-                    proxy_sem.release()
+                if proxy_acquired:
+                    await self._release_proxy(proxy_key)
                 self.semaphore.release()
                 self.active_tasks.pop(account_id, None)
                 # Don sach entry pause cua account nay - task da ket thuc
