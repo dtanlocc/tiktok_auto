@@ -62,10 +62,11 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
   // SỬA TRƯỜNG TRỰC TIẾP (inline edit): double-click 1 ô -> hiện input ->
   // Enter/blur lưu ngay (gọi onUpdateAccount), Esc hủy.
   // =========================================================================
-  const [editing, setEditing] = useState<{ id: string; field: 'username' | 'country' | 'batch_tag' } | null>(null);
+  type EditableField = 'username' | 'country' | 'batch_tag' | 'note';
+  const [editing, setEditing] = useState<{ id: string; field: EditableField } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
 
-  const startEdit = (e: React.MouseEvent, id: string, field: 'username' | 'country' | 'batch_tag', current: string) => {
+  const startEdit = (e: React.MouseEvent, id: string, field: EditableField, current: string) => {
     e.stopPropagation();
     setEditing({ id, field });
     setEditValue(current || '');
@@ -74,12 +75,15 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
     if (!editing) return;
     const val = editValue.trim();
     const acc = accounts.find((a) => a.id === editing.id);
-    if (acc && val && val !== String(acc[editing.field] ?? '')) {
+    // note ĐƯỢC PHÉP rỗng (xóa ghi chú); các trường khác yêu cầu có giá trị.
+    const changed = acc && val !== String(acc[editing.field] ?? '');
+    const allowed = editing.field === 'note' || val.length > 0;
+    if (changed && allowed) {
       onUpdateAccount(editing.id, { [editing.field]: val } as Partial<Account>);
     }
     setEditing(null);
   };
-  const renderEditable = (acc: Account, field: 'username' | 'country' | 'batch_tag', node: React.ReactNode) => {
+  const renderEditable = (acc: Account, field: EditableField, node: React.ReactNode) => {
     if (editing && editing.id === acc.id && editing.field === field) {
       return (
         <input
@@ -274,13 +278,14 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
               ))}
               <th className="p-4">Liên kết IP Proxy</th>
               <th className="p-4">Tiến trình chạy</th>
+              <th className="p-4">Ghi chú</th>
               <th className="p-4 text-center">Điều khiển</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800 text-xs">
             {displayedAccounts.length === 0 ? (
               <tr>
-                <td colSpan={9} className="p-8 text-center text-slate-500 font-semibold">
+                <td colSpan={10} className="p-8 text-center text-slate-500 font-semibold">
                   {searchQuery
                     ? `Không tìm thấy tài khoản nào khớp với "${searchQuery}".`
                     : 'Không tìm thấy tài khoản nào khớp với bộ lọc hoặc Lô đang chọn.'}
@@ -414,6 +419,17 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                         </span>
                       ) : (
                         <span>{acc.current_step}</span>
+                      )}
+                    </td>
+
+                    {/* GHI CHÚ tự do - nhấp đúp để sửa (được phép để trống) */}
+                    <td className="p-4 text-slate-300 max-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                      {renderEditable(
+                        acc,
+                        'note',
+                        acc.note
+                          ? <span className="text-amber-200/90">{acc.note}</span>
+                          : <span className="text-slate-600 italic">＋ ghi chú</span>
                       )}
                     </td>
 

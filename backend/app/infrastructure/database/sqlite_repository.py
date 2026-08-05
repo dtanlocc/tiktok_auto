@@ -94,6 +94,7 @@ class SQLiteAccountRepository(IAccountRepository):
         db_row.country = account.country
         db_row.batch_tag = account.batch_tag
         db_row.created_at = account.created_at or ""
+        db_row.note = account.note or ""
         
         db_row.current_step = account.current_step
         db_row.proxy_id = account.proxy_id
@@ -142,7 +143,8 @@ class SQLiteAccountRepository(IAccountRepository):
             country=db_row.country or "US",
             batch_tag=db_row.batch_tag or "DEFAULT",
             created_at=db_row.created_at or "",
-            
+            note=getattr(db_row, "note", "") or "",
+
             current_step=db_row.current_step,
             proxy_id=db_row.proxy_id
         )

@@ -21,3 +21,4 @@ class TikTokAccount:
     country: str = "US"
     batch_tag: str = "DEFAULT"
     created_at: Optional[str] = None      # Chuỗi thời gian dạng '2026-07-08 15:00:00'
+    note: str = ""                        # Ghi chú tự do (user tự nhập để theo dõi)

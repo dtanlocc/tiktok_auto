@@ -34,3 +34,5 @@ class AccountDbTable(SQLModel, table=True):
     country: str = Field(default="US", index=True)
     batch_tag: str = Field(default="DEFAULT", index=True)
     created_at: str = Field(default="")
+    # Ghi chu tu do cho tung account (user tu nhap tren UI de theo doi).
+    note: str = Field(default="")

@@ -502,6 +502,49 @@ export default function App() {
     }
   };
 
+  // =========================================================================
+  // CHUYỂN CỤM: đổi batch_tag (Lô) hàng loạt cho các account đã chọn để gom nhóm
+  // theo dõi. Cho phép gõ tên cụm MỚI hoặc chọn 1 cụm CÓ SẴN.
+  // =========================================================================
+  const handleMoveToGroup = async () => {
+    if (selectedAccountIds.length === 0) {
+      alert('Vui lòng chọn ít nhất một tài khoản.');
+      return;
+    }
+    // Gợi ý danh sách cụm (Lô) hiện có để người dùng biết mà gõ lại cho khớp.
+    const existing = Array.from(new Set(accounts.map((a) => a.batch_tag).filter(Boolean))).sort();
+    const hint = existing.length ? `\n\nCác cụm hiện có:\n- ${existing.join('\n- ')}` : '';
+    const target = window.prompt(
+      `Chuyển ${selectedAccountIds.length} tài khoản sang cụm nào?\n(Gõ tên cụm MỚI hoặc 1 cụm có sẵn)${hint}`,
+      ''
+    );
+    if (target === null) return; // user bấm Cancel
+    const name = target.trim();
+    if (!name) {
+      alert('Tên cụm không được để trống.');
+      return;
+    }
+    // Cập nhật lạc quan: di chuyển ngay trên UI (bảng + cây Lô).
+    const ids = [...selectedAccountIds];
+    ids.forEach((id) => useAppStore.getState().updateAccountFields(id, { batch_tag: name }));
+    try {
+      const res = await fetch('http://127.0.0.1:9000/api/v1/accounts/move-to-group', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_ids: ids, batch_tag: name }),
+      });
+      const data = await res.json();
+      if (res.ok) alert(data.message);
+      else {
+        alert(data.detail || 'Lỗi chuyển cụm.');
+        loadData(); // rollback bằng cách nạp lại đúng trạng thái từ server
+      }
+    } catch {
+      alert('Không kết nối được backend.');
+      loadData();
+    }
+  };
+
   // Gán Proxy thủ công qua Dropdown
   const handleBindProxy = async (accountId: string, proxyId: string) => {
     try {
@@ -725,6 +768,15 @@ export default function App() {
                     >
                       📤 Xuất acc
                     </button>
+                    {selectedAccountIds.length > 0 && (
+                      <button
+                        onClick={handleMoveToGroup}
+                        className="bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
+                        title="Chuyển các tài khoản đã chọn sang 1 cụm (Lô) mới hoặc có sẵn để theo dõi"
+                      >
+                        📦 Chuyển cụm ({selectedAccountIds.length})
+                      </button>
+                    )}
                     {selectedAccountIds.length > 0 && (
                       <button
                         onClick={handleClearCookies}

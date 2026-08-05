@@ -23,6 +23,7 @@ class AccountOut(BaseModel):
     country: str = "US"                     # Mặc định phòng thủ
     batch_tag: str = "DEFAULT"              # Mặc định phòng thủ
     created_at: str = ""                    # Mặc định phòng thủ
+    note: str = ""                          # Ghi chú tự do (mặc định rỗng)
 
     class Config:
         from_attributes = True

@@ -13,6 +13,7 @@ export interface Account {
   country: string;
   batch_tag: string;
   created_at: string;
+  note?: string;   // Ghi chú tự do (user tự nhập để theo dõi)
 }
 
 export interface ProxyModel {

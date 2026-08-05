@@ -124,7 +124,8 @@ async def list_accounts(
             has_cookies=len(acc.cookies) > 0,
             country=acc.country,                      # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
             batch_tag=acc.batch_tag,                  # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
-            created_at=acc.created_at or ""           # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
+            created_at=acc.created_at or "",          # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
+            note=acc.note or ""
         )
         for acc in accounts
     ]
@@ -344,7 +345,8 @@ async def bind_proxy_to_account(
         has_cookies=len(saved.cookies) > 0,
         country=saved.country,                        # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
         batch_tag=saved.batch_tag,                    # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
-        created_at=saved.created_at or ""             # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
+        created_at=saved.created_at or "",            # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
+        note=saved.note or ""
     )
 
 
@@ -432,6 +434,7 @@ class UpdateAccountRequest(BaseModel):
     client_id: Optional[str] = None
     country: Optional[str] = None
     batch_tag: Optional[str] = None
+    note: Optional[str] = None
     # Trang thai (sua tay tren UI): PENDING/COMPLETED, ALIVE/BANNED/UNKNOWN, IDLE/SUCCESS/ERROR...
     profile_status: Optional[str] = None
     health_status: Optional[str] = None
@@ -483,7 +486,44 @@ async def update_account_fields(
         current_step=saved.current_step, proxy_id=saved.proxy_id,
         has_cookies=len(saved.cookies) > 0, country=saved.country,
         batch_tag=saved.batch_tag, created_at=saved.created_at or "",
+        note=saved.note or "",
     )
+
+
+@router.post("/move-to-group", status_code=status.HTTP_200_OK)
+async def move_accounts_to_group(
+    account_ids: List[str] = Body(..., embed=True),
+    batch_tag: str = Body(..., embed=True),
+    account_repo: IAccountRepository = Depends(get_account_repository)
+):
+    """CHUYEN cac account da chon sang 1 CUM (batch_tag) moi hoac co san. Dung de
+    gom nhom theo doi. Phat WebSocket ACCOUNT_UPDATED cho tung account de UI (bang
+    + cay Lo) tu di chuyen ngay, khong can reload."""
+    target = (batch_tag or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Tên cụm (Lô) không được để trống.")
+    if not account_ids:
+        raise HTTPException(status_code=400, detail="Chưa chọn tài khoản nào để chuyển.")
+
+    moved = 0
+    for acc_id in account_ids:
+        account = account_repo.get_by_id(acc_id)
+        if not account:
+            continue
+        account.batch_tag = target
+        account_repo.save(account)
+        moved += 1
+        await ws_manager.broadcast({
+            "event": "ACCOUNT_UPDATED",
+            "data": {"id": acc_id, "batch_tag": target},
+        })
+
+    return {
+        "status": "SUCCESS",
+        "moved": moved,
+        "batch_tag": target,
+        "message": f"Đã chuyển {moved} tài khoản sang cụm '{target}'.",
+    }
 
 
 @router.post("/clear-cookies", status_code=status.HTTP_200_OK)

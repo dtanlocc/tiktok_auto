@@ -42,6 +42,11 @@ def init_db() -> None:
                 session.execute(text("ALTER TABLE accounts ADD COLUMN created_at VARCHAR DEFAULT ''"))
                 session.commit()
                 print("[+] Tự động di cư thêm cột 'created_at' thành công!")
+
+            if "note" not in existing_columns:
+                session.execute(text("ALTER TABLE accounts ADD COLUMN note VARCHAR DEFAULT ''"))
+                session.commit()
+                print("[+] Tự động di cư thêm cột 'note' thành công!")
                 
     except Exception as migration_err:
         print(f"[-] Cảnh báo lỗi tiến trình di cư tự động: {str(migration_err)}")
