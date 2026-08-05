@@ -32,6 +32,17 @@ class ConcurrentTaskDispatcher:
         self.max_tabs = max_tabs
         self.semaphore = asyncio.Semaphore(max_tabs)
         self.active_tasks: Dict[str, asyncio.Task] = {}
+
+        # =================================================================
+        # GIOI HAN DONG THOI THEO TUNG PROXY (moi proxy toi da N luong cung luc)
+        # =================================================================
+        # semaphore TONG (self.semaphore) chi khong che tong so luong tren MAY.
+        # No KHONG biet 2 luong co dung chung 1 proxy hay khong -> co the 3-4
+        # account cung dam 1 proxy -> qua tai. proxy_semaphores them 1 lop khong
+        # che RIENG cho tung proxy: moi proxy_id co 1 Semaphore(PROXY_MAX_CONCURRENT).
+        # Account phai gianh CA slot tong LAN slot proxy moi duoc mo browser.
+        self.proxy_max_concurrent: int = max(1, getattr(settings, "PROXY_MAX_CONCURRENT", 2))
+        self.proxy_semaphores: Dict[str, asyncio.Semaphore] = {}
         self._loop_task: Optional[asyncio.Task] = None
         self.is_running = False
         
@@ -66,6 +77,15 @@ class ConcurrentTaskDispatcher:
         self.max_tabs = limit
         self.semaphore = asyncio.Semaphore(limit)
         logger.info(f"[+] Đã cập nhật giới hạn luồng chạy song song thành: {limit}")
+
+    def _get_proxy_semaphore(self, proxy_id: str) -> asyncio.Semaphore:
+        """Lay (hoac tao lazy) semaphore RIENG cho 1 proxy_id, gioi han so luong
+        chay dong thoi tren proxy do = self.proxy_max_concurrent."""
+        sem = self.proxy_semaphores.get(proxy_id)
+        if sem is None:
+            sem = asyncio.Semaphore(self.proxy_max_concurrent)
+            self.proxy_semaphores[proxy_id] = sem
+        return sem
 
     # =====================================================================
     # DIEU KHIEN TOAN CUC: Tam dung / Tiep tuc / Dung khan cap
@@ -296,6 +316,12 @@ class ConcurrentTaskDispatcher:
             # Task chup & stream anh man hinh trinh duyet ve Dashboard (neu bat).
             streamer_task: Optional[asyncio.Task] = None
 
+            # Semaphore RIENG cua proxy account nay (neu co proxy). proxy_acquired
+            # danh dau da gianh duoc slot proxy hay chua -> chi release trong finally
+            # khi THUC SU da acquire (tranh over-release neu bi cancel luc dang cho).
+            proxy_sem: Optional[asyncio.Semaphore] = None
+            proxy_acquired: bool = False
+
             async def log_step(step_desc: str):
                 # CHECKPOINT PAUSE: neu dang bi tam dung (toan cuc hoac rieng
                 # account nay), worker se dung ngay tai day cho toi khi duoc
@@ -315,6 +341,24 @@ class ConcurrentTaskDispatcher:
                             "username": proxy.username,
                             "password": proxy.password
                         }
+
+                # =========================================================
+                # GIANH SLOT PROXY: moi proxy toi da self.proxy_max_concurrent
+                # luong cung luc. Neu proxy dang du tai -> CHO tra slot (van
+                # dang giu 1 slot TONG - chap nhan, vi so proxy thuong it hon
+                # so luong tong nen day moi la nut that that su user muon).
+                # =========================================================
+                if account and account.proxy_id:
+                    proxy_sem = self._get_proxy_semaphore(account.proxy_id)
+                    if proxy_sem.locked():
+                        # Proxy dang chay du proxy_max_concurrent luong -> bao cho.
+                        await self._update_account_status(
+                            account_id, "QUEUED",
+                            step_desc=f"⏳ Proxy đang đủ {self.proxy_max_concurrent} luồng, chờ tới lượt...",
+                            session=session,
+                        )
+                    await proxy_sem.acquire()
+                    proxy_acquired = True
 
                 await self._update_account_status(account_id, "RUNNING", step_desc="Đang khởi chạy...", session=session)
 
@@ -533,6 +577,10 @@ class ConcurrentTaskDispatcher:
                         # slot -> task moi ket cung. Phai bat BaseException.
                         pass
                 await browser_service.close()
+                # Nha slot PROXY truoc (neu da giu) roi moi nha slot TONG -> account
+                # khac dang cho proxy nay duoc chay ngay khi slot tong con trong.
+                if proxy_acquired and proxy_sem is not None:
+                    proxy_sem.release()
                 self.semaphore.release()
                 self.active_tasks.pop(account_id, None)
                 # Don sach entry pause cua account nay - task da ket thuc

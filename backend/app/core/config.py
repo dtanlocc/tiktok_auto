@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     # Cấu hình đa luồng (Task Dispatcher)
     MAX_CONCURRENT_TABS: int = 4
 
+    # GIOI HAN so luong chay DONG THOI tren MOI PROXY. Vd 4 luong tong nhung
+    # neu 3-4 account trung 1 proxy -> proxy qua tai. Dat = 2 de moi proxy chi
+    # gong toi da 2 phien cung luc; account thu 3 tren cung proxy se CHO tra
+    # slot roi moi chay (van chiem 1 slot tong). Doc-only luc khoi tao dispatcher.
+    PROXY_MAX_CONCURRENT: int = 2
+
     # GIAN CACH (stagger) giua cac lan mo browser lien tiep - tranh mo 4 browser
     # cung luc (thrash dia/CPU + de bi TikTok phat hien nhieu nick 1 IP cung luc).
     # Giam de ramp-up da luong NHANH hon (rui ro phat hien cao hon); tang de an toan.
