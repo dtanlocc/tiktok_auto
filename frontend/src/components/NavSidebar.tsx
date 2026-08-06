@@ -22,13 +22,13 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab,
   const [hover, setHover] = useState(false);
 
   return (
-    <div className="shrink-0 h-screen sticky top-0 relative w-[60px]">
-      <aside
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        className={`absolute inset-y-0 left-0 flex flex-col bg-surface border-r border-line-soft transition-[width] duration-200 ease-out
-          ${hover ? 'w-[210px] z-40 shadow-2xl shadow-black/50' : 'w-[60px] z-10'}`}
-      >
+    // Aside TỰ nới rộng khi hover -> ĐẨY nội dung sang phải (không đè/che thông tin).
+    <aside
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className={`shrink-0 h-screen sticky top-0 flex flex-col bg-surface border-r border-line-soft transition-[width] duration-200 ease-out
+        ${hover ? 'w-[210px]' : 'w-[60px]'}`}
+    >
         {/* Brand */}
         <div className={`flex items-center h-14 border-b border-line-soft ${hover ? 'gap-2.5 px-3.5' : 'justify-center'}`}>
           <div className="grid place-items-center w-8 h-8 rounded-lg bg-brand/15 border border-brand/25 text-brand shrink-0">
@@ -81,7 +81,6 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab,
             />
           )}
         </div>
-      </aside>
-    </div>
+    </aside>
   );
 };
