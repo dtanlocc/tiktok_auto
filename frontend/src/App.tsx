@@ -648,7 +648,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070b15] p-6 text-slate-100 flex flex-col gap-5 select-none">
+    <div className="min-h-screen bg-canvas px-5 py-5 md:px-7 text-fg flex flex-col gap-5 select-none">
       
       {/* 1. HEADER COMPONENT */}
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
