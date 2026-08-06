@@ -346,38 +346,32 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       <div className="text-[10px] text-slate-400 font-medium mt-1 flex items-center gap-1">
                         <Folder className="w-3 h-3 text-slate-500" /> {renderEditable(acc, 'batch_tag', acc.batch_tag)}
                       </div>
-                      <div className="text-[9px] text-slate-500 font-mono mt-0.5">
-                        📅 {acc.created_at || "N/A"}
+                      <div className="text-[10px] text-fg-subtle font-mono mt-0.5">
+                        {acc.created_at || "—"}
                       </div>
                     </td>
 
                     <td className="p-4 text-center">
-                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
-                        acc.status === 'RUNNING' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse' :
-                        acc.status === 'QUEUED' ? 'bg-teal-500/10 text-teal-400 border-teal-500/30' :
-                        acc.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
-                        acc.status === 'ERROR' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
-                        'bg-slate-500/10 text-slate-400 border-slate-500/30'
+                      <span className={`badge border ${
+                        acc.status === 'RUNNING' ? 'bg-amber-500/10 text-amber-400 border-amber-500/25 animate-pulse-soft' :
+                        acc.status === 'QUEUED' ? 'bg-brand/10 text-brand border-brand/25' :
+                        acc.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25' :
+                        acc.status === 'ERROR' ? 'bg-rose-500/10 text-rose-400 border-rose-500/25' :
+                        'bg-white/5 text-fg-subtle border-line'
                       }`}>
                         {acc.status}
                       </span>
                     </td>
 
-                    {/* CỘT SỨC KHỎE NICK - THỐNG NHẤT 1 TẬP GIÁ TRỊ VỚI LUỒNG LOGIN
-                        (BANNED / ALIVE / chưa biết) - không còn "DEAD" riêng nữa */}
+                    {/* CỘT SỨC KHỎE NICK - THỐNG NHẤT 1 TẬP GIÁ TRỊ VỚI LUỒNG LOGIN */}
                     <td className="p-4 text-center">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                        acc.health_status === 'BANNED'
-                          ? 'bg-red-500/15 text-red-400 border-red-500/40 animate-pulse font-black'
-                          : acc.health_status === 'ALIVE'
-                          ? 'bg-green-500/10 text-green-400 border-green-500/30'
-                          : 'bg-slate-800/40 text-slate-400 border-slate-700/50' // MÀU XÁM CHO TRẠNG THÁI CHƯA BIẾT (UNKNOWN)
+                      <span className={`badge border normal-case tracking-normal ${
+                        acc.health_status === 'BANNED' ? 'bg-rose-500/12 text-rose-400 border-rose-500/30' :
+                        acc.health_status === 'ALIVE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25' :
+                        'bg-white/5 text-fg-subtle border-line'
                       }`}>
-                        ● {
-                          acc.health_status === 'BANNED' ? 'ĐÃ BỊ BAN' :
-                          acc.health_status === 'ALIVE' ? 'ĐANG SỐNG' :
-                          'CHƯA BIẾT'
-                        }
+                        <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />
+                        {acc.health_status === 'BANNED' ? 'Banned' : acc.health_status === 'ALIVE' ? 'Sống' : '—'}
                       </span>
                     </td>
 
@@ -470,7 +464,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                         ) : (
                           <button
                             onClick={() => onDebugLogin(acc.id)}
-                            className="inline-flex items-center gap-1 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 border border-fuchsia-500/30 text-fuchsia-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all"
+                            className="btn btn-sm bg-violet-500/10 text-violet-300 border border-violet-500/25 hover:bg-violet-500/20"
                             title="Mở trình duyệt HIỆN, tự login rồi dừng lại để bạn thao tác tay tới khi đóng"
                           >
                             <Bug className="w-3 h-3" /> Debug
