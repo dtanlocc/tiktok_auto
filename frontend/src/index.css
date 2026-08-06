@@ -1,8 +1,112 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
-body {
-  background-color: #0b0f19; /* Màu nền tối sâu Slate-950 */
-  color: #f1f5f9;
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  margin: 0;
+/* =========================================================================
+   DESIGN TOKENS (Tailwind v4 @theme) - he mau/font/bo goc nhat quan
+   ========================================================================= */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Nen & be mat (dark, chuyen nghiep, tang do sau ro rang) */
+  --color-canvas: #070a11;
+  --color-surface: #0f141d;
+  --color-surface-2: #151b26;
+  --color-elevated: #1a2130;
+  --color-line: #232c3b;
+  --color-line-soft: #1a212d;
+
+  /* Chu */
+  --color-fg: #e7ecf3;
+  --color-fg-muted: #94a2b6;
+  --color-fg-subtle: #64717f;
+
+  /* Thuong hieu + trang thai */
+  --color-brand: #2dd4bf;
+  --color-brand-strong: #14b8a6;
+  --color-accent: #6366f1;
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-danger: #fb7185;
+}
+
+/* =========================================================================
+   BASE
+   ========================================================================= */
+@layer base {
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    margin: 0;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  ::selection { background: color-mix(in srgb, var(--color-brand) 35%, transparent); }
+
+  /* Scrollbar mong, tinh te */
+  * { scrollbar-width: thin; scrollbar-color: #2a3546 transparent; }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: #2a3546; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  *::-webkit-scrollbar-thumb:hover { background: #384559; background-clip: padding-box; }
+}
+
+/* =========================================================================
+   COMPONENT KIT - dung chung toan app
+   ========================================================================= */
+@layer components {
+  /* ---- Buttons ---- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold
+           px-3 py-2 leading-none transition-colors duration-150 cursor-pointer select-none
+           border border-transparent whitespace-nowrap;
+  }
+  .btn:disabled { @apply opacity-50 cursor-not-allowed; }
+  .btn:focus-visible { @apply outline-none ring-2 ring-brand/50; }
+
+  .btn-primary { @apply text-slate-950; background: var(--color-brand); }
+  .btn-primary:hover:not(:disabled) { background: var(--color-brand-strong); }
+
+  .btn-accent { @apply text-white; background: var(--color-accent); }
+  .btn-accent:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 85%, white); }
+
+  .btn-ghost { @apply text-fg-muted; background: transparent; border-color: var(--color-line); }
+  .btn-ghost:hover:not(:disabled) { @apply text-fg; background: rgba(255,255,255,.05); }
+
+  .btn-danger { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 12%, transparent); border-color: color-mix(in srgb, var(--color-danger) 35%, transparent); }
+  .btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--color-danger) 22%, transparent); }
+
+  .btn-sm { @apply px-2.5 py-1.5 text-[11px] rounded-md; }
+
+  /* ---- Surface / Card ---- */
+  .card { background: var(--color-surface); border: 1px solid var(--color-line-soft); @apply rounded-2xl; }
+  .card-2 { background: var(--color-surface-2); border: 1px solid var(--color-line-soft); @apply rounded-xl; }
+
+  /* ---- Badge ---- */
+  .badge { @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide leading-none; }
+
+  /* ---- Input ---- */
+  .field {
+    background: var(--color-surface-2); border: 1px solid var(--color-line);
+    @apply rounded-lg px-3 py-2 text-sm text-fg transition-colors duration-150;
+  }
+  .field::placeholder { color: var(--color-fg-subtle); }
+  .field:focus { @apply outline-none ring-1 ring-brand; border-color: var(--color-brand); }
+
+  /* ---- Segmented nav (tabs) ---- */
+  .seg {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg
+           transition-colors duration-150 cursor-pointer text-fg-muted;
+  }
+  .seg:hover { @apply text-fg; background: rgba(255,255,255,.04); }
+  .seg-active { color: #04110f; background: var(--color-brand); }
+  .seg-active:hover { color: #04110f; background: var(--color-brand); }
+}
+
+/* Nhip nhe cho trang thai dang chay */
+@keyframes pulse-soft { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+.animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
