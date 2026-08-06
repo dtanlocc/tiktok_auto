@@ -1,6 +1,6 @@
 // File: frontend/src/components/AccountsTable.tsx
 import React, { useMemo, useState } from 'react';
-import { CheckSquare, Square, Folder, Pause, Play, Search, ArrowUp, ArrowDown, ArrowUpDown, Copy, X, Bug, Square as StopSquare } from 'lucide-react';
+import { CheckSquare, Square, Folder, Pause, Play, Search, ArrowUp, ArrowDown, ArrowUpDown, Copy, X, Bug, Square as StopSquare, Check, Zap } from 'lucide-react';
 import { Account, Proxy } from '../types';
 import { getCountryFlagUrl } from '../utils/countries'; // <-- NẠP TẬP TRUNG TỪ UTILS CHUẨN XÁC
 
@@ -186,8 +186,8 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
   };
 
   return (
-    <div className="bg-[#0e1424] rounded-2xl border border-slate-800 overflow-hidden flex-1 flex flex-col">
-      <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-[#141b2e]/50 flex-wrap gap-3">
+    <div className="card overflow-hidden flex-1 flex flex-col">
+      <div className="p-3.5 border-b border-line-soft flex justify-between items-center bg-surface-2/40 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <button
             onClick={toggleSelectAll}
@@ -262,7 +262,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
       <div className="overflow-y-auto max-h-[380px] flex-1">
         <table className="w-full text-left border-collapse">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-[#141b2e] text-xs font-semibold text-slate-400 uppercase">
+            <tr className="bg-surface-2 text-[11px] font-semibold text-fg-subtle uppercase tracking-wide">
               <th className="p-4 w-12 text-center">Tích</th>
               {SORTABLE_COLUMNS.map((col) => (
                 <th
@@ -387,13 +387,15 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                           profile_status: acc.profile_status === 'COMPLETED' ? 'PENDING' : 'COMPLETED',
                         })}
                         title="Nhấp để đổi trạng thái (ĐÃ ĐỔI ⇄ CHƯA ĐỔI)"
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border cursor-pointer transition-all hover:brightness-125 ${
+                        className={`badge border cursor-pointer transition-colors duration-150 ${
                           acc.profile_status === 'COMPLETED'
-                            ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
-                            : 'bg-slate-700/20 text-slate-400 border-slate-700/40'
+                            ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/25'
+                            : 'bg-white/5 text-fg-subtle border-line hover:text-fg-muted'
                         }`}
                       >
-                        {acc.profile_status === 'COMPLETED' ? '✓ ĐÃ ĐỔI PROFILE' : '⚡ CHƯA ĐỔI'}
+                        {acc.profile_status === 'COMPLETED'
+                          ? <><Check className="w-3 h-3" /> Đã đổi</>
+                          : <><Zap className="w-3 h-3" /> Chưa đổi</>}
                       </button>
                     </td>
 
