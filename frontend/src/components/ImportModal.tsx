@@ -38,19 +38,19 @@ export const ImportModal: React.FC<ImportModalProps> = ({
       onClick={handleBackdropClick}
       className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all"
     >
-      <div className="bg-[#0e1424] border border-slate-800 rounded-2xl w-full max-w-sm shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-surface border border-line-soft rounded-2xl w-full max-w-sm shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
         {/* HEADER MODAL */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-[#141b2e]/50">
+        <div className="flex items-center justify-between p-4 border-b border-line-soft bg-surface-2/50">
           <div className="flex items-center gap-2">
-            <Globe className="text-teal-400 w-4 h-4" />
-            <h3 className="font-bold text-xs text-slate-100 uppercase tracking-wider">
+            <Globe className="text-brand w-4 h-4" />
+            <h3 className="font-bold text-xs text-fg uppercase tracking-wider">
               Nhập tài khoản hàng loạt
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-100 rounded-lg p-1 hover:bg-slate-800 transition-colors cursor-pointer"
+            className="text-fg-muted hover:text-fg rounded-lg p-1 hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -61,13 +61,13 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           
           {/* LỰA CHỌN QUỐC GIA (Dạng chữ chuẩn né hoàn toàn lỗi hiển thị ô vuông của Windows) */}
           <div>
-            <label className="text-[9px] text-slate-400 block mb-1 font-bold uppercase tracking-wider">
+            <label className="text-[9px] text-fg-muted block mb-1 font-bold uppercase tracking-wider">
               1. Chọn Quốc Gia:
             </label>
             <select
               value={importCountry}
               onChange={(e) => setImportCountry(e.target.value)}
-              className="w-full bg-[#182032] border border-slate-700 rounded-lg p-2 text-xs text-teal-400 font-semibold focus:outline-none focus:ring-1 focus:ring-teal-400 h-9"
+              className="w-full bg-surface-2 border border-line rounded-lg p-2 text-xs text-brand font-semibold focus:outline-none focus:ring-1 focus:ring-teal-400 h-9"
             >
               {SUPPORTED_COUNTRIES.map((country) => (
                 <option key={country.code} value={country.code}>
@@ -79,7 +79,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
           {/* ĐIỀN TÊN LÔ HÀNG */}
           <div>
-            <label className="text-[9px] text-slate-400 block mb-1 font-bold uppercase tracking-wider">
+            <label className="text-[9px] text-fg-muted block mb-1 font-bold uppercase tracking-wider">
               2. Đặt tên Lô hàng (Batch Name):
             </label>
             <input
@@ -87,7 +87,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
               placeholder="Để trống sẽ tự động đặt theo ngày"
               value={importBatchTag}
               onChange={(e) => setImportBatchTag(e.target.value)}
-              className="w-full bg-[#182032] border border-slate-700 rounded-lg p-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-400 h-9"
+              className="w-full bg-surface-2 border border-line rounded-lg p-2 text-xs text-fg placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-400 h-9"
             />
           </div>
 
@@ -97,10 +97,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             
             {/* TẢI LÊN FILE LẺ */}
-            <label className="flex flex-col items-center justify-center border border-dashed border-slate-700 rounded-xl py-4 px-2 cursor-pointer hover:border-teal-400 transition-all bg-[#182032]/30 text-center hover:bg-teal-500/5 group">
-              <Files className="text-slate-400 w-5 h-5 mb-1 group-hover:text-teal-400 transition-colors" />
-              <span className="text-[10px] font-bold text-slate-200">Chọn tệp lẻ .txt</span>
-              <span className="text-[8px] text-slate-500 mt-0.5">Tải một hoặc nhiều file</span>
+            <label className="flex flex-col items-center justify-center border border-dashed border-line rounded-xl py-4 px-2 cursor-pointer hover:border-teal-400 transition-all bg-surface-2/30 text-center hover:bg-teal-500/5 group">
+              <Files className="text-fg-muted w-5 h-5 mb-1 group-hover:text-brand transition-colors" />
+              <span className="text-[10px] font-bold text-fg">Chọn tệp lẻ .txt</span>
+              <span className="text-[8px] text-fg-subtle mt-0.5">Tải một hoặc nhiều file</span>
               <input
                 type="file"
                 accept=".txt"
@@ -115,10 +115,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             </label>
 
             {/* TẢI LÊN CẢ THƯ MỤC ĐỆ QUY */}
-            <label className="flex flex-col items-center justify-center border border-dashed border-slate-700 rounded-lg py-3 px-2 cursor-pointer hover:border-teal-400 transition-colors bg-[#182032]/30 text-center hover:bg-teal-500/5 group">
-              <FolderSync className="text-slate-400 w-5 h-5 mb-1 group-hover:text-teal-400 transition-colors" />
-              <span className="text-[10px] font-bold text-slate-200">Chọn cả Thư mục</span>
-              <span className="text-[8px] text-slate-500 mt-0.5">Quét đệ quy lấy file .txt</span>
+            <label className="flex flex-col items-center justify-center border border-dashed border-line rounded-lg py-3 px-2 cursor-pointer hover:border-teal-400 transition-colors bg-surface-2/30 text-center hover:bg-teal-500/5 group">
+              <FolderSync className="text-fg-muted w-5 h-5 mb-1 group-hover:text-brand transition-colors" />
+              <span className="text-[10px] font-bold text-fg">Chọn cả Thư mục</span>
+              <span className="text-[8px] text-fg-subtle mt-0.5">Quét đệ quy lấy file .txt</span>
               <input
                 type="file"
                 disabled={loading}
@@ -138,10 +138,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         </div>
 
         {/* FOOTER MODAL */}
-        <div className="bg-[#141b2e]/30 px-4 py-2.5 border-t border-slate-800 flex justify-end">
+        <div className="bg-surface-2/30 px-4 py-2.5 border-t border-line-soft flex justify-end">
           <button
             onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg py-1.5 px-3 text-[10px] font-bold transition-colors cursor-pointer"
+            className="bg-slate-800 hover:bg-slate-700 text-fg rounded-lg py-1.5 px-3 text-[10px] font-bold transition-colors cursor-pointer"
           >
             Đóng
           </button>

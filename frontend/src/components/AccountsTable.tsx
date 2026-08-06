@@ -96,7 +96,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
             if (e.key === 'Enter') commitEdit();
             else if (e.key === 'Escape') setEditing(null);
           }}
-          className="bg-[#0e1424] border border-teal-500 rounded px-1.5 py-0.5 text-xs text-teal-300 focus:outline-none w-full max-w-[180px]"
+          className="bg-surface border border-teal-500 rounded px-1.5 py-0.5 text-xs text-brand focus:outline-none w-full max-w-[180px]"
         />
       );
     }
@@ -150,8 +150,8 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
   };
 
   const renderSortIcon = (key: SortKey) => {
-    if (sortKey !== key) return <ArrowUpDown className="w-3 h-3 text-slate-600" />;
-    return sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-teal-400" /> : <ArrowDown className="w-3 h-3 text-teal-400" />;
+    if (sortKey !== key) return <ArrowUpDown className="w-3 h-3 text-fg-subtle" />;
+    return sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-brand" /> : <ArrowDown className="w-3 h-3 text-brand" />;
   };
 
   // =========================================================================
@@ -191,7 +191,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={toggleSelectAll}
-            className="text-xs font-bold text-teal-400 hover:text-teal-300 flex items-center gap-1.5"
+            className="text-xs font-bold text-brand hover:text-brand flex items-center gap-1.5"
           >
             {selectedAccountIds.length === accounts.length && accounts.length > 0 ? (
               <CheckSquare className="w-4 h-4" />
@@ -204,7 +204,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
           {selectedAccountIds.length > 0 && (
             <button
               onClick={() => setSelectedAccountIds([])}
-              className="text-[10px] font-bold text-slate-500 hover:text-rose-400 flex items-center gap-1"
+              className="text-[10px] font-bold text-fg-subtle hover:text-rose-400 flex items-center gap-1"
             >
               <X className="w-3 h-3" /> Bỏ chọn
             </button>
@@ -214,13 +214,13 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
               N tài khoản TIẾP THEO (đang hiển thị, chưa được chọn) cộng dồn
               vào lựa chọn hiện tại. Bấm liên tiếp để chọn 10, rồi 10 tiếp
               theo, rồi 10 tiếp theo nữa... */}
-          <div className="flex items-center gap-1.5 bg-[#182032] border border-slate-700 rounded-lg pl-2 pr-1 py-1">
-            <span className="text-[10px] text-slate-400 font-semibold">Chọn nhanh mỗi lần:</span>
+          <div className="flex items-center gap-1.5 bg-surface-2 border border-line rounded-lg pl-2 pr-1 py-1">
+            <span className="text-[10px] text-fg-muted font-semibold">Chọn nhanh mỗi lần:</span>
             <input
               type="number" min={1} max={200}
               value={batchSize}
               onChange={(e) => setBatchSize(parseInt(e.target.value) || 10)}
-              className="w-12 bg-transparent text-xs text-center font-bold text-teal-400 focus:outline-none"
+              className="w-12 bg-transparent text-xs text-center font-bold text-brand focus:outline-none"
             />
             <button
               onClick={() => {
@@ -228,7 +228,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                 const nextBatch = remaining.slice(0, batchSize).map((a) => a.id);
                 setSelectedAccountIds([...selectedAccountIds, ...nextBatch]);
               }}
-              className="bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 text-[10px] font-bold px-2 py-1 rounded-md transition-all whitespace-nowrap"
+              className="bg-brand/10 hover:bg-brand/20 border border-brand/30 text-brand text-[10px] font-bold px-2 py-1 rounded-md transition-all whitespace-nowrap"
             >
               + Chọn {batchSize} tiếp theo
             </button>
@@ -236,26 +236,26 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
         </div>
 
         {/* Ô TÌM NHANH */}
-        <div className="flex items-center gap-2 bg-[#182032] border border-slate-700 rounded-lg px-2.5 w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+        <div className="flex items-center gap-2 bg-surface-2 border border-line rounded-lg px-2.5 w-full sm:w-64">
+          <Search className="w-3.5 h-3.5 text-fg-subtle shrink-0" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Tìm theo username hoặc ID..."
-            className="w-full bg-transparent py-1.5 text-xs focus:outline-none text-slate-200"
+            className="w-full bg-transparent py-1.5 text-xs focus:outline-none text-fg"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-slate-300 shrink-0">
+            <button onClick={() => setSearchQuery('')} className="text-fg-subtle hover:text-fg shrink-0">
               <X className="w-3 h-3" />
             </button>
           )}
         </div>
 
-        <div className="text-[10px] text-slate-400 italic hidden lg:block">
-          💡 Click <span className="text-teal-400 font-bold">bất kỳ đâu</span> trên hàng để chọn ·
-          {' '}<span className="text-teal-400 font-bold">Shift+Click</span> chọn cả dải ·
-          {' '}<span className="text-teal-400 font-bold">Chuột phải</span> để mở Menu nâng cao
+        <div className="text-[10px] text-fg-muted italic hidden lg:block">
+          💡 Click <span className="text-brand font-bold">bất kỳ đâu</span> trên hàng để chọn ·
+          {' '}<span className="text-brand font-bold">Shift+Click</span> chọn cả dải ·
+          {' '}<span className="text-brand font-bold">Chuột phải</span> để mở Menu nâng cao
         </div>
       </div>
 
@@ -268,7 +268,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                 <th
                   key={col.key}
                   onClick={() => handleSort(col.key)}
-                  className="p-4 cursor-pointer select-none hover:text-slate-200 transition-colors"
+                  className="p-4 cursor-pointer select-none hover:text-fg transition-colors"
                   title="Bấm để sắp xếp"
                 >
                   <span className="inline-flex items-center gap-1.5">
@@ -285,7 +285,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
           <tbody className="divide-y divide-slate-800 text-xs">
             {displayedAccounts.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-slate-500 font-semibold">
+                <td colSpan={10} className="p-8 text-center text-fg-subtle font-semibold">
                   {searchQuery
                     ? `Không tìm thấy tài khoản nào khớp với "${searchQuery}".`
                     : 'Không tìm thấy tài khoản nào khớp với bộ lọc hoặc Lô đang chọn.'}
@@ -306,45 +306,45 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                     <td className="p-4 text-center">
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleSelectAccount(acc.id); setLastClickedIndex(rowIndex); }}
-                        className="text-slate-400 hover:text-teal-400"
+                        className="text-fg-muted hover:text-brand"
                       >
                         {isSelected ? (
-                          <CheckSquare className="w-4 h-4 text-teal-400" />
+                          <CheckSquare className="w-4 h-4 text-brand" />
                         ) : (
                           <Square className="w-4 h-4" />
                         )}
                       </button>
                     </td>
 
-                    <td className="p-4 font-medium text-slate-200">
+                    <td className="p-4 font-medium text-fg">
                       <div className="flex items-center gap-1.5 group">
                         {renderEditable(acc, 'username', acc.username)}
                         <button
                           onClick={(e) => handleCopyUsername(e, acc.username)}
-                          className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-teal-400 transition-opacity"
+                          className="opacity-0 group-hover:opacity-100 text-fg-subtle hover:text-brand transition-opacity"
                           title="Sao chép username"
                         >
                           <Copy className="w-3 h-3" />
                         </button>
                       </div>
-                      <div className="text-[10px] text-slate-500 font-mono mt-0.5">{acc.id}</div>
+                      <div className="text-[10px] text-fg-subtle font-mono mt-0.5">{acc.id}</div>
                     </td>
 
                     {/* QUỐC GIA & PHÂN LÔ ĐỒ HỌA SẮC NÉT CHẠY HOÀN HẢO TRÊN WINDOWS */}
                     <td className="p-4">
-                      <div className="flex items-center gap-2 font-bold text-slate-100">
+                      <div className="flex items-center gap-2 font-bold text-fg">
                         <img
                           src={getCountryFlagUrl(acc.country)}
                           alt={acc.country}
-                          className="w-4.5 h-3.5 object-cover rounded-sm border border-slate-800 shadow-sm shrink-0"
+                          className="w-4.5 h-3.5 object-cover rounded-sm border border-line-soft shadow-sm shrink-0"
                           onError={(e) => { e.currentTarget.style.display = 'none'; }}
                         />
                         <span className="text-[11px] uppercase tracking-wider">
                           {renderEditable(acc, 'country', acc.country)}
                         </span>
                       </div>
-                      <div className="text-[10px] text-slate-400 font-medium mt-1 flex items-center gap-1">
-                        <Folder className="w-3 h-3 text-slate-500" /> {renderEditable(acc, 'batch_tag', acc.batch_tag)}
+                      <div className="text-[10px] text-fg-muted font-medium mt-1 flex items-center gap-1">
+                        <Folder className="w-3 h-3 text-fg-subtle" /> {renderEditable(acc, 'batch_tag', acc.batch_tag)}
                       </div>
                       <div className="text-[10px] text-fg-subtle font-mono mt-0.5">
                         {acc.created_at || "—"}
@@ -397,7 +397,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       <select
                         value={acc.proxy_id || 'none'}
                         onChange={(e) => handleBindProxy(acc.id, e.target.value)}
-                        className="bg-[#182032] border border-slate-700 rounded-lg p-1.5 text-xs text-teal-400 font-medium focus:outline-none focus:ring-1 focus:ring-teal-400"
+                        className="bg-surface-2 border border-line rounded-lg p-1.5 text-xs text-brand font-medium focus:outline-none focus:ring-1 focus:ring-teal-400"
                       >
                         <option value="none">Mạng LAN (Không Proxy)</option>
                         {proxies.map((p) => (
@@ -408,7 +408,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </select>
                     </td>
 
-                    <td className="p-4 font-mono font-bold text-slate-300">
+                    <td className="p-4 font-mono font-bold text-fg">
                       {acc.status === 'RUNNING' ? (
                         <span className="flex items-center gap-1 text-amber-400 animate-pulse">
                           ⏳ {acc.current_step}
@@ -419,13 +419,13 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                     </td>
 
                     {/* GHI CHÚ tự do - nhấp đúp để sửa (được phép để trống) */}
-                    <td className="p-4 text-slate-300 max-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                    <td className="p-4 text-fg max-w-[160px]" onClick={(e) => e.stopPropagation()}>
                       {renderEditable(
                         acc,
                         'note',
                         acc.note
                           ? <span className="text-amber-200/90">{acc.note}</span>
-                          : <span className="text-slate-600 italic">＋ ghi chú</span>
+                          : <span className="text-fg-subtle italic">＋ ghi chú</span>
                       )}
                     </td>
 
@@ -436,7 +436,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                           acc.is_paused ? (
                             <button
                               onClick={() => onResumeAccount(acc.id)}
-                              className="inline-flex items-center gap-1 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all animate-pulse"
+                              className="inline-flex items-center gap-1 bg-brand/10 hover:bg-brand/20 border border-brand/30 text-brand text-[10px] font-bold px-2.5 py-1 rounded-md transition-all animate-pulse"
                               title="Tiếp tục lại tài khoản này"
                             >
                               <Play className="w-3 h-3" /> Tiếp tục

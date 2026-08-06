@@ -166,13 +166,13 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
   return (
     <div className="flex flex-col gap-6">
       {/* CẤU HÌNH CHIẾN DỊCH TƯƠNG TÁC */}
-      <div className="bg-[#0e1424] p-5 rounded-2xl border border-slate-800 flex flex-col gap-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+      <div className="bg-surface p-5 rounded-2xl border border-line-soft flex flex-col gap-4">
+        <div className="flex items-center justify-between border-b border-line-soft pb-3">
+          <h3 className="font-bold text-sm text-fg flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-pink-400" /> Cấu Hình Tương Tác Video
           </h3>
-          <span className="text-[11px] text-slate-400 font-semibold">
-            Đã chọn: <span className="text-teal-400 font-bold">{selectedAccounts.length}</span> tài khoản
+          <span className="text-[11px] text-fg-muted font-semibold">
+            Đã chọn: <span className="text-brand font-bold">{selectedAccounts.length}</span> tài khoản
             {selectedAccounts.length === 0 && (
               <span className="text-amber-400 ml-2">(chọn ở tab "Quản lý Tài Khoản" trước)</span>
             )}
@@ -182,12 +182,12 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
         {/* NGUỒN VIDEO */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs text-slate-400 font-semibold block mb-1.5">Nguồn video:</label>
+            <label className="text-xs text-fg-muted font-semibold block mb-1.5">Nguồn video:</label>
             <div className="flex gap-2">
               <button
                 onClick={() => setMode('foryou')}
                 className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${
-                  mode === 'foryou' ? 'bg-teal-500/20 border-teal-500/40 text-teal-400' : 'bg-slate-900 border-slate-800 text-slate-400'
+                  mode === 'foryou' ? 'bg-teal-500/20 border-teal-500/40 text-brand' : 'bg-slate-900 border-line-soft text-fg-muted'
                 }`}
               >
                 Trang For You
@@ -195,7 +195,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
               <button
                 onClick={() => setMode('hashtag')}
                 className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${
-                  mode === 'hashtag' ? 'bg-teal-500/20 border-teal-500/40 text-teal-400' : 'bg-slate-900 border-slate-800 text-slate-400'
+                  mode === 'hashtag' ? 'bg-teal-500/20 border-teal-500/40 text-brand' : 'bg-slate-900 border-line-soft text-fg-muted'
                 }`}
               >
                 Theo Hashtag
@@ -205,15 +205,15 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
 
           {mode === 'hashtag' && (
             <div>
-              <label className="text-xs text-slate-400 font-semibold block mb-1.5">Từ khóa hashtag (không cần #):</label>
-              <div className="flex items-center gap-2 bg-[#182032] border border-slate-700 rounded-xl px-3">
-                <Hash className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <label className="text-xs text-fg-muted font-semibold block mb-1.5">Từ khóa hashtag (không cần #):</label>
+              <div className="flex items-center gap-2 bg-surface-2 border border-line rounded-xl px-3">
+                <Hash className="w-3.5 h-3.5 text-fg-subtle shrink-0" />
                 <input
                   type="text"
                   value={hashtag}
                   onChange={(e) => setHashtag(e.target.value)}
                   placeholder="vd: dance, funnyvideo..."
-                  className="w-full bg-transparent p-2.5 text-sm focus:outline-none text-slate-100"
+                  className="w-full bg-transparent p-2.5 text-sm focus:outline-none text-fg"
                 />
               </div>
             </div>
@@ -223,8 +223,8 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
         {/* THỜI GIAN CHẠY / CHU KỲ */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs text-slate-400 font-semibold block mb-1.5">
-              Chạy mỗi phiên trong (phút): <span className="text-teal-400 font-bold">{durationMinutes}</span>
+            <label className="text-xs text-fg-muted font-semibold block mb-1.5">
+              Chạy mỗi phiên trong (phút): <span className="text-brand font-bold">{durationMinutes}</span>
             </label>
             <input
               type="range" min={1} max={120} value={durationMinutes}
@@ -233,7 +233,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
             />
           </div>
           <div>
-            <label className="text-xs text-slate-400 font-semibold block mb-1.5">
+            <label className="text-xs text-fg-muted font-semibold block mb-1.5">
               Lặp lại mỗi (phút, chỉ áp dụng khi Tạo lịch): <span className="text-indigo-400 font-bold">{intervalMinutes}</span>
             </label>
             <input
@@ -247,7 +247,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
         {/* XÁC SUẤT TYM / CMT */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs text-slate-400 font-semibold flex items-center gap-1.5 mb-1.5">
+            <label className="text-xs text-fg-muted font-semibold flex items-center gap-1.5 mb-1.5">
               <Heart className="w-3.5 h-3.5 text-rose-400" /> Xác suất Tym mỗi video: <span className="text-rose-400 font-bold">{likeProbability}%</span>
             </label>
             <input
@@ -257,7 +257,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
             />
           </div>
           <div>
-            <label className="text-xs text-slate-400 font-semibold flex items-center gap-1.5 mb-1.5">
+            <label className="text-xs text-fg-muted font-semibold flex items-center gap-1.5 mb-1.5">
               <MessageCircle className="w-3.5 h-3.5 text-sky-400" /> Xác suất Bình luận mỗi video: <span className="text-sky-400 font-bold">{commentProbability}%</span>
             </label>
             <input
@@ -270,7 +270,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
 
         {/* FILE CÂU BÌNH LUẬN */}
         <div>
-          <label className="text-xs text-slate-400 font-semibold block mb-1.5">
+          <label className="text-xs text-fg-muted font-semibold block mb-1.5">
             File danh sách câu bình luận (.txt, mỗi dòng 1 câu):
           </label>
           <div className="flex gap-2">
@@ -279,7 +279,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
               value={commentFilePath}
               onChange={(e) => setCommentFilePath(e.target.value)}
               placeholder="Dán đường dẫn file .txt hoặc bấm Chọn file"
-              className="flex-1 bg-[#182032] border border-slate-700 rounded-xl p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 text-slate-100"
+              className="flex-1 bg-surface-2 border border-line rounded-xl p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400 text-fg"
             />
             <button
               onClick={handlePickCommentFile}
@@ -290,22 +290,22 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
             </button>
           </div>
           {commentCount > 0 && (
-            <p className="text-[10px] text-teal-400 mt-1 font-semibold">Đã nạp {commentCount} câu bình luận.</p>
+            <p className="text-[10px] text-brand mt-1 font-semibold">Đã nạp {commentCount} câu bình luận.</p>
           )}
         </div>
 
         {/* SỐ LUỒNG SONG SONG */}
         <div>
-          <label className="text-xs text-slate-400 font-semibold block mb-1.5">Số luồng chạy song song (chỉ áp dụng cho "Chạy 1 lần"):</label>
+          <label className="text-xs text-fg-muted font-semibold block mb-1.5">Số luồng chạy song song (chỉ áp dụng cho "Chạy 1 lần"):</label>
           <input
             type="number" min={1} max={20} value={concurrencyLimit}
             onChange={(e) => setConcurrencyLimit(parseInt(e.target.value) || 4)}
-            className="w-32 bg-[#182032] border border-slate-700 rounded-xl p-2 text-sm text-center font-bold text-teal-400 focus:outline-none"
+            className="w-32 bg-surface-2 border border-line rounded-xl p-2 text-sm text-center font-bold text-brand focus:outline-none"
           />
         </div>
 
         {/* NÚT HÀNH ĐỘNG */}
-        <div className="flex gap-3 pt-2 border-t border-slate-800">
+        <div className="flex gap-3 pt-2 border-t border-line-soft">
           <button
             onClick={handleRunOnce}
             disabled={busy}
@@ -324,27 +324,27 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
       </div>
 
       {/* DANH SÁCH LỊCH ĐANG HOẠT ĐỘNG */}
-      <div className="bg-[#0e1424] p-5 rounded-2xl border border-slate-800">
-        <h3 className="font-bold text-sm text-slate-200 mb-3 flex items-center gap-2">
+      <div className="bg-surface p-5 rounded-2xl border border-line-soft">
+        <h3 className="font-bold text-sm text-fg mb-3 flex items-center gap-2">
           <CalendarClock className="w-4 h-4 text-indigo-400" /> Các Lịch Đang Hoạt Động ({schedules.length})
         </h3>
 
         {schedules.length === 0 ? (
-          <p className="text-xs text-slate-500 text-center py-6">Chưa có lịch tương tác nào được tạo.</p>
+          <p className="text-xs text-fg-subtle text-center py-6">Chưa có lịch tương tác nào được tạo.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {schedules.map((s) => (
-              <div key={s.schedule_id} className="bg-[#141b2e] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap">
-                <div className="text-xs text-slate-300 flex flex-col gap-0.5">
-                  <span className="font-bold text-slate-100">
+              <div key={s.schedule_id} className="bg-surface-2 border border-line-soft rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap">
+                <div className="text-xs text-fg flex flex-col gap-0.5">
+                  <span className="font-bold text-fg">
                     {s.mode === 'hashtag' ? `#${s.hashtag}` : 'For You'} — {s.account_ids.length} tài khoản
                   </span>
-                  <span className="text-slate-500">
+                  <span className="text-fg-subtle">
                     Chạy {s.duration_minutes} phút / mỗi {s.interval_minutes} phút · Tym {(s.like_probability * 100).toFixed(0)}% · Cmt {(s.comment_probability * 100).toFixed(0)}%
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${s.is_active ? 'bg-teal-500/10 text-teal-400 border border-teal-500/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'}`}>
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${s.is_active ? 'bg-brand/10 text-brand border border-brand/30' : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'}`}>
                     {s.is_active ? '● ĐANG CHẠY' : '⏸ TẠM DỪNG'}
                   </span>
                   {s.is_active ? (
@@ -358,7 +358,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
                   ) : (
                     <button
                       onClick={() => callScheduleAction(s.schedule_id, 'resume')}
-                      className="p-1.5 rounded-md bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400"
+                      className="p-1.5 rounded-md bg-brand/10 hover:bg-brand/20 border border-brand/30 text-brand"
                       title="Tiếp tục lịch"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
