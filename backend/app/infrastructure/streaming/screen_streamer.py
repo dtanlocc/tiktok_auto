@@ -18,6 +18,7 @@ import asyncio
 import base64
 import logging
 import sys
+import time
 from typing import Callable, Optional, Any
 
 from app.core.config import settings
@@ -28,6 +29,25 @@ logger = logging.getLogger("ScreenStreamer")
 
 # So lan chup loi LIEN TIEP toi da truoc khi coi page da chet han.
 _MAX_CONSECUTIVE_FAILURES = 15
+
+# =============================================================================
+# CHI STREAM KHI CO NGUOI DANG XEM (tiet kiem CPU cho browser khi chay da luong)
+# =============================================================================
+# Frontend (tab "Man Hinh Truc Tiep") gui ping dinh ky khi dang mo. Neu KHONG co
+# ping nao trong _VIEW_TTL giay gan day -> coi nhu KHONG ai xem -> streamer BO QUA
+# viec chup/encode/broadcast hoan toan -> CPU danh het cho cac browser dang chay.
+_last_view_ping: float = 0.0
+_VIEW_TTL: float = 6.0
+
+
+def note_screen_view_ping() -> None:
+    """Frontend goi (qua API) khi tab Man Hinh Truc Tiep dang mo."""
+    global _last_view_ping
+    _last_view_ping = time.monotonic()
+
+
+def screens_are_watched() -> bool:
+    return (time.monotonic() - _last_view_ping) < _VIEW_TTL
 
 
 async def stream_browser_frames(
@@ -52,6 +72,12 @@ async def stream_browser_frames(
     try:
         while True:
             await asyncio.sleep(interval)
+
+            # TOI UU DA LUONG: neu KHONG ai dang xem tab Man Hinh Truc Tiep thi
+            # BO QUA toan bo chup/encode/broadcast -> giai phong CPU cho browser.
+            # Vong lap van song de tu dong stream lai ngay khi co nguoi xem.
+            if not screens_are_watched():
+                continue
 
             raw = None
 

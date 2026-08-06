@@ -51,6 +51,10 @@ class ConcurrentTaskDispatcher:
         # thuc khi co slot proxy tro trong.
         self._proxy_running: Dict[str, int] = {}
         self._proxy_cond: asyncio.Condition = asyncio.Condition()
+        # Cache danh sach proxy (kho proxy hiem khi doi) -> khong mo Session DB moi
+        # lan gianh proxy. TTL ngan de proxy moi import van duoc nhan trong ~15s.
+        self._proxy_cache: Optional[List[Any]] = None
+        self._proxy_cache_at: float = 0.0
 
         # Moc thoi gian (monotonic) lan MO GAN NHAT tren tung proxy (host:port).
         # Dung cho GIAN CACH THEO PROXY: 2 proxy KHAC nhau mo song song ngay, chi
@@ -110,13 +114,19 @@ class ConcurrentTaskDispatcher:
             pass  # khong co event loop (vd goi tu test dong bo) -> bo qua
 
     def _load_all_proxies(self) -> List[Any]:
-        """Doc toan bo proxy trong kho (session rieng, dong bo, nhanh)."""
+        """Doc toan bo proxy trong kho, CO CACHE (TTL 15s) de khong mo Session DB
+        moi lan gianh proxy trong hot path da luong."""
+        now = time.monotonic()
+        if self._proxy_cache is not None and (now - self._proxy_cache_at) < 15.0:
+            return self._proxy_cache
         try:
             with Session(engine) as s:
-                return SQLiteProxyRepository(s).get_all()
+                self._proxy_cache = SQLiteProxyRepository(s).get_all()
+                self._proxy_cache_at = now
+                return self._proxy_cache
         except Exception as e:
             logger.warning(f"[-] Khong doc duoc kho proxy: {str(e)}")
-            return []
+            return self._proxy_cache or []
 
     async def _acquire_balanced_proxy(self, account_id: str, session: Session):
         """Chon proxy IT TAI NHAT con slot (duoi proxy_max_concurrent) va tang bo

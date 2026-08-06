@@ -17,6 +17,18 @@ export const LiveScreens: React.FC = () => {
   const [zoomId, setZoomId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // HEARTBEAT: báo backend "đang xem" khi tab này mở -> backend mới chụp & gửi
+  // frame. Đóng tab (unmount) -> ngừng ping -> backend tự ngừng chụp (tiết kiệm
+  // CPU cho browser đang chạy đa luồng).
+  useEffect(() => {
+    const ping = () => {
+      fetch('http://127.0.0.1:9000/api/v1/tasks/screen-view-ping', { method: 'POST' }).catch(() => {});
+    };
+    ping(); // ping ngay khi mở tab
+    const t = setInterval(ping, 3000);
+    return () => clearInterval(t);
+  }, []);
+
   useEffect(() => {
     let closed = false;
 

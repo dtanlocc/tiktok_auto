@@ -1,13 +1,33 @@
 from sqlmodel import create_engine, SQLModel, Session
-from sqlalchemy import text  # Sử dụng text() để thực thi truy vấn thô an toàn
+from sqlalchemy import text, event  # text() thực thi SQL thô; event để gắn PRAGMA
 from app.core.config import settings
 
 # SQLite yêu cầu cấu hình check_same_thread=False khi sử dụng đa luồng (multi-threading/asyncio)
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 10},
     echo=False  # Đặt thành True nếu bạn muốn in log câu lệnh SQL ra terminal
 )
+
+
+# =============================================================================
+# TỐI ƯU ĐA LUỒNG: BẬT WAL cho SQLite trên MỖI kết nối
+# =============================================================================
+# Mặc định SQLite dùng rollback-journal: 1 writer KHOÁ toàn bộ DB, reader cũng
+# bị chặn -> khi N luồng đồng thời cập nhật trạng thái/step liên tục sẽ nghẽn +
+# "database is locked". WAL (Write-Ahead Log): reader KHÔNG chặn writer và ngược
+# lại -> đồng thời mượt hơn hẳn. synchronous=NORMAL (an toàn với WAL, nhanh hơn
+# FULL). busy_timeout=5000: khi gặp khoá thì CHỜ 5s thay vì lỗi ngay.
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    cur = dbapi_connection.cursor()
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.execute("PRAGMA busy_timeout=5000")
+        cur.execute("PRAGMA temp_store=MEMORY")
+    finally:
+        cur.close()
 
 # [Cập nhật trong hàm init_db của connection.py]
 def init_db() -> None:

@@ -304,3 +304,12 @@ async def get_active_debug_sessions():
     """Danh sach account_id dang co phien debug mo (de UI hien nut Dung/Mo dung)."""
     return {"active_ids": debug_login_service.active_ids()}
 
+
+@router.post("/screen-view-ping")
+async def screen_view_ping():
+    """Frontend (tab Màn Hình Trực Tiếp) gọi định kỳ khi đang mở. Chỉ khi có ping
+    gần đây thì streamer mới chụp & gửi frame -> không ai xem thì không tốn CPU."""
+    from app.infrastructure.streaming.screen_streamer import note_screen_view_ping
+    note_screen_view_ping()
+    return {"status": "OK"}
+
