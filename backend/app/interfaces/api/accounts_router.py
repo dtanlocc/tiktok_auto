@@ -14,6 +14,7 @@ from app.domain.entities.account import TikTokAccount
 from app.interfaces.api.deps import get_account_repository, get_proxy_repository
 from app.interfaces.dto.account_dto import AccountCreateIn, AccountOut
 from app.infrastructure.websocket.socket_manager import ws_manager
+from app.core.cookie_utils import parse_cookies_any, cookies_to_string
 
 logger = logging.getLogger("AccountsRouter")
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
@@ -159,10 +160,8 @@ async def import_raw_account(
         client_id = parts[5].strip()
         cookies_raw = parts[6].strip() if len(parts) > 6 else ""
 
-        try:
-            cookies = json.loads(cookies_raw) if cookies_raw else []
-        except json.JSONDecodeError:
-            cookies = []
+        # Chap nhan CA 2 dang: JSON (mang Playwright) HOAC chuoi 'a=b; c=d'.
+        cookies = parse_cookies_any(cookies_raw)
 
         allocated_proxy_id = _get_least_used_proxy_id(account_repo, proxy_repo)
         
@@ -253,10 +252,8 @@ async def import_accounts_from_files(
                 client_id = parts[5].strip()
                 cookies_raw = parts[6].strip() if len(parts) > 6 else ""
 
-                try:
-                    cookies = json.loads(cookies_raw) if cookies_raw else []
-                except json.JSONDecodeError:
-                    cookies = []
+                # Chap nhan CA 2 dang: JSON (mang Playwright) HOAC chuoi 'a=b; c=d'.
+                cookies = parse_cookies_any(cookies_raw)
 
                 allocated_proxy_id = _allocate_next_proxy(proxy_repo, account_repo)
                 account_id = str(uuid.uuid4())
@@ -562,7 +559,8 @@ async def export_accounts(
       Neu N > so acc co san -> lay HET so co san (co co took_all_available=True).
 
     Tra ve noi dung file + so lieu de UI hien popup (da lay bao nhieu / con lai bao nhieu).
-    File dinh dang: username|password|email|email_password|refresh_token|client_id|cookies_json
+    File dinh dang: username|password|email|email_password|refresh_token|client_id|cookies
+    (cookies xuat ra dang CHUOI 'name=value; name=value; ...' giong file test_cookies.txt).
     """
     # 1. Loc ra cac account hop le (con ton tai trong DB), giu dung thu tu truyen vao.
     pool = []
@@ -584,9 +582,11 @@ async def export_accounts(
     took_all_available = quantity is not None and quantity > available
 
     # 3. Dung noi dung file (dinh dang day du = giong format import).
+    #    Cookies xuat ra dang CHUOI 'name=value; ...' (giong file test_cookies.txt),
+    #    KHONG phai JSON. Import chap nhan lai duoc (parse_cookies_any nhan ca 2 dang).
     lines = []
     for acc in take:
-        cookies_str = json.dumps(acc.cookies or [], ensure_ascii=False)
+        cookies_str = cookies_to_string(acc.cookies or [])
         line = "|".join([
             acc.username or "",
             acc.password or "",
