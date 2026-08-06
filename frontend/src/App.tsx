@@ -5,6 +5,7 @@ import { Account, Proxy } from './store/useAppStore';
 
 // Nhập khẩu các thành phần đã mô-đun hóa
 import { Header } from './components/Header';
+import { NavSidebar } from './components/NavSidebar';
 import { ControlPanel } from './components/ControlPanel';
 import { Sidebar } from './components/Sidebar';
 import { StatsCards } from './components/StatsCards';
@@ -648,12 +649,15 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-canvas px-5 py-5 md:px-7 text-fg flex flex-col gap-5 select-none">
-      
-      {/* 1. HEADER COMPONENT */}
-      <Header activeTab={activeTab} setActiveTab={setActiveTab} />
+    <div className="min-h-screen bg-canvas text-fg flex select-none">
 
-      {/* 2. CONTROL PANEL COMPONENT (Chứa nút chọn thư mục ảnh cao cấp) */}
+      {/* SIDEBAR TRÁI CỐ ĐỊNH: điều hướng + trạng thái hệ thống */}
+      <NavSidebar activeTab={activeTab} setActiveTab={setActiveTab} isGloballyPaused={isGloballyPaused} />
+
+      {/* KHU LÀM VIỆC CHÍNH (cuộn độc lập với sidebar) */}
+      <main className="flex-1 min-w-0 h-screen overflow-y-auto flex flex-col gap-4 px-5 py-5 md:px-6">
+
+      {/* CONTROL PANEL COMPONENT (Chứa nút chọn thư mục ảnh cao cấp) */}
       <ControlPanel
         concurrency={concurrency}
         setConcurrency={handleSetProxyConcurrency}
@@ -828,6 +832,8 @@ export default function App() {
 
       {/* 7. TERMINAL CONSOLE COMPONENT */}
       <TerminalConsole logs={logs} setLogs={setLogs} terminalEndRef={terminalEndRef} />
+
+      </main>
 
       {/* 8. CUSTOM CONTEXT MENU COMPONENT */}
       {contextMenu && contextMenu.visible && activeTab === 'accounts' && (
