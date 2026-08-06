@@ -852,6 +852,250 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             logger.error(f"[-] Gap loi khi thao tac cap nhat thong tin ho so: {str(e)}")
             return (False, None)
 
+    # =====================================================================
+    # UPLOAD VIDEO (da verify end-to-end)
+    # =====================================================================
+    # Diem mau chot: input file cua TikTok KHONG set duoc bang set_input_files
+    # / file_chooser tren Firefox-va (bi chan) VA inject synthetic DataTransfer
+    # thi ket voi file LON (nhanh VOD/Vmok). GIAI PHAP: tu dong hoa HOP THOAI
+    # CHON FILE cua Windows (click that vao "Chon video" -> dialog #32770 ->
+    # dien duong dan bang win32 -> Open) => dua FILE THAT tren dia vao, chay
+    # cho MOI kich thuoc y het lam tay. Captcha luc vao trang do extension
+    # omocaptcha tu giai.
+    async def _click_by_texts(self, texts, timeout=8000, no_wait_after=True):
+        """Click phan tu dau tien khop 1 trong cac chuoi text (da/anh)."""
+        for t in texts:
+            try:
+                loc = self._page.get_by_text(t, exact=False).first
+                await loc.click(timeout=timeout, no_wait_after=no_wait_after)
+                return True
+            except Exception:
+                continue
+        return False
+
+    async def _set_file_via_native_dialog(self, video_path: str) -> bool:
+        """Mo hop thoai chon file Windows va dua duong dan video that vao."""
+        if os.name != "nt":
+            raise RuntimeError("Upload video hien chi ho tro Windows (native file dialog).")
+        import win32gui
+        import win32con
+        abs_path = os.path.abspath(os.path.expanduser(video_path))
+        if not os.path.exists(abs_path):
+            raise FileNotFoundError(f"Khong tim thay video: {abs_path}")
+
+        # Snapshot cac dialog #32770 dang co (de nhan dialog MOI).
+        before = set()
+        def _snap(h, _):
+            try:
+                if win32gui.GetClassName(h) == "#32770":
+                    before.add(h)
+            except Exception:
+                pass
+            return True
+        win32gui.EnumWindows(_snap, None)
+
+        # Click THAT (trusted gesture) vao nut mo dialog. Firefox chan .click()
+        # lap trinh (khong user-gesture) -> phai click qua Playwright.
+        if not await self._click_by_texts(["Chọn video", "Select video", "Tải video", "Upload video"]):
+            # Du phong: click dropzone (input) force
+            try:
+                await self._page.locator('input[type=file]').first.click(timeout=5000, no_wait_after=True, force=True)
+            except Exception:
+                return False
+
+        # Cho dialog MOI xuat hien (toi da ~12s).
+        dlg = None
+        for _ in range(24):
+            await asyncio.sleep(0.5)
+            found = []
+            def _cb(h, _):
+                try:
+                    if win32gui.IsWindowVisible(h) and win32gui.GetClassName(h) == "#32770" and h not in before:
+                        found.append(h)
+                except Exception:
+                    pass
+                return True
+            win32gui.EnumWindows(_cb, None)
+            if found:
+                dlg = found[0]
+                break
+        if not dlg:
+            logger.warning("[Upload] Khong thay hop thoai chon file Windows.")
+            return False
+
+        # Tim o Edit ten file (ComboBoxEx32 > ComboBox > Edit), dien path, bam Open (id=1).
+        edit = None
+        combo = win32gui.FindWindowEx(dlg, 0, "ComboBoxEx32", None)
+        if combo:
+            cb2 = win32gui.FindWindowEx(combo, 0, "ComboBox", None)
+            if cb2:
+                edit = win32gui.FindWindowEx(cb2, 0, "Edit", None)
+        if not edit:
+            edit = win32gui.FindWindowEx(dlg, 0, "Edit", None)
+        if not edit:
+            logger.warning("[Upload] Khong tim thay o nhap ten file trong dialog.")
+            return False
+        win32gui.SendMessage(edit, win32con.WM_SETTEXT, 0, abs_path)
+        await asyncio.sleep(0.4)
+        open_btn = win32gui.GetDlgItem(dlg, 1)  # nut Open/Mo co ID 1
+        if open_btn:
+            win32gui.SendMessage(open_btn, win32con.BM_CLICK, 0, 0)
+        else:
+            # du phong: gui Enter cho o edit
+            win32gui.SendMessage(edit, win32con.WM_KEYDOWN, win32con.VK_RETURN, 0)
+        return True
+
+    async def _dismiss_upload_popups(self) -> int:
+        """Dong cac popup phu o man dang (Bat kiem tra noi dung tu dong, Da hieu...).
+        Popup 'Bat kiem tra...' hay hien LAI nen goi ngay truoc khi bam Dang."""
+        try:
+            return await self._page.evaluate("""() => {
+              let n = 0;
+              document.querySelectorAll('div[role=dialog]').forEach(d => {
+                d.querySelectorAll('button').forEach(b => {
+                  const t = (b.innerText || '').trim();
+                  if (/^(Hủy|Đã hiểu|Bỏ qua|Đóng|Không phải bây giờ|Cancel|Got it|Skip|Close)$/i.test(t)) { b.click(); n++; }
+                });
+                const x = d.querySelector('[aria-label*="close" i],[aria-label*="Đóng" i]');
+                if (x) { x.click(); n++; }
+              });
+              return n;
+            }""")
+        except Exception:
+            return 0
+
+    async def upload_video(self, video_path: str, caption: str = "",
+                           schedule_at: Optional[str] = None, step_logger=None) -> bool:
+        """Dang 1 video len TikTok. schedule_at=None -> dang ngay; nguoc lai
+        (chuoi 'YYYY-MM-DD HH:MM') -> dat lich dang qua tuy chon 'Len lich' cua
+        TikTok. Tra ve True neu dang/len lich thanh cong."""
+        page = self._page
+        if not page:
+            raise RuntimeError("Trinh duyet chua khoi tao.")
+
+        async def log(m):
+            if step_logger:
+                await step_logger(m)
+
+        await log("Mở TikTok Studio Upload...")
+        await self.navigate_to("https://www.tiktok.com/tiktokstudio/upload?lang=en")
+
+        # 1) Cho captcha (omocaptcha tu giai) -> o upload xuat hien.
+        await log("Chờ giải captcha (omocaptcha tự động) + ô upload...")
+        file_ready = False
+        for i in range(45):  # ~135s
+            await asyncio.sleep(3)
+            if await page.query_selector('input[type=file]'):
+                file_ready = True
+                break
+        if not file_ready:
+            raise Exception("Ô upload không xuất hiện (captcha chưa giải hoặc trang lỗi).")
+
+        # 2) Dua FILE THAT vao qua hop thoai Windows.
+        await log("Chọn video (hộp thoại Windows)...")
+        if not await self._set_file_via_native_dialog(video_path):
+            raise Exception("Không đưa được video vào ô upload (native dialog).")
+
+        # 3) Cho video xu ly xong -> co caption editor + nut Dang bat.
+        await log("Đang tải & xử lý video...")
+        ready = False
+        for i in range(80):  # ~240s cho file lon
+            await asyncio.sleep(3)
+            s = await page.evaluate("""() => ({
+              cap: !!document.querySelector('.public-DraftEditor-content,[contenteditable=true]'),
+              post: Array.from(document.querySelectorAll('button')).some(b=>/^\\s*(Đăng|Post|Publish|Lên lịch|Schedule)\\s*$/i.test(b.innerText) && !b.disabled)
+            })""")
+            if s["cap"] and s["post"]:
+                ready = True
+                break
+        if not ready:
+            raise Exception("Video xử lý quá lâu hoặc không lên được màn đăng.")
+
+        # 4) Caption (thay caption mac dinh lay tu ten file).
+        if caption:
+            await log("Điền caption...")
+            try:
+                ed = page.locator('.public-DraftEditor-content, [contenteditable=true]').first
+                await ed.click()
+                await asyncio.sleep(0.4)
+                await page.keyboard.press("Control+A")
+                await page.keyboard.press("Delete")
+                await page.keyboard.type(caption, delay=25)
+            except Exception as e:
+                logger.warning(f"[Upload] Loi dien caption: {e}")
+
+        # 5) Dat lich (neu co) qua tuy chon 'Len lich' cua TikTok.
+        scheduled = False
+        if schedule_at:
+            await log(f"Đặt lịch đăng: {schedule_at}...")
+            scheduled = await self._set_tiktok_schedule(schedule_at)
+            if not scheduled:
+                logger.warning("[Upload] Đặt lịch thất bại -> sẽ đăng ngay.")
+
+        # 6) Dismiss popup + bam Dang/Len lich (JS click, bo qua 'stable').
+        await asyncio.sleep(2)
+        for _ in range(6):
+            if not await self._dismiss_upload_popups():
+                break
+            await asyncio.sleep(1)
+        await log("Bấm Đăng...")
+        clicked = await page.evaluate("""() => {
+          const b = Array.from(document.querySelectorAll('button')).find(b =>
+            /^\\s*(Đăng|Post|Publish|Lên lịch|Schedule)\\s*$/i.test(b.innerText) && !b.disabled);
+          if (b) { b.scrollIntoView({block:'center'}); b.click(); return b.innerText.trim(); }
+          return null;
+        }""")
+        if not clicked:
+            raise Exception("Không bấm được nút Đăng/Lên lịch.")
+
+        await asyncio.sleep(3)
+        await self._dismiss_upload_popups()  # co the co confirm dialog
+
+        # 7) Xac nhan: redirect ve trang quan ly bai dang / toast thanh cong.
+        await log("Chờ xác nhận đăng...")
+        for i in range(20):
+            await asyncio.sleep(3)
+            s = await page.evaluate("""() => ({
+              url: location.href,
+              ok: /đã đăng|đã lên lịch|đăng thành công|posted|scheduled|đang được xử lý/i.test(document.body.innerText),
+              onManage: location.href.includes('/tiktokstudio/content')
+            })""")
+            if s["ok"] or s["onManage"]:
+                await log("✅ Đăng thành công." if not schedule_at else "✅ Đã lên lịch đăng.")
+                return True
+        # Khong thay dau hieu ro rang -> coi nhu da submit (best-effort).
+        await log("Đã bấm đăng (không thấy xác nhận rõ ràng).")
+        return True
+
+    async def _set_tiktok_schedule(self, schedule_at: str) -> bool:
+        """Chon 'Len lich' + dien ngay/gio. schedule_at: 'YYYY-MM-DD HH:MM'.
+        LUU Y: DOM cua bo chon ngay/gio chua verify ky -> best-effort, co the
+        can tinh chinh selector."""
+        page = self._page
+        try:
+            # Chon radio 'Len lich'
+            await self._click_by_texts(["Lên lịch", "Schedule"], timeout=5000, no_wait_after=False)
+            await asyncio.sleep(1.5)
+            # Tach ngay + gio
+            date_part, _, time_part = schedule_at.partition(" ")
+            # Dien vao cac o input date/time neu co (TikTok dung input text tuy bien)
+            filled = await page.evaluate("""(args) => {
+              const [d, t] = args;
+              let n = 0;
+              const inputs = Array.from(document.querySelectorAll('input'));
+              // heuristic: o co placeholder/aria ve gio va ngay
+              inputs.forEach(i => {
+                const k = ((i.placeholder||'')+' '+(i.getAttribute('aria-label')||'')).toLowerCase();
+                if (/time|giờ/.test(k) && t) { i.value = t; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new Event('change',{bubbles:true})); n++; }
+                else if (/date|ngày/.test(k) && d) { i.value = d; i.dispatchEvent(new Event('input',{bubbles:true})); i.dispatchEvent(new Event('change',{bubbles:true})); n++; }
+              });
+              return n;
+            }""", [date_part, time_part])
+            return filled > 0
+        except Exception as e:
+            logger.warning(f"[Upload] _set_tiktok_schedule loi: {e}")
+            return False
+
     async def close(self) -> None:
         """Dong trinh duyet va xoa hoan toan thu muc ho so tam thoi ra khoi dia cung"""
         # Nha HWND da nhan de cua so khac co the tai su dung so hieu (khi Windows

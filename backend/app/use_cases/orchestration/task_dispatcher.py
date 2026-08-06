@@ -564,6 +564,25 @@ class ConcurrentTaskDispatcher:
                         max_watch_seconds=extra_config.get("max_watch_seconds", 15.0),
                     )
 
+                elif task_type == "UPLOAD_VIDEO":
+                    from app.use_cases.upload.tiktok_upload_video import TikTokUploadVideoUseCase
+                    from app.use_cases.auth.login_strategies import CookieThenCredentialLoginStrategy
+
+                    login_strategy = CookieThenCredentialLoginStrategy()
+                    use_case = TikTokUploadVideoUseCase(
+                        account_repo=account_repo,
+                        browser_service=browser_service,
+                        login_strategy=login_strategy,
+                        email_service=email_service,
+                        step_logger=log_step,
+                    )
+                    success = await use_case.execute(
+                        account_id,
+                        video_path=extra_config.get("video_path", ""),
+                        caption=extra_config.get("caption", ""),
+                        schedule_at=extra_config.get("schedule_at"),
+                    )
+
                 if success:
                     # NÂNG CẤP ĐỘNG: Nạp lại tài khoản từ DB để lấy đúng trạng thái chuyên biệt
                     updated_account = account_repo.get_by_id(account_id)

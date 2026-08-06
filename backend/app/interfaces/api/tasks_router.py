@@ -26,6 +26,14 @@ class BulkUpdateProfileRequest(BaseModel):
 class ProxyConcurrencyRequest(BaseModel):
     limit: int = 2
 
+
+class BulkUploadVideoRequest(BaseModel):
+    account_ids: List[str]
+    video_path: str                       # đường dẫn file .mp4 trên máy chạy
+    caption: str = ""
+    schedule_at: Optional[str] = None      # 'YYYY-MM-DD HH:MM' -> đặt lịch; None -> đăng ngay
+    proxy_concurrency: int = 2
+
 class QuickHealthCheckRequest(BaseModel):
     account_ids: List[str]
     concurrency_limit: int = 5
@@ -56,6 +64,34 @@ async def start_bulk_login(
         queued_count += 1
         
     return {"status": "SUCCESS", "message": f"Đang tiến hành xếp hàng đăng nhập cho {queued_count} tài khoản."}
+
+@router.post("/bulk-upload-video")
+async def start_bulk_upload_video(
+    payload: BulkUploadVideoRequest,
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
+    account_repo: IAccountRepository = Depends(get_account_repository)
+):
+    """Đăng 1 video (cùng file) lên các tài khoản đã chọn. schedule_at=None -> đăng
+    ngay; 'YYYY-MM-DD HH:MM' -> đặt lịch qua tuỳ chọn 'Lên lịch' của TikTok.
+    Video được đưa vào bằng hộp thoại chọn file thật nên hỗ trợ mọi kích thước;
+    captcha lúc vào trang do extension Omocaptcha tự giải."""
+    import os
+    if not payload.account_ids:
+        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
+    if not payload.video_path or not os.path.exists(payload.video_path):
+        raise HTTPException(status_code=400, detail=f"Không tìm thấy file video: {payload.video_path}")
+
+    dispatcher.set_proxy_concurrency_limit(payload.proxy_concurrency)
+    extra = {"video_path": payload.video_path, "caption": payload.caption, "schedule_at": payload.schedule_at}
+    queued = 0
+    for acc_id in payload.account_ids:
+        if not account_repo.get_by_id(acc_id):
+            continue
+        await dispatcher.submit_task(account_id=acc_id, task_type="UPLOAD_VIDEO", extra_config=extra)
+        queued += 1
+    kind = "đặt lịch đăng" if payload.schedule_at else "đăng"
+    return {"status": "SUCCESS", "message": f"Đã xếp hàng {kind} video cho {queued} tài khoản."}
+
 
 @router.post("/bulk-update-profile")
 async def start_bulk_update_profile(
