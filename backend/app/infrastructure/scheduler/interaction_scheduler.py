@@ -58,11 +58,12 @@ class InteractionScheduler:
         submitted = 0
         skipped = 0
         for acc_id in account_ids:
-            # AN TOAN CHONG CHONG CHEO: neu account nay van dang chay dot truoc
-            # (chu ky qua ngan hon thoi gian chay thuc te) thi bo qua dot nay,
-            # tranh mo 2 phien trinh duyet cho cung 1 account cung luc.
-            if acc_id in self.dispatcher.active_tasks:
-                logger.info(f"[!] [Schedule {schedule_id}] Bỏ qua account {acc_id} vì vòng trước vẫn đang chạy.")
+            # AN TOAN CHONG CHONG CHEO: neu account nay dang XEP HANG hoac dang CHAY
+            # thi bo qua dot nay (tranh 2 phien cho cung 1 account). Dung is_account_busy
+            # (dua tren _pending_accounts) thay vi active_tasks - active_tasks chi dang
+            # ky SAU khi da gianh slot tong nen account con nam trong hang doi se lot luoi.
+            if self.dispatcher.is_account_busy(acc_id):
+                logger.info(f"[!] [Schedule {schedule_id}] Bỏ qua account {acc_id} vì vòng trước vẫn đang chạy/xếp hàng.")
                 skipped += 1
                 continue
             await self.dispatcher.submit_task(

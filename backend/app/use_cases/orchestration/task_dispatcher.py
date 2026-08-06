@@ -87,13 +87,20 @@ class ConcurrentTaskDispatcher:
         self.is_globally_paused: bool = False
         self.paused_account_ids: set = set()
 
-    def set_concurrency_limit(self, limit: int) -> None:
-        """Cập nhật động số luồng chạy song song từ Web UI"""
-        if limit <= 0:
-            return
-        self.max_tabs = limit
-        self.semaphore = asyncio.Semaphore(limit)
-        logger.info(f"[+] Đã cập nhật giới hạn luồng chạy song song thành: {limit}")
+        # Cac account DANG xep hang HOAC dang chay (chong chay TRUNG 1 account 2
+        # luong cung luc). Them luc submit_task, xoa trong finally cua worker. Fix
+        # lo hong TOCTOU cua active_tasks (chi dang ky sau khi da gianh slot tong).
+        self._pending_accounts: set = set()
+
+    # LUU Y: KHONG con set_concurrency_limit() dong nua. Truoc day no THAY THE
+    # self.semaphore bang doi tuong Semaphore MOI luc dang chay -> worker cu release
+    # nham vao semaphore moi -> VO tran dong thoi (permit tang vo han). Gio tran
+    # tong (machine cap) CO DINH = MAX_CONCURRENT_TABS luc khoi tao; dieu khien
+    # dong thoi la theo PROXY (set_proxy_concurrency_limit) - an toan, khong swap.
+
+    def is_account_busy(self, account_id: str) -> bool:
+        """Account nay dang xep hang hoac dang chay? (de chan submit trung)."""
+        return account_id in self._pending_accounts
 
     def set_proxy_concurrency_limit(self, limit: int) -> None:
         """Cap nhat dong so luong chay DONG THOI TREN MOI PROXY tu Web UI. Vi viec
@@ -126,7 +133,14 @@ class ConcurrentTaskDispatcher:
                 return self._proxy_cache
         except Exception as e:
             logger.warning(f"[-] Khong doc duoc kho proxy: {str(e)}")
-            return self._proxy_cache or []
+            if self._proxy_cache is not None:
+                # Con cache cu -> dung tam (con hon chay truc tiep lo IP that).
+                return self._proxy_cache
+            # Cache LANH + doc DB loi -> KHONG tra [] (se bi hieu la "khong co proxy"
+            # roi chay TRUC TIEP, lo IP that len TikTok). Nem loi de task that bai
+            # AN TOAN thay vi de-anonymize. (Neu that su khong cau hinh proxy nao,
+            # get_all() tra [] THANH CONG - khac voi truong hop nay.)
+            raise RuntimeError(f"Khong doc duoc kho proxy (cache lanh): {str(e)}")
 
     async def _acquire_balanced_proxy(self, account_id: str, session: Session):
         """Chon proxy IT TAI NHAT con slot (duoi proxy_max_concurrent) va tang bo
@@ -219,6 +233,11 @@ class ConcurrentTaskDispatcher:
             except asyncio.QueueEmpty:
                 break
 
+        # Xoa sach _pending_accounts: task dang chay se tu discard trong finally,
+        # nhung task da bi drain khoi hang doi thi khong bao gio toi finally ->
+        # clear het de khong ket "dang ban" gia.
+        self._pending_accounts.clear()
+
         logger.info(
             f"[!] [EMERGENCY STOP] Da huy {cancelled_count} task dang chay "
             f"va xoa {drained_count} task con trong hang doi."
@@ -293,6 +312,12 @@ class ConcurrentTaskDispatcher:
         extra_config: cấu hình bổ sung tuỳ loại tác vụ - hiện dùng cho
         INTERACT_VIDEOS (mode, hashtag, duration_minutes, xác suất tym/cmt,
         danh sách câu bình luận...)."""
+        # CHONG TRUNG: neu account nay dang xep hang / dang chay thi BO QUA (khong
+        # mo 2 browser cho cung 1 account). Xoa khoi _pending_accounts o finally worker.
+        if account_id in self._pending_accounts:
+            logger.info(f"[!] Bo qua submit TRUNG cho account {account_id} (dang xep hang/chay).")
+            return
+        self._pending_accounts.add(account_id)
         await self._update_account_status(account_id, "QUEUED", step_desc="Đang xếp hàng...")
         await self.queue.put({
             "account_id": account_id,
@@ -325,15 +350,17 @@ class ConcurrentTaskDispatcher:
                 avatar_folder = task_payload["avatar_folder"]
                 extra_config = task_payload.get("extra_config") or {}
 
-                await self.semaphore.acquire()
-
-                # Phân phối tuần tự ảnh đại diện từ thư mục được chỉ định (nếu là tác vụ đổi profile)
+                # Phân phối ảnh đại diện TRƯỚC khi giành slot tổng. QUAN TRỌNG: phải
+                # đứng TRƯỚC semaphore.acquire() -> nếu _allocate_avatar_from_folder
+                # lỗi (đường dẫn hỏng...) thì chưa giữ permit nào, tránh RÒ RỈ permit
+                # (nếu lỗi sau acquire mà chưa tạo worker thì permit không ai release).
                 assigned_avatar = None
                 if task_type == "UPDATE_PROFILE":
-                    # Sử dụng bộ đếm tịnh tiến liên tục để lấy ảnh
                     assigned_avatar = self._allocate_avatar_from_folder(avatar_folder, self.global_task_counter)
                     self.global_task_counter += 1
 
+                await self.semaphore.acquire()
+                # Giua acquire() va create_task() KHONG duoc co lenh nao co the raise.
                 worker_task = asyncio.create_task(
                     self._execute_worker_with_semaphore(account_id, task_type, assigned_avatar, extra_config)
                 )
@@ -349,6 +376,15 @@ class ConcurrentTaskDispatcher:
                 break
             except Exception as e:
                 logger.error(f"[-] Lỗi trong vòng lặp điều phối tác vụ: {str(e)}")
+                # Task chua kip tao worker (vd loi cap phat avatar TRUOC acquire) ->
+                # go account khoi _pending_accounts de con submit lai duoc (khong ket
+                # "dang ban" vinh vien). Permit khong bi ro ri vi alloc dung TRUOC acquire.
+                try:
+                    _aid = locals().get("account_id")
+                    if _aid:
+                        self._pending_accounts.discard(_aid)
+                except Exception:
+                    pass
 
     def _allocate_avatar_from_folder(self, folder_path: Optional[str], task_index: int) -> Optional[str]:
         """Thuật toán phân phối tuần tự ảnh đại diện từ thư mục máy tính"""
@@ -673,6 +709,9 @@ class ConcurrentTaskDispatcher:
                     await self._release_proxy(proxy_key)
                 self.semaphore.release()
                 self.active_tasks.pop(account_id, None)
+                # Go khoi _pending_accounts -> account co the duoc submit lai (chay
+                # lan sau) sau khi lan nay ket thuc.
+                self._pending_accounts.discard(account_id)
                 # Don sach entry pause cua account nay - task da ket thuc
                 # (thanh cong, loi, hay bi huy khan cap) nen khong con y nghia
                 # de "cho pause" nua.

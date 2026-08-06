@@ -109,7 +109,9 @@ async def run_interaction_once(
 
     comment_list = _load_comment_list(payload.comment_file_path)
 
-    dispatcher.set_concurrency_limit(payload.concurrency_limit)
+    # Dieu khien dong thoi theo PROXY (nhat quan voi phan con lai cua app). KHONG
+    # dung set_concurrency_limit cu nua (no swap semaphore tong -> vo tran).
+    dispatcher.set_proxy_concurrency_limit(payload.concurrency_limit)
     extra_config = {
         "mode": payload.mode,
         "hashtag": payload.hashtag,
