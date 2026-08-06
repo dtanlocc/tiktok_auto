@@ -132,132 +132,98 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     onGlobalStop();
   };
 
-  const secLabel = "text-[10px] text-fg-subtle font-bold uppercase tracking-wider";
+  const divider = <span className="h-5 w-px bg-line mx-0.5 hidden md:inline-block" aria-hidden />;
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* THANH ĐIỀU KHIỂN TOÀN CỤC */}
-      <div className="card px-3.5 py-3 flex items-center gap-2 flex-wrap">
-        <span className={`${secLabel} pr-1`}>Điều khiển toàn cục</span>
-
+    <div className="card px-3.5 py-2.5 flex flex-col gap-2.5">
+      {/* HÀNG 1: điều khiển toàn cục + luồng/proxy + thư mục avatar (compact) */}
+      <div className="flex items-center gap-2.5 flex-wrap">
         <button onClick={onGlobalStart} className="btn btn-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/20"
-          title="Khởi động (hoặc khởi động lại) hệ thống điều phối tác vụ">
+          title="Khởi động hệ thống điều phối tác vụ">
           <Play className="w-3.5 h-3.5" /> Bắt đầu
         </button>
-
         {isGloballyPaused ? (
-          <button onClick={onGlobalResume} className="btn btn-sm bg-brand/10 text-brand border border-brand/30 hover:bg-brand/20 animate-pulse-soft"
-            title="Tiếp tục tất cả các luồng đang bị tạm dừng">
+          <button onClick={onGlobalResume} className="btn btn-sm bg-brand/10 text-brand border border-brand/30 hover:bg-brand/20 animate-pulse-soft" title="Tiếp tục">
             <RotateCcw className="w-3.5 h-3.5" /> Tiếp tục
           </button>
         ) : (
-          <button onClick={onGlobalPause} className="btn btn-sm bg-amber-500/10 text-amber-400 border border-amber-500/25 hover:bg-amber-500/20"
-            title="Tạm dừng tất cả các luồng đang chạy tại checkpoint gần nhất">
+          <button onClick={onGlobalPause} className="btn btn-sm bg-amber-500/10 text-amber-400 border border-amber-500/25 hover:bg-amber-500/20" title="Tạm dừng tất cả luồng">
             <Pause className="w-3.5 h-3.5" /> Tạm dừng
           </button>
         )}
-
-        <button onClick={handleStop} className="btn btn-sm btn-danger"
-          title="Hủy ngay lập tức toàn bộ luồng đang chạy và xóa hàng đợi">
-          <Square className="w-3.5 h-3.5" /> Dừng khẩn cấp
+        <button onClick={handleStop} className="btn btn-sm btn-danger" title="Hủy ngay toàn bộ luồng + xóa hàng đợi">
+          <Square className="w-3.5 h-3.5" /> Dừng
         </button>
 
+        {divider}
+
+        <div className="flex items-center gap-2" title="Mỗi proxy chỉ chạy tối đa bấy nhiêu account cùng lúc; account thứ N+1 trên cùng proxy sẽ chờ">
+          <Gauge className="w-4 h-4 text-brand shrink-0" />
+          <label className="text-[11px] text-fg-muted font-semibold whitespace-nowrap">Luồng/proxy</label>
+          <input type="number" min={1} max={10} value={concurrency}
+            onChange={(e) => setConcurrency(parseInt(e.target.value) || 1)}
+            className="field w-14 py-1.5 text-center font-bold text-brand" />
+        </div>
+
+        {divider}
+
+        <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+          <Image className="w-4 h-4 text-brand shrink-0" />
+          <input type="text" placeholder="Thư mục ảnh đại diện (Avatar)…"
+            value={avatarFolder} onChange={(e) => setAvatarFolder(e.target.value)}
+            className="field flex-1 py-1.5" />
+          <button onClick={handleBrowseFolder} disabled={loading} className="btn btn-sm btn-ghost shrink-0" title="Mở thư mục hệ thống để chọn">
+            <FolderOpen className="w-3.5 h-3.5" /> {loading ? '…' : 'Chọn'}
+          </button>
+        </div>
+
         {isGloballyPaused && (
-          <span className="badge bg-amber-500/10 text-amber-400 border border-amber-500/30 ml-auto animate-pulse-soft">
-            <Pause className="w-3 h-3" /> Hệ thống đang tạm dừng
+          <span className="badge bg-amber-500/10 text-amber-400 border border-amber-500/30 animate-pulse-soft">
+            <Pause className="w-3 h-3" /> Đang tạm dừng
           </span>
         )}
       </div>
 
-      {/* CẤU HÌNH SONG SONG + AVATAR FOLDER */}
-      <div className="card p-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-        <div>
-          <label className="text-xs text-fg-muted mb-1.5 font-semibold flex items-center gap-1.5">
-            <Gauge className="w-3.5 h-3.5 text-brand" /> Luồng tối đa / 1 proxy
-          </label>
-          <input
-            type="number" min={1} max={10} value={concurrency}
-            onChange={(e) => setConcurrency(parseInt(e.target.value) || 1)}
-            className="field w-full text-center font-bold text-brand"
-          />
-          <p className="text-[10px] text-fg-subtle mt-1.5 leading-snug">
-            Mỗi proxy chỉ chạy tối đa bấy nhiêu account cùng lúc. Account thứ N+1 trên cùng proxy sẽ chờ tới lượt.
-          </p>
+      {/* HÀNG 2: check nhanh liên tục (compact, 1 hàng) */}
+      <div className="flex items-center gap-2.5 flex-wrap border-t border-line-soft pt-2.5">
+        <span className="text-[11px] text-fg-muted font-semibold flex items-center gap-1.5 whitespace-nowrap">
+          <RadioTower className="w-4 h-4 text-sky-400" /> Check nhanh liên tục
+        </span>
+        <div className="flex items-center gap-1.5">
+          <label className="text-[11px] text-fg-subtle">Nghỉ (s)</label>
+          <input type="number" min={0} max={60} value={continuousGapSeconds}
+            onChange={(e) => setContinuousGapSeconds(parseInt(e.target.value) || 0)}
+            disabled={!!continuousStatus?.is_active}
+            className="field w-14 py-1 text-center font-bold text-sky-400 disabled:opacity-50" />
         </div>
-
-        <div className="md:col-span-2">
-          <label className="text-xs text-fg-muted mb-1.5 font-semibold flex items-center gap-1.5">
-            <Image className="w-3.5 h-3.5 text-brand" /> Thư mục ảnh đại diện (Avatar)
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Ví dụ: D:\images\avatars — hoặc dán đường dẫn thủ công"
-              value={avatarFolder}
-              onChange={(e) => setAvatarFolder(e.target.value)}
-              className="field flex-1"
-            />
-            <button onClick={handleBrowseFolder} disabled={loading} className="btn btn-primary shrink-0"
-              title="Mở thư mục hệ thống để chọn trực quan">
-              <FolderOpen className="w-4 h-4" />
-              <span>{loading ? 'Đang chọn...' : 'Chọn'}</span>
-            </button>
-          </div>
+        <div className="flex items-center gap-1.5">
+          <label className="text-[11px] text-fg-subtle">Luồng</label>
+          <input type="number" min={1} max={50} value={continuousConcurrency}
+            onChange={(e) => setContinuousConcurrency(parseInt(e.target.value) || 15)}
+            disabled={!!continuousStatus?.is_active}
+            className="field w-14 py-1 text-center font-bold text-sky-400 disabled:opacity-50" />
         </div>
-      </div>
-
-      {/* CHECK NHANH LIÊN TỤC */}
-      <div className="card p-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between border-b border-line-soft pb-2.5">
-          <span className={`${secLabel} flex items-center gap-1.5`}>
-            <RadioTower className="w-3.5 h-3.5 text-sky-400" /> Check nhanh liên tục
+        {continuousStatus?.is_active ? (
+          <button onClick={handleStopContinuous} className="btn btn-sm btn-danger">
+            <Square className="w-3.5 h-3.5" /> Tắt liên tục
+          </button>
+        ) : (
+          <button onClick={handleStartContinuous} disabled={selectedAccountIds.length === 0}
+            title={selectedAccountIds.length === 0 ? 'Chọn ít nhất 1 tài khoản ở bảng dưới trước' : undefined}
+            className="btn btn-sm bg-sky-500/10 text-sky-400 border border-sky-500/30 hover:bg-sky-500/20">
+            <Play className="w-3.5 h-3.5" /> Bật liên tục ({selectedAccountIds.length})
+          </button>
+        )}
+        {continuousStatus?.is_active && (
+          <span className="badge bg-sky-500/10 text-sky-400 border border-sky-500/30 animate-pulse-soft normal-case tracking-normal">
+            ● {continuousStatus.cycle_count} chu kỳ{continuousStatus.is_running_now ? ' · đang quét' : ''}
           </span>
-          {continuousStatus?.is_active && (
-            <span className="badge bg-sky-500/10 text-sky-400 border border-sky-500/30 animate-pulse-soft normal-case tracking-normal">
-              ● Đang bật — {continuousStatus.cycle_count} chu kỳ
-              {continuousStatus.is_running_now ? ' · đang quét' : ''}
-            </span>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] text-fg-muted font-semibold">Nghỉ giữa 2 vòng (s)</label>
-            <input
-              type="number" min={0} max={60} value={continuousGapSeconds}
-              onChange={(e) => setContinuousGapSeconds(parseInt(e.target.value) || 0)}
-              disabled={!!continuousStatus?.is_active}
-              className="field w-16 py-1.5 text-center font-bold text-sky-400 disabled:opacity-50"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-[11px] text-fg-muted font-semibold">Luồng song song</label>
-            <input
-              type="number" min={1} max={50} value={continuousConcurrency}
-              onChange={(e) => setContinuousConcurrency(parseInt(e.target.value) || 15)}
-              disabled={!!continuousStatus?.is_active}
-              className="field w-16 py-1.5 text-center font-bold text-sky-400 disabled:opacity-50"
-            />
-          </div>
-
-          {continuousStatus?.is_active ? (
-            <button onClick={handleStopContinuous} className="btn btn-sm btn-danger">
-              <Square className="w-3.5 h-3.5" /> Tắt liên tục
-            </button>
-          ) : (
-            <button onClick={handleStartContinuous} disabled={selectedAccountIds.length === 0}
-              title={selectedAccountIds.length === 0 ? 'Chọn ít nhất 1 tài khoản ở bảng bên dưới trước' : undefined}
-              className="btn btn-sm bg-sky-500/10 text-sky-400 border border-sky-500/30 hover:bg-sky-500/20">
-              <Play className="w-3.5 h-3.5" /> Bật liên tục ({selectedAccountIds.length})
-            </button>
-          )}
-
-          {continuousStatus?.last_cycle_at && (
-            <span className="text-[10px] text-fg-subtle ml-auto">
-              Chu kỳ gần nhất: {new Date(continuousStatus.last_cycle_at).toLocaleTimeString()}
-            </span>
-          )}
-        </div>
+        )}
+        {continuousStatus?.last_cycle_at && (
+          <span className="text-[10px] text-fg-subtle ml-auto">
+            Gần nhất: {new Date(continuousStatus.last_cycle_at).toLocaleTimeString()}
+          </span>
+        )}
       </div>
     </div>
   );

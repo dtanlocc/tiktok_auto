@@ -17,7 +17,7 @@ import { FolderTree } from './components/FolderTree';
 import { ImportModal } from './components/ImportModal'; // <-- IMPORT MODAL NỔI MỚI THÊM
 import { ExportModal } from './components/ExportModal';
 import { LiveScreens } from './components/LiveScreens';
-import { Folder, Globe, Server, Layers, FolderTree, X, Zap, Ban, Download, FolderInput, Cookie, Trash2 } from 'lucide-react';
+import { Folder, Globe, Server, Layers, ListTree, X, Zap, Ban, Download, FolderInput, Cookie, Trash2 } from 'lucide-react';
 
 interface LogMessage {
   time: string;
@@ -734,7 +734,7 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     {isTreeCollapsed && (
                       <button onClick={() => setIsTreeCollapsed(false)} className="btn btn-sm btn-ghost">
-                        <FolderTree className="w-3.5 h-3.5" /> Cây thư mục
+                        <ListTree className="w-3.5 h-3.5" /> Cây thư mục
                       </button>
                     )}
                     {selectedCountry && selectedBatch && (
