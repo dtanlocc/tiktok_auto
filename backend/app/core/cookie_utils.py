@@ -61,26 +61,28 @@ def _cookie_string_to_list(s: str) -> List[Dict[str, Any]]:
 
 
 def _pairs_to_cookies(pairs) -> List[Dict[str, Any]]:
-    """Cap (name, value) -> object Playwright, KHU TRUNG (giu lan cuoi cung)."""
-    dedup: Dict[str, str] = {}
-    for name, value in pairs:
-        dedup[str(name)] = "" if value is None else str(value)
+    """Cap (name, value) -> object Playwright. GIU DAY DU (khong khu trung) va
+    dung THU TU goc -> xuat lai duoc y het chuoi ban dau. Viec khu trung (neu can)
+    de luc INJECT (add_cookies) xu ly, khong lam mat du lieu khi luu/xuat."""
     return [
-        {"name": n, "value": v, "domain": _TIKTOK_DOMAIN, "path": "/"}
-        for n, v in dedup.items()
+        {"name": str(name), "value": "" if value is None else str(value),
+         "domain": _TIKTOK_DOMAIN, "path": "/"}
+        for name, value in pairs
     ]
 
 
 def cookies_to_string(cookies: List[Dict[str, Any]]) -> str:
-    """List[Dict] Playwright -> chuoi 'name=value; name=value; ...' (dang txt)."""
+    """List[Dict] Playwright -> chuoi 'name=value; name=value; ...;' (dang txt).
+    GIU DAY DU moi cookie theo dung thu tu (khong khu trung) va co dau ';' cuoi
+    -> khop dinh dang file test_cookies.txt."""
     parts = []
-    seen = set()
     for c in cookies or []:
         if not isinstance(c, dict):
             continue
         name = c.get("name")
-        if not name or name in seen:
+        if not name:
             continue
-        seen.add(name)
         parts.append(f"{name}={c.get('value', '')}")
-    return "; ".join(parts)
+    if not parts:
+        return ""
+    return "; ".join(parts) + ";"

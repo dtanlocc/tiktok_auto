@@ -328,11 +328,22 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         if not self._browser:
             raise RuntimeError("Trinh duyet chua duoc khoi tao.")
 
+        # KHU TRUNG luc inject (giu ban CUOI cung theo name+domain+path): cookies
+        # luu/xuat GIU DAY DU (co the co ten trung nhu msToken bi refresh), nhung
+        # add_cookies khong nen nhan 2 cookie trung name+domain+path -> loc o day.
+        deduped: Dict[tuple, Dict[str, Any]] = {}
+        for c in cookies or []:
+            if not isinstance(c, dict) or not c.get("name"):
+                continue
+            key = (c.get("name"), c.get("domain", ""), c.get("path", "/"))
+            deduped[key] = c
+        clean = list(deduped.values())
+
         contexts = getattr(self._browser, "contexts", [])
         if contexts:
-            await contexts[0].add_cookies(cookies)
+            await contexts[0].add_cookies(clean)
         else:
-            await self._browser.add_cookies(cookies)
+            await self._browser.add_cookies(clean)
 
     async def extract_cookies(self) -> List[Dict[str, Any]]:
         if not self._browser:
