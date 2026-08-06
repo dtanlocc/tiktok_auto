@@ -41,7 +41,17 @@ export default function App() {
   // THU GỌN CÂY THƯ MỤC QUỐC GIA - mặc định THU GỌN để bảng tài khoản
   // hiển thị đầy đủ (giống view database) ngay khi mở trang, đỡ chiếm chỗ.
   const [isTreeCollapsed, setIsTreeCollapsed] = useState<boolean>(true);
-  
+
+  // Thu gọn / mở rộng SIDEBAR điều hướng (nhớ lựa chọn qua localStorage).
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('sidebarCollapsed') === '1'; } catch { return false; }
+  });
+  const toggleSidebar = () => setSidebarCollapsed((v) => {
+    const next = !v;
+    try { localStorage.setItem('sidebarCollapsed', next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
+
   // Danh sách ID tài khoản được chọn (Checkbox Selection)
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   // Danh sách account đang có phiên DEBUG mở (để đổi nút Debug <-> Dừng debug).
@@ -652,7 +662,8 @@ export default function App() {
     <div className="min-h-screen bg-canvas text-fg flex select-none">
 
       {/* SIDEBAR TRÁI CỐ ĐỊNH: điều hướng + trạng thái hệ thống */}
-      <NavSidebar activeTab={activeTab} setActiveTab={setActiveTab} isGloballyPaused={isGloballyPaused} />
+      <NavSidebar activeTab={activeTab} setActiveTab={setActiveTab} isGloballyPaused={isGloballyPaused}
+        collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
 
       {/* KHU LÀM VIỆC CHÍNH (cuộn độc lập với sidebar) */}
       <main className="flex-1 min-w-0 h-screen overflow-y-auto flex flex-col gap-4 px-5 py-5 md:px-6">
