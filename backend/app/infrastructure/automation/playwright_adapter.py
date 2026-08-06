@@ -39,6 +39,65 @@ def _copy_profile_sync(src: str, dst: str, ignore) -> None:
         shutil.copytree(src, dst, ignore=ignore)
 
 
+# =============================================================================
+# PROFILE SIEU NHE (Huong B): chi copy DUNG cac thu muc/file lien quan extension
+# =============================================================================
+# Firefox nap extension THEO PROFILE (khong co --load-extension). Nhung ban than
+# extension chi ~648KB (extensions/*.xpi) + vai file registry; phan nang la
+# cache/history/site-storage. Whitelist duoi day giu extension + storage RIENG
+# cua no (chua ca API key da bake) + registry, bo tat ca con lai -> profile tam
+# chi con ~vai MB, copy nhanh hon nhieu. Fingerprint KHONG doi (do seed, khong
+# do profile). Xem thao luan Huong B.
+_SEED_KEEP_ROOT = {
+    "extensions",                  # chua omocaptcha@gmail.com.xpi
+    "extensions.json",             # DB addon (installed/enabled/location)
+    "addonStartup.json.lz4",       # cache khoi dong -> addon ACTIVE ngay, khong can restart
+    "addons.json",
+    "extension-preferences.json",
+    "extension-settings.json",
+    "extension-store",             # data.safe.bin (ExtensionSettingsStore)
+    "storage",                     # se LOC ben duoi: chi giu moz-extension cua ext
+    "storage.sqlite",              # QuotaManager metadata (de tim thay IDB cua ext)
+    "prefs.js",                    # uuids + enable scopes + ExtensionStorageIDB.migrated + signature
+    "user.js",
+    "compatibility.ini",           # danh dau version -> tranh rescan addon
+    "times.json",
+    "xulstore.json",               # trang thai UI (nut toolbar ext)
+}
+
+
+def _make_seed_ignore(master_root: str):
+    """Tra ve ham ignore cho shutil.copytree: CHI giu cac muc trong _SEED_KEEP_ROOT
+    o goc, va trong storage/ chi giu storage RIENG cua extension (moz-extension+++...),
+    bo site-storage. Cac cap sau cua extension storage duoc giu nguyen."""
+    master_root = os.path.normpath(os.path.abspath(master_root))
+
+    def _ignore(dirpath, names):
+        cur = os.path.normpath(os.path.abspath(dirpath))
+        rel = os.path.relpath(cur, master_root).replace("\\", "/")
+        ig = set()
+        if rel == ".":
+            for n in names:
+                if n not in _SEED_KEEP_ROOT:
+                    ig.add(n)
+        elif rel == "storage":
+            # CHI giu "default" (bo "permanent" + "temporary" - ~18MB IDB noi bo
+            # cua Firefox, khong lien quan extension).
+            for n in names:
+                if n != "default":
+                    ig.add(n)
+        elif rel == "storage/default":
+            # CHI giu storage RIENG cua extension (moz-extension+++...) - noi chua
+            # api_key (IDB) + settings. Bo "chrome" va site-storage (https+++...).
+            for n in names:
+                if not n.startswith("moz-extension"):
+                    ig.add(n)
+        # cac thu muc con sau do (moz-extension.../idb, /ls, extensions/, ...): giu HET
+        return ig
+
+    return _ignore
+
+
 class InvisiblePlaywrightAdapter(IBrowserService):
     def __init__(self):
         self._invisible_pw: Optional[InvisiblePlaywright] = None
@@ -96,18 +155,30 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             #    VAN GIU extensions/, storage/, cookies, prefs, cert9/key4... de
             #    extension Omocaptcha + fingerprint + phien dang nhap nguyen ven.
             # =================================================================
-            _ignore = shutil.ignore_patterns(
-                "cache2", "startupCache", "shader-cache", "safebrowsing",
-                "thumbnails", "OfflineCache", "jumpListCache", "GPUCache",
-                "security_state",          # HSTS/OCSP - Firefox tu tao lai
-                "gmp-widevinecdm",         # Widevine DRM - TikTok khong dung
-                "datareporting", "sessionstore-backups",
-            )
+            if getattr(settings, "OMOCAPTCHA_SLIM_PROFILE", True):
+                # HUONG B: profile SIEU NHE - chi giu extension + storage rieng cua
+                # no + registry (~vai MB). Nhanh hon nhieu, fingerprint khong doi.
+                _ignore = _make_seed_ignore(master_profile_dir)
+                _mode_desc = "SIEU NHE (chi extension + storage cua no)"
+            else:
+                # Cach cu: giu gan nhu ca profile, chi bo cac cache tai tao duoc.
+                _ignore = shutil.ignore_patterns(
+                    "cache2", "startupCache", "shader-cache", "safebrowsing",
+                    "thumbnails", "OfflineCache", "jumpListCache", "GPUCache",
+                    "security_state",          # HSTS/OCSP - Firefox tu tao lai
+                    "gmp-widevinecdm",         # Widevine DRM - TikTok khong dung
+                    "datareporting", "sessionstore-backups",
+                )
+                _mode_desc = "day du (bo cache)"
             # Copy trong thread (khong block loop) + serialize noi bo (tranh thrash dia).
             await asyncio.to_thread(
                 _copy_profile_sync, master_profile_dir, self._temp_profile_path, _ignore
             )
-            logger.info(f"[*] Da copy profile master (da bo cache) -> {self._temp_profile_path}")
+            try:
+                _sz = sum(f.stat().st_size for f in Path(self._temp_profile_path).rglob("*") if f.is_file())
+                logger.info(f"[*] Da copy profile master [{_mode_desc}] ({_sz/1_048_576:.1f}MB) -> {self._temp_profile_path}")
+            except Exception:
+                logger.info(f"[*] Da copy profile master [{_mode_desc}] -> {self._temp_profile_path}")
 
             # =================================================================
             # PREFS BO SUNG (extra_prefs) - duoc invisible_playwright overlay

@@ -1,0 +1,247 @@
+{
+    "manifest_version": 3,
+    "name": "OMOcaptcha: Auto solve captcha",
+    "version": "1.7.8",
+    "description": "OMOcaptcha: Auto solve captcha",
+    "icons": {
+        "16": "/icons/favicon16.png",
+        "48": "/icons/favicon48.png",
+        "128": "/icons/favicon128.png"
+    },
+    "action": {
+        "default_icon": "/icons/favicon16.png",
+        "default_title": "OMOcaptcha.com - Automatically solve captcha",
+        "default_popup": "index.html"
+    },
+    "permissions": [
+        "alarms",
+        "declarativeNetRequest",
+        "storage",
+        "tabs",
+        "webNavigation"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "configs.json"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ],
+    "background": {
+        "scripts": [
+            "/contents/background_165.bundle.js"
+        ]
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.arkoselabs.com/fc/*",
+                "*://*.funcaptcha.com/fc/*",
+                "*://*.roblox.com/fc/*",
+                "*://*.airbnb.com/fc/*",
+                "*://*.adobe.com/fc/*",
+                "*://*.digitalocean.com/fc/*",
+                "*://*.payoneer.com/fc/*"
+            ],
+            "js": [
+                "/contents/funcaptcha-content.bundle.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": false,
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "*://*.tiktok.com/*"
+            ],
+            "js": [
+                "/contents/tiktok-content.bundle.js",
+                "/contents/geetest-content.bundle.js"
+            ],
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "*://*.zcaptcha.api.zaloapp.com/*"
+            ],
+            "js": [
+                "/contents/zalo-content.bundle.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": true,
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "*://*.shopee.vn/*",
+                "*://*.shopee.sg/*",
+                "*://*.shopee.com.my/*",
+                "*://*.shopee.co.id/*",
+                "*://*.shopee.co.th/*",
+                "*://*.shopee.ph/*",
+                "*://*.shopee.tw/*",
+                "*://*.shopee.com.br/*",
+                "*://*.shopee.com.mx/*",
+                "*://*.shopee.com.co/*",
+                "*://*.shopee.com.cl/*",
+                "*://*.shopee.com.ar/*",
+                "*://*.shopee.com/*",
+                "*://*.shopee.cl/*"
+            ],
+            "js": [
+                "/contents/shopee-content.bundle.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": true,
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "*://*.google.com/recaptcha*",
+                "*://*.recaptcha.net/recaptcha*"
+            ],
+            "js": [
+                "/contents/recaptchav2-content.bundle.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": true,
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "exclude_matches": [
+                "*://*.arkoselabs.com/fc/*",
+                "*://*.funcaptcha.com/fc/*",
+                "*://*.roblox.com/fc/*",
+                "*://*.airbnb.com/fc/*",
+                "*://*.omocaptcha.com/*",
+                "*://*.zcaptcha.api.zaloapp.com/*",
+                "*://*.google.com/recaptcha*",
+                "*://*.recaptcha.net/recaptcha*",
+                "*://*.captcha-delivery.com/*",
+                "*://*.hcaptcha.com/*",
+                "*://*.uvfuns.com/*",
+                "*://*.klingai.com/*",
+                "*://nopecha.com/*",
+                "*://*.riotgames.com/*",
+                "*://*.discord.com/*",
+                "*://*.shopee.vn/*",
+                "*://*.shopee.sg/*",
+                "*://*.shopee.com.my/*",
+                "*://*.shopee.co.id/*",
+                "*://*.shopee.co.th/*",
+                "*://*.shopee.ph/*",
+                "*://*.shopee.tw/*",
+                "*://*.shopee.com.br/*",
+                "*://*.shopee.com.mx/*",
+                "*://*.shopee.com.co/*",
+                "*://*.shopee.com.cl/*",
+                "*://*.shopee.com.ar/*",
+                "*://*.shopee.com/*",
+                "*://*.shopee.cl/*",
+                "*://*.gtimg.com/*",
+                "*://*.qcloud.com/*",
+                "*://*.tencentcloudcs.com/*",
+                "*://*.live.com/*",
+                "*://*.microsoft.com/*",
+                "*://*.microsoftonline.com/*",
+                "*://*.hsprotect.net/*"
+            ],
+            "js": [
+                "/contents/amzn-content.bundle.js",
+                "/contents/geetest-content.bundle.js",
+                "/contents/image-to-text-content.bundle.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": true,
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "*://*.captcha-delivery.com/*",
+                "*://*.garena.com/*",
+                "*://*.coresky.com/*",
+                "*://*.uvfuns.com/*",
+                "*://*.coinmarketcap.com/*",
+                "*://*.pixelheroes.io/*",
+                "*://*.titannet.info/*",
+                "*://*.mail.com/*",
+                "*://*.travala.com/*",
+                "*://*.proton.me/captcha/*",
+                "*://*.owlproxy.com/*",
+                "*://*.gxtexchange.com/*"
+            ],
+            "js": [
+                "/contents/slide-all-content.bundle.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": true,
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "/contents/main-frame-content.bundle.js"
+            ],
+            "all_frames": true,
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "*://*.hcaptcha.com/captcha/*",
+                "*://*.tiktok.com/*"
+            ],
+            "js": [
+                "/contents/hcaptcha-content.bundle.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": true,
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "*://*.discord.com/*",
+                "*://*.discordapp.com/*",
+                "*://*.discordapp.net/*"
+            ],
+            "js": [
+                "/contents/discord-content.bundle.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": true,
+            "run_at": "document_end"
+        },
+        {
+            "matches": [
+                "*://*.gtimg.com/*",
+                "*://*.qcloud.com/*",
+                "*://*.tencentcloudcs.com/*"
+            ],
+            "js": [
+                "/contents/tencent-content.bundle.js"
+            ],
+            "all_frames": true,
+            "match_about_blank": true,
+            "run_at": "document_end"
+        }
+    ],
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'"
+    },
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "omocaptcha@gmail.com",
+            "strict_min_version": "109.0"
+        }
+    }
+}

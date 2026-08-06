@@ -66,5 +66,15 @@ class Settings(BaseSettings):
     OMOCAPTCHA_KEY: str = "OMO_PRPNYKMWZKGSOXG4WE5UITKTPE6NN5LVNDXWZ5YVB2WW7WTZXXDNAEFIJMTIJY1764562155"
     OMOCAPTCHA_MASTER_PROFILE_DIR: str = "D:/tiktok_auto/profiles/master_omocaptcha"
 
+    # PROFILE SIÊU NHẸ (Hướng B): khi copy master ra bản tạm, chỉ giữ đúng
+    # extension Omocaptcha + storage RIÊNG của nó + registry addon (~vài MB),
+    # bỏ toàn bộ cache/history/site-storage/cert... (mấy chục MB). Extension +
+    # API key vẫn nguyên vẹn, mở browser nhanh hơn ~10 lần. Đặt False để quay
+    # về cách cũ (giữ gần như cả profile) nếu cần đối chiếu.
+    OMOCAPTCHA_SLIM_PROFILE: bool = True
+    # UUID cố định của extension trong master profile (dùng để mở trang popup
+    # moz-extension:// khi cần set/kiểm tra API key).
+    OMOCAPTCHA_EXTENSION_UUID: str = "d6105ea0-8d34-41ab-85a7-2eb0c66d55bb"
+
 # Khởi tạo một thực thể Singleton duy nhất dùng chung cho toàn bộ dự án
 settings = Settings()

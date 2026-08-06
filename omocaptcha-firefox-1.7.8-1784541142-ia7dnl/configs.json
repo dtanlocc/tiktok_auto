@@ -1,0 +1,66 @@
+{
+  "api_key": "YOUR_CLIEN_KEY",
+  "appId": "",
+  "power_on": true,
+  "tiktok": {
+    "delayClick": 500,
+    "delaySwipe": 15,
+    "loop": true,
+    "isActive": true
+  },
+  "funcaptcha": {
+    "delayClick": 100,
+    "loop": true,
+    "loopCount": 1,
+    "isActive": true,
+    "maxImageCaptcha": 25
+  },
+  "zalo": {
+    "delayClick": 100,
+    "loop": true,
+    "isActive": true
+  },
+  "shopee": {
+    "delaySwipe": 15,
+    "loop": true,
+    "isActive": true
+  },
+  "reCaptchav2": {
+    "delayClick": 500,
+    "loop": true,
+    "isActive": true,
+    "useToken": false
+  },
+  "amzn": {
+    "delayClick": 100,
+    "loop": true,
+    "isActive": true
+  },
+  "geetest": {
+    "delayClick": 500,
+    "delaySwipe": 15,
+    "loop": true,
+    "isActive": true
+  },
+  "slide_all": {
+    "delaySwipe": 15,
+    "loop": true,
+    "isActive": true
+  },
+  "hcaptcha": {
+    "delayClick": 500,
+    "delaySwipe": 15,
+    "loop": true,
+    "isActive": true
+  },
+  "cloudflare": {
+    "delayClick": 2000,
+    "isActive": true
+  },
+  "tencent": {
+    "delayClick": 500,
+    "delaySwipe": 15,
+    "loop": true,
+    "isActive": true
+  }
+}
