@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, RefreshCw, Key, Video, Trash2, Globe, ScanSearch } from 'lucide-react';
+import { LogIn, KeyRound, Image, Globe, ScanSearch, Trash2 } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -13,75 +13,48 @@ interface ContextMenuProps {
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
-  x,
-  y,
-  selectedCount,
-  onBulkLogin,
-  onBulkUpdateProfile,
-  onAutoAllocateProxies,
-  onBulkDelete,
-  onQuickHealthCheck
+  x, y, selectedCount,
+  onBulkLogin, onBulkUpdateProfile, onAutoAllocateProxies, onBulkDelete, onQuickHealthCheck,
 }) => {
+  const items: { icon: React.ComponentType<{ className?: string }>; label: string; hint?: string; onClick: () => void }[] = [
+    { icon: LogIn, label: 'Đăng nhập bằng Cookie', onClick: () => onBulkLogin('COOKIE') },
+    { icon: KeyRound, label: 'Đăng nhập Form + OTP', onClick: () => onBulkLogin('CREDENTIAL') },
+    { icon: Image, label: 'Đổi Avatar & Bio', onClick: onBulkUpdateProfile },
+    { icon: Globe, label: 'Tự phân bổ Proxy', onClick: onAutoAllocateProxies },
+    { icon: ScanSearch, label: 'Check nhanh sống/chết', hint: 'Kiểm tra nhanh, độc lập với hàng đợi login', onClick: onQuickHealthCheck },
+  ];
+
   return (
-    <div 
+    <div
       style={{ top: y, left: x }}
-      className="fixed bg-[#040814]/90 border border-cyan-500/20 shadow-[0_10px_40px_rgba(0,0,0,0.95)] rounded-sm p-1.5 z-50 min-w-[240px] text-xs text-slate-300 font-sans backdrop-blur-md border-b-2 border-b-cyan-500"
+      className="fixed z-50 min-w-[236px] rounded-xl p-1.5 bg-elevated/95 border border-line shadow-2xl shadow-black/60 backdrop-blur-md text-fg"
     >
-      <div className="px-2 py-1 text-[8px] text-cyan-500/60 font-black uppercase tracking-widest border-b border-slate-900 mb-1.5 select-none flex items-center gap-1.5">
-        <Sparkles className="w-2.5 h-2.5 text-cyan-400" />
-        <span>Batch Operations // {selectedCount} Nodes</span>
+      <div className="px-2.5 py-1.5 mb-1 text-[10px] font-semibold uppercase tracking-wide text-fg-subtle border-b border-line-soft">
+        {selectedCount} tài khoản đã chọn
       </div>
 
-      <button 
-        onClick={() => onBulkLogin('COOKIE')}
-        className="w-full text-left px-2 py-1.5 hover:bg-cyan-950/20 hover:text-cyan-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
-      >
-        <RefreshCw className="w-3.5 h-3.5 text-slate-600 group-hover:text-cyan-400 transition-transform duration-300 group-hover:rotate-180" />
-        <span className="text-[10px] font-black uppercase tracking-widest">LOGIN_VIA_COOKIES</span>
-      </button>
+      {items.map(({ icon: Icon, label, hint, onClick }) => (
+        <button
+          key={label}
+          onClick={onClick}
+          title={hint}
+          className="w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2.5 text-[13px] font-medium
+                     text-fg-muted hover:text-fg hover:bg-white/6 transition-colors duration-150 cursor-pointer"
+        >
+          <Icon className="w-4 h-4 shrink-0 text-fg-subtle" />
+          <span className="truncate">{label}</span>
+        </button>
+      ))}
 
-      <button 
-        onClick={() => onBulkLogin('CREDENTIAL')}
-        className="w-full text-left px-2 py-1.5 hover:bg-cyan-950/20 hover:text-cyan-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
-      >
-        <Key className="w-3.5 h-3.5 text-slate-600 group-hover:text-cyan-400" />
-        <span className="text-[10px] font-black uppercase tracking-widest">LOGIN_VIA_FORM_OTP</span>
-      </button>
+      <div className="h-px bg-line-soft my-1" />
 
-      <button 
-        onClick={onBulkUpdateProfile}
-        className="w-full text-left px-2 py-1.5 hover:bg-cyan-950/20 hover:text-cyan-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
-      >
-        <Video className="w-3.5 h-3.5 text-slate-600 group-hover:text-cyan-400 animate-bounce" />
-        <span className="text-[10px] font-black uppercase tracking-widest">UPDATE_AVATAR_BIO</span>
-      </button>
-
-      <button 
-        onClick={onAutoAllocateProxies}
-        className="w-full text-left px-2 py-1.5 hover:bg-amber-950/20 hover:text-amber-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
-      >
-        <Globe className="w-3.5 h-3.5 text-slate-600 group-hover:text-amber-400" />
-        <span className="text-[10px] font-black uppercase tracking-widest">AUTO_MAP_PROXIES</span>
-      </button>
-
-      <button 
-        onClick={onQuickHealthCheck}
-        className="w-full text-left px-2 py-1.5 hover:bg-emerald-950/20 hover:text-emerald-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono"
-        title="Check nhanh sống/chết bằng Chromium nhẹ, độc lập với hàng đợi Login"
-      >
-        <ScanSearch className="w-3.5 h-3.5 text-slate-600 group-hover:text-emerald-400" />
-        <span className="text-[10px] font-black uppercase tracking-widest">QUICK_ALIVE_CHECK</span>
-      </button>
-      
-      <div className="h-[1px] bg-slate-900 my-1.5 select-none"></div>
-      
-      {/* NÂNG CẤP KÍCH HOẠT NÚT XÓA BẢN GHI */}
-      <button 
+      <button
         onClick={onBulkDelete}
-        className="w-full text-left px-2 py-1.5 hover:bg-rose-950/20 hover:text-rose-400 rounded-sm flex items-center gap-2.5 transition-all group font-mono text-rose-500"
+        className="w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2.5 text-[13px] font-medium
+                   text-danger/90 hover:text-danger hover:bg-danger/10 transition-colors duration-150 cursor-pointer"
       >
-        <Trash2 className="w-3.5 h-3.5 text-rose-700 group-hover:text-rose-400" />
-        <span className="text-[10px] font-black uppercase tracking-widest">DROP_RECORDS</span>
+        <Trash2 className="w-4 h-4 shrink-0" />
+        <span>Xóa tài khoản</span>
       </button>
     </div>
   );
