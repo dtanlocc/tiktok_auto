@@ -263,12 +263,12 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
         <table className="w-full text-left border-collapse">
           <thead className="sticky top-0 z-10">
             <tr className="bg-surface-2 text-[11px] font-semibold text-fg-subtle uppercase tracking-wide">
-              <th className="p-4 w-12 text-center">Tích</th>
+              <th className="px-3 py-2 w-12 text-center">Tích</th>
               {SORTABLE_COLUMNS.map((col) => (
                 <th
                   key={col.key}
                   onClick={() => handleSort(col.key)}
-                  className="p-4 cursor-pointer select-none hover:text-fg transition-colors"
+                  className="px-3 py-2 cursor-pointer select-none hover:text-fg transition-colors"
                   title="Bấm để sắp xếp"
                 >
                   <span className="inline-flex items-center gap-1.5">
@@ -276,10 +276,10 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                   </span>
                 </th>
               ))}
-              <th className="p-4">Liên kết IP Proxy</th>
-              <th className="p-4">Tiến trình chạy</th>
-              <th className="p-4">Ghi chú</th>
-              <th className="p-4 text-center">Điều khiển</th>
+              <th className="px-3 py-2">Liên kết IP Proxy</th>
+              <th className="px-3 py-2">Tiến trình chạy</th>
+              <th className="px-3 py-2">Ghi chú</th>
+              <th className="px-3 py-2 text-center">Điều khiển</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800 text-xs">
@@ -303,7 +303,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       isSelected ? 'bg-teal-500/[0.07] border-l-2 border-l-teal-400' : 'border-l-2 border-l-transparent'
                     }`}
                   >
-                    <td className="p-4 text-center">
+                    <td className="px-3 py-2 text-center">
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleSelectAccount(acc.id); setLastClickedIndex(rowIndex); }}
                         className="text-fg-muted hover:text-brand"
@@ -316,7 +316,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </button>
                     </td>
 
-                    <td className="p-4 font-medium text-fg">
+                    <td className="px-3 py-2 font-medium text-fg">
                       <div className="flex items-center gap-1.5 group">
                         {renderEditable(acc, 'username', acc.username)}
                         <button
@@ -331,7 +331,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                     </td>
 
                     {/* QUỐC GIA & PHÂN LÔ ĐỒ HỌA SẮC NÉT CHẠY HOÀN HẢO TRÊN WINDOWS */}
-                    <td className="p-4">
+                    <td className="px-3 py-2">
                       <div className="flex items-center gap-2 font-bold text-fg">
                         <img
                           src={getCountryFlagUrl(acc.country)}
@@ -351,7 +351,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </div>
                     </td>
 
-                    <td className="p-4 text-center">
+                    <td className="px-3 py-2 text-center">
                       <span className={`badge border ${
                         acc.status === 'RUNNING' ? 'bg-amber-500/10 text-amber-400 border-amber-500/25 animate-pulse-soft' :
                         acc.status === 'QUEUED' ? 'bg-brand/10 text-brand border-brand/25' :
@@ -364,7 +364,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                     </td>
 
                     {/* CỘT SỨC KHỎE NICK - THỐNG NHẤT 1 TẬP GIÁ TRỊ VỚI LUỒNG LOGIN */}
-                    <td className="p-4 text-center">
+                    <td className="px-3 py-2 text-center">
                       <span className={`badge border normal-case tracking-normal ${
                         acc.health_status === 'BANNED' ? 'bg-rose-500/12 text-rose-400 border-rose-500/30' :
                         acc.health_status === 'ALIVE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25' :
@@ -375,7 +375,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </span>
                     </td>
 
-                    <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => onUpdateAccount(acc.id, {
                           profile_status: acc.profile_status === 'COMPLETED' ? 'PENDING' : 'COMPLETED',
@@ -393,7 +393,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </button>
                     </td>
 
-                    <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <select
                         value={acc.proxy_id || 'none'}
                         onChange={(e) => handleBindProxy(acc.id, e.target.value)}
@@ -408,7 +408,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </select>
                     </td>
 
-                    <td className="p-4 font-mono font-bold text-fg">
+                    <td className="px-3 py-2 font-mono font-bold text-fg">
                       {acc.status === 'RUNNING' ? (
                         <span className="flex items-center gap-1 text-amber-400 animate-pulse">
                           ⏳ {acc.current_step}
@@ -419,7 +419,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                     </td>
 
                     {/* GHI CHÚ tự do - nhấp đúp để sửa (được phép để trống) */}
-                    <td className="p-4 text-fg max-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-2 text-fg max-w-[160px]" onClick={(e) => e.stopPropagation()}>
                       {renderEditable(
                         acc,
                         'note',
@@ -430,7 +430,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                     </td>
 
                     {/* NÚT TẠM DỪNG / TIẾP TỤC RIÊNG + DEBUG (mở trình duyệt HIỆN) */}
-                    <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col items-center gap-1.5">
                         {(acc.status === 'RUNNING' || acc.is_paused) ? (
                           acc.is_paused ? (

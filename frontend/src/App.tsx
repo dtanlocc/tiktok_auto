@@ -42,23 +42,6 @@ export default function App() {
   // hiển thị đầy đủ (giống view database) ngay khi mở trang, đỡ chiếm chỗ.
   const [isTreeCollapsed, setIsTreeCollapsed] = useState<boolean>(true);
 
-  // SIDEBAR: mặc định THU GỌN (rail mỏng) cho gọn; hover tự bung ra. Nhớ lựa chọn
-  // ghim qua localStorage. Tự động thu gọn khi màn hình hẹp.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    try { const v = localStorage.getItem('sidebarCollapsed'); return v === null ? true : v === '1'; } catch { return true; }
-  });
-  const toggleSidebar = () => setSidebarCollapsed((v) => {
-    const next = !v;
-    try { localStorage.setItem('sidebarCollapsed', next ? '1' : '0'); } catch { /* ignore */ }
-    return next;
-  });
-  // TỰ ĐỘNG: màn hình hẹp -> thu gọn (không tự bung khi rộng để tôn trọng ghim tay).
-  useEffect(() => {
-    const onResize = () => { if (window.innerWidth < 1180) setSidebarCollapsed(true); };
-    onResize();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   // Danh sách ID tài khoản được chọn (Checkbox Selection)
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
@@ -670,8 +653,7 @@ export default function App() {
     <div className="min-h-screen bg-canvas text-fg flex select-none">
 
       {/* SIDEBAR TRÁI CỐ ĐỊNH: điều hướng + trạng thái hệ thống */}
-      <NavSidebar activeTab={activeTab} setActiveTab={setActiveTab} isGloballyPaused={isGloballyPaused}
-        collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
+      <NavSidebar activeTab={activeTab} setActiveTab={setActiveTab} isGloballyPaused={isGloballyPaused} />
 
       {/* KHU LÀM VIỆC CHÍNH (cuộn độc lập với sidebar) */}
       <main className="flex-1 min-w-0 h-screen overflow-y-auto flex flex-col gap-3 px-4 py-4 md:px-5">
