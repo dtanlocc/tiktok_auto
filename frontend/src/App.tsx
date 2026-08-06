@@ -17,7 +17,7 @@ import { FolderTree } from './components/FolderTree';
 import { ImportModal } from './components/ImportModal'; // <-- IMPORT MODAL NỔI MỚI THÊM
 import { ExportModal } from './components/ExportModal';
 import { LiveScreens } from './components/LiveScreens';
-import { Folder, Globe, Server, Layers } from 'lucide-react';
+import { Folder, Globe, Server, Layers, FolderTree, X, Zap, Ban, Download, FolderInput, Cookie, Trash2 } from 'lucide-react';
 
 interface LogMessage {
   time: string;
@@ -716,103 +716,81 @@ export default function App() {
             <div className="flex flex-col gap-4 min-h-[450px]">
               {/* THANH ĐIỀU KHIỂN & BỘ LỌC TRẠNG THÁI - LUÔN HIỂN THỊ, KHÔNG CÒN
                   BẮT BUỘC CHỌN LÔ MỚI THẤY BẢNG (view database đầy đủ mặc định) */}
-              <div className="bg-[#0e1424] p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                  <div className="text-xs text-slate-300 font-bold flex items-center gap-1.5 uppercase tracking-wide">
-                    <Folder className="w-4 h-4 text-teal-400" />
+              <div className="card p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between border-b border-line-soft pb-2.5 gap-3 flex-wrap">
+                  <div className="text-xs text-fg font-semibold flex items-center gap-2">
+                    <Folder className="w-4 h-4 text-brand" />
                     {selectedCountry && selectedBatch ? (
                       <>
-                        <span>Lô Đang Xem:</span>
-                        <span className="text-teal-400">[{selectedCountry}]</span>
-                        <span className="text-indigo-400 font-mono font-bold">{selectedBatch}</span>
+                        <span className="text-fg-muted">Lô đang xem:</span>
+                        <span className="badge bg-brand/10 text-brand border border-brand/25">{selectedCountry}</span>
+                        <span className="text-fg font-mono font-bold">{selectedBatch}</span>
                       </>
                     ) : (
-                      <span className="text-slate-300">Toàn bộ tài khoản (Database đầy đủ)</span>
+                      <span className="text-fg-muted">Toàn bộ tài khoản</span>
                     )}
-                    <span className="text-[10px] text-slate-500 font-medium">({filteredAccounts.length} accounts)</span>
+                    <span className="badge bg-white/5 text-fg-subtle">{filteredAccounts.length} acc</span>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     {isTreeCollapsed && (
-                      <button
-                        onClick={() => setIsTreeCollapsed(false)}
-                        className="text-[10px] font-bold text-teal-400 hover:text-teal-300 cursor-pointer"
-                      >
-                        📂 Hiện cây thư mục quốc gia
+                      <button onClick={() => setIsTreeCollapsed(false)} className="btn btn-sm btn-ghost">
+                        <FolderTree className="w-3.5 h-3.5" /> Cây thư mục
                       </button>
                     )}
                     {selectedCountry && selectedBatch && (
-                      <button 
-                        onClick={() => { setSelectedCountry(null); setSelectedBatch(null); }}
-                        className="text-[10px] font-black text-rose-500 hover:text-rose-400 cursor-pointer"
-                      >
-                        ✕ BỎ LỌC LÔ (XEM LẠI TOÀN BỘ)
+                      <button onClick={() => { setSelectedCountry(null); setSelectedBatch(null); }} className="btn btn-sm btn-danger">
+                        <X className="w-3.5 h-3.5" /> Bỏ lọc lô
                       </button>
                     )}
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2 items-center justify-between">
+                <div className="flex flex-wrap gap-3 items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Lọc nhanh:</span>
-                    <div className="flex gap-1">
-                      {['ALL', 'IDLE', 'RUNNING', 'QUEUED', 'SUCCESS', 'ERROR'].map((status) => (
-                        <button
-                          key={status}
-                          onClick={() => setStatusFilter(status)}
-                          className={`px-2.5 py-1 text-[9px] font-bold rounded-md border uppercase tracking-wider transition-all ${
-                            statusFilter === status 
-                              ? 'bg-teal-500/20 text-teal-400 border-teal-500/40' 
-                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
-                          }`}
-                        >
-                          {status} ({status === 'ALL' ? filteredAccounts.length : filteredAccounts.filter(a => a.status === status).length})
-                        </button>
-                      ))}
+                    <span className="text-[10px] text-fg-subtle font-bold uppercase tracking-wider">Lọc nhanh</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {['ALL', 'IDLE', 'RUNNING', 'QUEUED', 'SUCCESS', 'ERROR'].map((status) => {
+                        const count = status === 'ALL' ? filteredAccounts.length : filteredAccounts.filter(a => a.status === status).length;
+                        const active = statusFilter === status;
+                        return (
+                          <button
+                            key={status}
+                            onClick={() => setStatusFilter(status)}
+                            className={`px-2.5 py-1 text-[10px] font-bold rounded-md border uppercase tracking-wide transition-colors duration-150 cursor-pointer ${
+                              active ? 'bg-brand/15 text-brand border-brand/35' : 'bg-surface-2 text-fg-muted border-line-soft hover:text-fg'
+                            }`}
+                          >
+                            {status} <span className="tabular-nums opacity-70">{count}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap gap-1.5">
-                    <button
-                      onClick={handleSelectUnupdatedProfiles}
-                      className="bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
-                    >
-                      ⚡ Chưa đổi Profile
+                    <button onClick={handleSelectUnupdatedProfiles} className="btn btn-sm bg-violet-500/10 text-violet-300 border border-violet-500/25 hover:bg-violet-500/20">
+                      <Zap className="w-3.5 h-3.5" /> Chưa đổi Profile
                     </button>
-                    <button
-                      onClick={handleSelectAllBanned}
-                      className="bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
-                    >
-                      🎯 Chọn Banned
+                    <button onClick={handleSelectAllBanned} className="btn btn-sm bg-rose-500/10 text-rose-400 border border-rose-500/25 hover:bg-rose-500/20">
+                      <Ban className="w-3.5 h-3.5" /> Chọn Banned
                     </button>
-                    <button
-                      onClick={() => setIsExportModalOpen(true)}
-                      className="bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
-                    >
-                      📤 Xuất acc
+                    <button onClick={() => setIsExportModalOpen(true)} className="btn btn-sm bg-brand/10 text-brand border border-brand/25 hover:bg-brand/20">
+                      <Download className="w-3.5 h-3.5" /> Xuất acc
                     </button>
                     {selectedAccountIds.length > 0 && (
-                      <button
-                        onClick={handleMoveToGroup}
-                        className="bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
-                        title="Chuyển các tài khoản đã chọn sang 1 cụm (Lô) mới hoặc có sẵn để theo dõi"
-                      >
-                        📦 Chuyển cụm ({selectedAccountIds.length})
+                      <button onClick={handleMoveToGroup} className="btn btn-sm bg-indigo-500/10 text-indigo-300 border border-indigo-500/25 hover:bg-indigo-500/20"
+                        title="Chuyển các tài khoản đã chọn sang 1 cụm (Lô) mới hoặc có sẵn để theo dõi">
+                        <FolderInput className="w-3.5 h-3.5" /> Chuyển cụm ({selectedAccountIds.length})
                       </button>
                     )}
                     {selectedAccountIds.length > 0 && (
-                      <button
-                        onClick={handleClearCookies}
-                        className="bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
-                      >
-                        🍪 Xóa cookies ({selectedAccountIds.length})
+                      <button onClick={handleClearCookies} className="btn btn-sm bg-amber-500/10 text-amber-400 border border-amber-500/25 hover:bg-amber-500/20">
+                        <Cookie className="w-3.5 h-3.5" /> Xóa cookies ({selectedAccountIds.length})
                       </button>
                     )}
                     {selectedAccountIds.length > 0 && (
-                      <button
-                        onClick={handleBulkDelete}
-                        className="bg-rose-600 hover:bg-rose-700 text-slate-100 text-[10px] px-2.5 py-1 rounded-md font-bold transition-all"
-                      >
-                        🗑️ Xóa ({selectedAccountIds.length})
+                      <button onClick={handleBulkDelete} className="btn btn-sm btn-danger">
+                        <Trash2 className="w-3.5 h-3.5" /> Xóa ({selectedAccountIds.length})
                       </button>
                     )}
                   </div>
