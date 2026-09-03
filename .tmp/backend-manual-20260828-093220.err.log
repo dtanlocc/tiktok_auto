@@ -1,0 +1,24 @@
+INFO:     Started server process [39752]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:65320 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spoa85flou_sk?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sh7caws4_ti8?lang=en "HTTP/1.1 200 OK"
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:53032 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open

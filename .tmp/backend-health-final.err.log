@@ -1,0 +1,257 @@
+INFO:     Started server process [28476]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:50456 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:62438 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     127.0.0.1:62444 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 2
+INFO:     connection open
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cailyfewl25 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@swaysy_zealt881 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spoonk77278 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gouft1847 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@nou_clewnk89 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@itssnan392 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sowngais320 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@voont_sloor226 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@plue_frayl865 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fresy_vue427 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@found_troyn438 "HTTP/1.1 200 OK"
+INFO:QuickHealthCheck:[+] Check nhanh TikTok xong: 11/11, alive=9, dead=0, inconclusive=2
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sowngais320 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@nou_clewnk89 "HTTP/1.1 200 OK"
+INFO:QuickHealthCheck:[+] Check nhanh TikTok xong: 2/2, alive=2, dead=0, inconclusive=0
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sm7sma24_jun "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@vis62na5_we5sco "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@noan0gain27_voa "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bir81kay48_stro "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@shil67choa_gl "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@craw2_peel50ze "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@flee9cu2_ga25 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sha0sm_vond57st "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kuir_ko6fr88 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ja79swi6_frir5 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@th9br52_ch "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@flu4_sco5 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sco61wea88_sne4 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@plo75ble5_sh7sw "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sno49sp52_sa5 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@st_flu71zoyn "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cr1_dro2swai5 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@luin2cl32_tho96 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@woyl1gla_dre3 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@scoy9doa_cew64w "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@koun14cuel6_pl5 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fra9_glew68 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fro_poyn1bloo "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@wo74_shoy82 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@br6ch_zenk15 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gr92_bi9fr94 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@snu_sl5poo62 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cri2_gew8sw34 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@nea8dos28_fi10 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@glau47glol67_sn9 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ba_sla7stu89 "HTTP/1.1 200 OK"
+INFO:QuickHealthCheck:[+] Check nhanh TikTok xong: 31/31, alive=17, dead=0, inconclusive=14
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 11.5s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=24449944 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=24449944 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 491928669 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 4 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_66a01ad3-7d63-4abe-9546-3031b373b6a1
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 22.2s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=4002124 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=4002124 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 444003276 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+WARNING:PlaywrightAdapter:[-] Qua thoi gian cho (Timeout) nhung khong the xac minh trang thai dang nhap.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+ERROR:LoginStrategies:[-] Loi dang nhap Form: Locator.wait_for: Timeout 15000ms exceeded.
+Call log:
+  - waiting for locator("div.TUXButton-content:has-text(\"Log in\"), div.TUXButton-label:has-text(\"Log in\")").first to be visible
+
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_13f510ad-64d2-475c-a516-683fd5fe46a1
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@lilveal574 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@snuly_drawst770 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@msprund353 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@itsgownyvown219 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@la_spury282 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kaft_scee796 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@stroont50 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@slealyva725 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@tre45_spou30sk7 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@swaucksoo907 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@zaw2_wa4 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@slaft_sceank521 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fu_sew0dos52 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@stasvool822 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@blaryruim539 "HTTP/1.1 200 OK"
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@soyvoortx445 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@chaint_koo167 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@stiery_broyft90 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@slouck_wiery208 "HTTP/1.1 200 OK"
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.5s (lan 1/2).
+WARNING:QuickHealthCheck:TikTok check network error @smeanycrain2534: ReadTimeout: 
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=4264268 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=4264268 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 400823100 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@xobewck236 "HTTP/1.1 200 OK"
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@blewrt19279 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@smeanycrain2534 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@meeltthawnx150 "HTTP/1.1 200 OK"
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bor23830 "HTTP/1.1 200 OK"
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 1 giay (Phat hien nav-profile/upload/messages).
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@theasy550 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fawsy_mowl448 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@scisyroon6628 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@vayry_jai558 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@flayny_gant574 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@zaglowltx211 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@scu5_droo6 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@nau6_dain55 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@stu2stoy2_wunt5 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bra8zewm33_gr2 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@itssmeandcro304 "HTTP/1.1 200 OK"
+INFO:QuickHealthCheck:[+] Check nhanh TikTok xong: 35/35, alive=2, dead=24, inconclusive=9
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_99adc7a3-bd43-4552-825c-6c64f7a83ac4
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.3s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=14356876 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=14356876 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 258976353 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 3 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_a2b73201-a381-4cd6-9a53-647e7d148642
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 13.5s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=11276014 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=11276014 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 1657958848 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 1 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_b05a5edf-6ecd-4736-a43f-58317e9bf998
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 11.3s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=89984002 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=89984002 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 145147088 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 7 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_36b92ea1-2cd4-4607-9ec1-55af925ed89c
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 31.2s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=151652156 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=151652156 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 820731574 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 4 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_8f14cf21-4dae-402d-a327-7eee1e342ef7
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 14.9s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=31330968 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=31330968 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 1686815075 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 7 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_b4afd8b6-40f0-48a8-8109-9e7f3c3ac9dc
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.4s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=31527576 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=31527576 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 382552261 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 5 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.9s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=5574656 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=5574656 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 1149438750 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 6 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_666ddffe-7fdf-47e1-8d18-53570b525322
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_93a97cde-2166-406d-b33e-535f133a2923
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 11.6s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=1970800 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=1970800 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 614623453 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 7 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_9a6a074e-8a0b-4f65-ac7d-8f41aba8324c
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.5s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=4657712 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=4657712 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 266154955 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 5 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_715909dd-e93c-475e-939f-2cd6802c34d7
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 11.1s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=7344418 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=7344418 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 91691494 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 7 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_7478d8e6-4d96-4989-ac20-028ecf67efdf

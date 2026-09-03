@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "invisible-browser-studio-backend"
+version = "0.1.0"
+description = "Clean Architecture backend for Invisible Browser Studio"
+requires-python = ">=3.11"
+dependencies = [
+  "cryptography>=45,<47",
+  "fastapi>=0.115,<1",
+  "httpx>=0.28,<1",
+  "pydantic>=2.10,<3",
+  "python-multipart>=0.0.20,<1",
+  "python-dotenv>=1.0,<2",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+browser = [
+  "invisible-playwright==0.7.4",
+  "Pillow>=10,<13; platform_system == 'Windows'",
+]
+dev = [
+  "pytest>=8.3,<10",
+  "pytest-asyncio>=0.25,<2",
+  "ruff>=0.9,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/invisible_browser_studio"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]

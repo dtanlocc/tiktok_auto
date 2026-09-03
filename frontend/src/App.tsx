@@ -1,14 +1,13 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from './store/useAppStore';
-import { initWebSocket } from './services/websocket';
-import { Account, Proxy } from './store/useAppStore';
+import { Account, AppTab } from './types';
 
 // Nhập khẩu các thành phần đã mô-đun hóa
-import { Header } from './components/Header';
 import { NavSidebar } from './components/NavSidebar';
 import { ControlPanel } from './components/ControlPanel';
 import { Sidebar } from './components/Sidebar';
 import { StatsCards } from './components/StatsCards';
+import { AccountPerformanceSummary } from './components/AccountPerformanceSummary';
 import { AccountsTable } from './components/AccountsTable';
 import { ProxiesTable } from './components/ProxiesTable';
 import { InteractionPanel } from './components/InteractionPanel';
@@ -17,22 +16,23 @@ import { ContextMenu } from './components/ContextMenu';
 import { FolderTree } from './components/FolderTree';
 import { ImportModal } from './components/ImportModal'; // <-- IMPORT MODAL NỔI MỚI THÊM
 import { ExportModal } from './components/ExportModal';
-import { LiveScreens } from './components/LiveScreens';
-import { Folder, Globe, Server, Layers, ListTree, X, Zap, Ban, Download, FolderInput, Cookie, Trash2 } from 'lucide-react';
+import { TaskCompletionPopup, TaskCompletionNotice } from './components/TaskCompletionPopup';
+import { BarChart3, Folder, ListTree, X, Zap, Ban, Download, FolderInput, Cookie, Trash2, Copy } from 'lucide-react';
 
-interface LogMessage {
-  time: string;
-  username: string;
-  message: string;
-}
+const VideoManager = lazy(() => import('./components/VideoManager').then((module) => ({ default: module.VideoManager })));
+const LiveScreens = lazy(() => import('./components/LiveScreens').then((module) => ({ default: module.LiveScreens })));
 
 export default function App() {
-  const { accounts, proxies, setAccounts, setProxies, updateAccountFields } = useAppStore();
-  const [activeTab, setActiveTab] = useState<'accounts' | 'proxies' | 'interactions' | 'screens'>('accounts');
+  const accounts = useAppStore((state) => state.accounts);
+  const proxies = useAppStore((state) => state.proxies);
+  const setAccounts = useAppStore((state) => state.setAccounts);
+  const setProxies = useAppStore((state) => state.setProxies);
+  const updateAccountFields = useAppStore((state) => state.updateAccountFields);
+  const [activeTab, setActiveTab] = useState<AppTab>('accounts');
   
   // Bộ điều khiển trung tâm (Control Panel)
   // concurrency = SỐ LUỒNG TỐI ĐA / 1 PROXY (thay cho "số luồng tổng" trước đây).
-  const [concurrency, setConcurrency] = useState<number>(2);
+  const [concurrency, setConcurrency] = useState<number>(8);
   const [avatarFolder, setAvatarFolder] = useState<string>('');
 
   // ĐIỀU KHIỂN TOÀN CỤC: Bắt đầu / Tạm dừng / Tiếp tục / Dừng khẩn cấp
@@ -45,14 +45,12 @@ export default function App() {
 
   // Danh sách ID tài khoản được chọn (Checkbox Selection)
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
-  // Danh sách account đang có phiên DEBUG mở (để đổi nút Debug <-> Dừng debug).
-  const [debugActiveIds, setDebugActiveIds] = useState<string[]>([]);
+  // Danh sách account đang có phiên tay mở (để đổi nút Run one test <-> Đóng phiên).
+  const [manualSessionIds, setManualSessionIds] = useState<string[]>([]);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   
   // Bộ lọc dữ liệu đa chiều
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('ALL');
-  const [selectedCountryFilter, setSelectedCountryFilter] = useState<string>('ALL');
 
   // TRẠNG THÁI CÂY THƯ MỤC VÀ POPUP IMPORT NỔI
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
@@ -60,15 +58,57 @@ export default function App() {
   const [expandedCountries, setExpandedCountries] = useState<string[]>([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false); // <-- TRẠNG THÁI POPUP IMPORT
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false); // <-- POPUP XUẤT ACC
+  const [proxyMode, setProxyMode] = useState<boolean>(true); // true = dùng proxy (auto-map); false = mạng thật
 
-  const [logs, setLogs] = useState<LogMessage[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-  const terminalEndRef = useRef<HTMLDivElement>(null);
+  const [taskCompletionNotices, setTaskCompletionNotices] = useState<TaskCompletionNotice[]>([]);
+  const taskNoticeSequence = useRef(0);
+
+  const pushTaskCompletionNotice = useCallback((notice: Omit<TaskCompletionNotice, 'id'>) => {
+    taskNoticeSequence.current += 1;
+    const nextNotice: TaskCompletionNotice = {
+      ...notice,
+      id: `${Date.now()}-${taskNoticeSequence.current}`,
+    };
+    setTaskCompletionNotices((current) => [...current, nextNotice].slice(-3));
+  }, []);
+
+  const dismissTaskCompletionNotice = useCallback((id: string) => {
+    setTaskCompletionNotices((current) => current.filter((notice) => notice.id !== id));
+  }, []);
+
+  const loadData = useCallback(() => {
+    fetch('http://127.0.0.1:9000/api/v1/accounts/')
+      .then((res) => res.json())
+      .then((data) => {
+        // Email is now the account primary key. Preserve selections made before
+        // the one-time UUID -> email migration when the backend reconnects.
+        const previous = useAppStore.getState().accounts;
+        const oldEmailById = new Map(previous.map((account) => [account.id, account.email]));
+        const validIds = new Set((Array.isArray(data) ? data : []).map((account: Account) => account.id));
+        setSelectedAccountIds((ids) => ids
+          .map((id) => oldEmailById.get(id) || id)
+          .filter((id) => validIds.has(id)));
+        setAccounts(data);
+      })
+      .catch((err) => console.error('Lỗi tải danh sách tài khoản:', err));
+
+    fetch('http://127.0.0.1:9000/api/v1/proxies/')
+      .then((res) => res.json())
+      .then((data) => setProxies(data))
+      .catch((err) => console.error('Lỗi tải danh sách proxy:', err));
+
+    fetch('http://127.0.0.1:9000/api/v1/tasks/status')
+      .then((res) => res.json())
+      .then((data) => {
+        setIsGloballyPaused(!!data.is_globally_paused);
+        if (typeof data.proxy_max_concurrent === 'number') setConcurrency(data.proxy_max_concurrent);
+      })
+      .catch((err) => console.error('Lỗi tải trạng thái dispatcher:', err));
+  }, [setAccounts, setProxies]);
 
   // 1. Khởi động WebSockets, tải dữ liệu ban đầu và lắng nghe sự kiện đóng menu chuột phải
   useEffect(() => {
-    initWebSocket();
-
     const handleWsEvents = (event: MessageEvent) => {
       try {
         // Bo qua som cac frame anh man hinh (tan suat cao, kich thuoc lon) - da
@@ -83,21 +123,13 @@ export default function App() {
             accounts: state.accounts.map(acc => acc.id === id ? { ...acc, current_step } : acc)
           }));
         } else if (message.event === 'ACCOUNT_STATUS_CHANGED') {
-          const { id, status, current_step, health_status, profile_status } = message.data;
+          const { id, ...fields } = message.data;
           useAppStore.setState((state) => ({
-            accounts: state.accounts.map(acc => acc.id === id ? { 
-              ...acc, 
-              status, 
-              current_step,
-              // NÂNG CẤP ĐỒNG BỘ: Cập nhật ngay lập tức các trường sức khoẻ vĩnh viễn
-              health_status: health_status || acc.health_status,
-              profile_status: profile_status || acc.profile_status
-            } : acc)
+            accounts: state.accounts.map(acc => acc.id === id ? { ...acc, ...fields } : acc)
           }));
         } else if (message.event === 'TERMINAL_LOG') {
           const { username, message: logMsg } = message.data;
-          const time = new Date().toLocaleTimeString();
-          setLogs((prev) => [...prev, { time, username, message: logMsg }]);
+          useAppStore.getState().addLog({ time: new Date().toLocaleTimeString(), username, message: logMsg });
         } else if (message.event === 'GLOBAL_STATE_CHANGED') {
           setIsGloballyPaused(!!message.data.is_globally_paused);
         } else if (message.event === 'ACCOUNT_PAUSE_CHANGED') {
@@ -111,21 +143,80 @@ export default function App() {
           useAppStore.setState((state) => ({
             accounts: state.accounts.map(acc => acc.id === id ? { ...acc, ...fields } : acc)
           }));
+        } else if (message.event === 'ACCOUNT_ADDED') {
+          useAppStore.getState().addAccount({ ...message.data, email: message.data.email || '' });
+        } else if (message.event === 'ACCOUNT_DELETED') {
+          useAppStore.getState().deleteAccount(message.data.id);
+        } else if (message.event === 'ACCOUNT_PROXY_CHANGED') {
+          useAppStore.getState().updateAccountProxy(message.data.id, message.data.proxy_id);
         } else if (message.event === 'QUICK_CHECK_FINISHED') {
-          const { completed, total } = message.data;
-          setLogs((prev) => [...prev, {
+          const completed = Number(message.data?.completed) || 0;
+          const total = Number(message.data?.total) || 0;
+          const alive = Number(message.data?.alive) || 0;
+          const dead = Number(message.data?.dead) || 0;
+          const inconclusive = Number(message.data?.inconclusive) || 0;
+          useAppStore.getState().addLog({
             time: new Date().toLocaleTimeString(),
             username: 'System',
-            message: `✅ Đã hoàn tất đợt Check nhanh Sống/Chết: ${completed}/${total} tài khoản.`
-          }]);
+            message: `Đã hoàn tất đợt Check nhanh Sống/Chết: ${completed}/${total} tài khoản.`
+          });
+          pushTaskCompletionNotice({
+            tone: dead > 0 || inconclusive > 0 ? 'warning' : 'success',
+            title: 'Check nhanh đã hoàn tất',
+            message: `Đã kiểm tra xong ${completed}/${total} tài khoản. Kết quả từng tài khoản đã được cập nhật trên bảng.`,
+            stats: [
+              { label: 'Đã kiểm tra', value: completed },
+              { label: 'Sống', value: alive },
+              { label: 'Die', value: dead },
+              { label: 'Chưa kết luận', value: inconclusive },
+            ],
+          });
+        } else if (message.event === 'FAST_ANALYTICS_FINISHED') {
+          const completed = Number(message.data?.completed) || 0;
+          const total = Number(message.data?.total) || 0;
+          const updated = Number(message.data?.updated) || 0;
+          const cached = Number(message.data?.cached) || 0;
+          const failed = Number(message.data?.failed) || 0;
+          const skipped_sold = Number(message.data?.skipped_sold) || 0;
+          useAppStore.getState().addLog({
+            time: new Date().toLocaleTimeString(),
+            username: 'System',
+            message: `Đồng bộ nhanh xong ${completed}/${total}: cập nhật ${updated}, cache ${cached}, lỗi ${failed}, bỏ qua ĐÃ BÁN ${skipped_sold}.`,
+          });
+          pushTaskCompletionNotice({
+            tone: failed > 0 ? (failed >= completed && completed > 0 ? 'error' : 'warning') : 'success',
+            title: 'Đồng bộ nhanh đã hoàn tất',
+            message: `Đã xử lý xong ${completed}/${total} tài khoản. Dữ liệu mới đã hiển thị trên giao diện.`,
+            stats: [
+              { label: 'Đã xử lý', value: completed },
+              { label: 'Cập nhật', value: updated },
+              { label: 'Dùng cache', value: cached },
+              { label: 'Lỗi', value: failed },
+              { label: 'Bỏ qua đã bán', value: skipped_sold },
+            ],
+          });
         }
       } catch (err) {
         console.error(err);
       }
     };
 
-    const activeWs = new WebSocket('ws://127.0.0.1:9000/ws');
-    activeWs.onmessage = handleWsEvents;
+    let disposed = false;
+    let activeWs: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    const connect = () => {
+      activeWs = new WebSocket('ws://127.0.0.1:9000/ws');
+      activeWs.onopen = () => {
+        useAppStore.getState().setWsConnected(true);
+        loadData();
+      };
+      activeWs.onmessage = handleWsEvents;
+      activeWs.onclose = () => {
+        useAppStore.getState().setWsConnected(false);
+        if (!disposed) reconnectTimer = window.setTimeout(connect, 2000);
+      };
+    };
+    connect();
 
     // Tải dữ liệu ban đầu
     loadData();
@@ -135,47 +226,28 @@ export default function App() {
     document.addEventListener('click', closeMenu);
 
     return () => {
-      activeWs.close();
+      disposed = true;
+      activeWs?.close();
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       document.removeEventListener('click', closeMenu);
     };
-  }, [setAccounts, setProxies]);
+  }, [loadData, pushTaskCompletionNotice]);
 
-  // Cuộn Terminal xuống cuối khi nhận log mới
+  // Đồng bộ định kỳ danh sách phiên tay đang mở (bắt trường hợp user tự ĐÓNG
+  // cửa sổ -> nút tự trở lại "Run one test").
   useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
-
-  // Đồng bộ định kỳ danh sách phiên debug đang mở (bắt trường hợp user tự ĐÓNG
-  // cửa sổ debug -> nút tự trở lại "Debug").
-  useEffect(() => {
-    refreshDebugSessions();
-    const t = setInterval(refreshDebugSessions, 4000);
+    refreshManualSessions();
+    const t = setInterval(refreshManualSessions, 4000);
     return () => clearInterval(t);
   }, []);
 
-  // Hàm tải dữ liệu từ API Backend
-  const loadData = () => {
-    fetch('http://127.0.0.1:9000/api/v1/accounts/')
-      .then((res) => res.json())
-      .then((data) => setAccounts(data))
-      .catch((err) => console.error('Lỗi tải danh sách tài khoản:', err));
-
-    fetch('http://127.0.0.1:9000/api/v1/proxies/')
-      .then((res) => res.json())
-      .then((data) => setProxies(data))
-      .catch((err) => console.error('Lỗi tải danh sách proxy:', err));
-
-    fetch('http://127.0.0.1:9000/api/v1/tasks/status')
-      .then((res) => res.json())
-      .then((data) => {
-        setIsGloballyPaused(!!data.is_globally_paused);
-        // Đồng bộ ô "số luồng / proxy" với giá trị hiện tại của backend.
-        if (typeof data.proxy_max_concurrent === 'number') {
-          setConcurrency(data.proxy_max_concurrent);
-        }
-      })
-      .catch((err) => console.error('Lỗi tải trạng thái dispatcher:', err));
-  };
+  // Nạp chế độ proxy hiện tại (proxy / mạng thật) để menu chuột phải hiện đúng.
+  useEffect(() => {
+    fetch('http://127.0.0.1:9000/api/v1/tasks/proxy-mode')
+      .then((r) => r.json())
+      .then((d) => { if (typeof d?.use_proxy === 'boolean') setProxyMode(d.use_proxy); })
+      .catch(() => {});
+  }, []);
 
   // Lưu ngay giá trị "số luồng tối đa / 1 proxy" xuống backend khi user chỉnh.
   const handleSetProxyConcurrency = async (val: number) => {
@@ -254,7 +326,7 @@ export default function App() {
   // =========================================================================
   // XỬ LÝ LỌC TRANG THÁI THEO CÂY THƯ MỤC CỰC KỲ THÔNG MINH
   // =========================================================================
-  const filteredAccounts = accounts.filter(acc => {
+  const treeFilteredAccounts = useMemo(() => accounts.filter(acc => {
     // Khi CHƯA chọn Quốc gia/Lô cụ thể trên cây thư mục (hoặc cây đang bị thu
     // gọn), coi như KHÔNG lọc theo cây -> hiển thị TOÀN BỘ tài khoản trong DB
     // (đúng yêu cầu "view database đầy đủ"). Chỉ khi người dùng chủ động chọn
@@ -263,9 +335,12 @@ export default function App() {
       ? (acc.country === selectedCountry && acc.batch_tag === selectedBatch)
       : true;
 
-    const matchStatus = statusFilter === 'ALL' || acc.status === statusFilter;
-    return matchTree && matchStatus;
-  });
+    return matchTree;
+  }), [accounts, selectedBatch, selectedCountry]);
+  const filteredAccounts = useMemo(
+    () => statusFilter === 'ALL' ? treeFilteredAccounts : treeFilteredAccounts.filter((account) => account.status === statusFilter),
+    [statusFilter, treeFilteredAccounts],
+  );
 
   // Gom các acc bị banned trong lô đang chọn
   const handleSelectAllBanned = () => {
@@ -343,10 +418,13 @@ export default function App() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedAccountIds.length === filteredAccounts.length) {
-      setSelectedAccountIds([]);
+    const filteredIds = filteredAccounts.map((account) => account.id);
+    const filteredIdSet = new Set(filteredIds);
+    const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedAccountIds.includes(id));
+    if (allFilteredSelected) {
+      setSelectedAccountIds(selectedAccountIds.filter((id) => !filteredIdSet.has(id)));
     } else {
-      setSelectedAccountIds(filteredAccounts.map(a => a.id));
+      setSelectedAccountIds(Array.from(new Set([...selectedAccountIds, ...filteredIds])));
     }
   };
 
@@ -410,6 +488,53 @@ export default function App() {
     }
   };
 
+  // Copy acc ra clipboard (định dạng giống Xuất acc) NHƯNG KHÔNG xóa khỏi app.
+  // Ưu tiên các acc đã chọn; nếu chưa chọn -> copy cả lô đang hiển thị.
+  const handleCopyAccounts = async () => {
+    const ids = selectedAccountIds.length > 0 ? selectedAccountIds : filteredAccounts.map((a) => a.id);
+    if (ids.length === 0) { alert('Không có tài khoản nào để copy.'); return; }
+    try {
+      const res = await fetch('http://127.0.0.1:9000/api/v1/accounts/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_ids: ids }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.detail || 'Lỗi copy tài khoản.'); return; }
+      try {
+        await navigator.clipboard.writeText(data.content);
+      } catch {
+        // Fallback nếu clipboard API bị chặn: dùng textarea tạm.
+        const ta = document.createElement('textarea');
+        ta.value = data.content; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+      }
+      alert(`Đã copy ${data.copied_count} tài khoản vào clipboard (acc VẪN CÒN trong app).`);
+    } catch {
+      alert('Không kết nối được backend để copy.');
+    }
+  };
+
+  // Đổi chế độ proxy (runtime): true = auto-map proxy như cũ; false = mạng thật (VPN)
+  const handleSetProxyMode = async (useProxy: boolean) => {
+    try {
+      const res = await fetch('http://127.0.0.1:9000/api/v1/tasks/proxy-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ use_proxy: useProxy }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setProxyMode(data.use_proxy);
+        alert(data.message || (useProxy ? 'Đã bật proxy.' : 'Đã chuyển sang mạng thật.'));
+      } else {
+        alert(data.detail || 'Lỗi đổi chế độ proxy.');
+      }
+    } catch {
+      alert('Không kết nối được backend.');
+    }
+  };
+
   // Phân bổ Proxy tự động
   const handleAutoAllocateProxies = async () => {
     if (selectedAccountIds.length === 0) return;
@@ -450,8 +575,14 @@ export default function App() {
         const err = await res.json();
         alert(err.detail || 'Lỗi cập nhật.');
         if (before) updateAccountFields(accountId, before); // rollback UI
+      } else {
+        const saved = await res.json();
+        updateAccountFields(accountId, saved);
+        if (saved.id && saved.id !== accountId) {
+          setSelectedAccountIds((ids) => ids.map((id) => id === accountId ? saved.id : id));
+        }
       }
-    } catch (err) {
+    } catch {
       alert('Không kết nối được backend.');
       if (before) updateAccountFields(accountId, before);
     }
@@ -473,28 +604,28 @@ export default function App() {
       const data = await res.json();
       if (res.ok) alert(data.message);
       else alert(data.detail || 'Lỗi xóa cookies.');
-    } catch (err) {
+    } catch {
       alert('Không kết nối được backend.');
     }
   };
 
   // =========================================================================
-  // CHẾ ĐỘ DEBUG: mở trình duyệt HIỆN, tự login rồi GIỮ mở để thao tác tay.
+  // CHẾ ĐỘ PHIÊN TAY: mở trình duyệt HIỆN, tự login rồi GIỮ mở để thao tác tay.
   // Tách riêng hoàn toàn với luồng mở trình duyệt ẩn (dispatcher).
   // =========================================================================
-  const refreshDebugSessions = async () => {
+  const refreshManualSessions = async () => {
     try {
       const res = await fetch('http://127.0.0.1:9000/api/v1/tasks/debug-login/active');
       const data = await res.json();
-      setDebugActiveIds(Array.isArray(data.active_ids) ? data.active_ids : []);
+      setManualSessionIds(Array.isArray(data.active_ids) ? data.active_ids : []);
     } catch {
       // im lặng - backend có thể chưa chạy
     }
   };
 
-  const handleDebugLogin = async (accountId: string) => {
-    // Cập nhật lạc quan để nút đổi ngay sang "Dừng debug".
-    setDebugActiveIds((prev) => (prev.includes(accountId) ? prev : [...prev, accountId]));
+  const handleManualSessionStart = async (accountId: string) => {
+    // Cập nhật lạc quan để nút đổi ngay sang "Đóng phiên".
+    setManualSessionIds((prev) => (prev.includes(accountId) ? prev : [...prev, accountId]));
     try {
       const res = await fetch('http://127.0.0.1:9000/api/v1/tasks/debug-login', {
         method: 'POST',
@@ -503,16 +634,16 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.detail || 'Không mở được phiên debug.');
-        setDebugActiveIds((prev) => prev.filter((id) => id !== accountId));
+        alert(data.detail || 'Không mở được phiên tay.');
+        setManualSessionIds((prev) => prev.filter((id) => id !== accountId));
       }
     } catch {
       alert('Không kết nối được backend.');
-      setDebugActiveIds((prev) => prev.filter((id) => id !== accountId));
+      setManualSessionIds((prev) => prev.filter((id) => id !== accountId));
     }
   };
 
-  const handleStopDebug = async (accountId: string) => {
+  const handleManualSessionStop = async (accountId: string) => {
     try {
       await fetch('http://127.0.0.1:9000/api/v1/tasks/debug-login/stop', {
         method: 'POST',
@@ -522,7 +653,7 @@ export default function App() {
     } catch {
       // bỏ qua
     } finally {
-      setDebugActiveIds((prev) => prev.filter((id) => id !== accountId));
+      setManualSessionIds((prev) => prev.filter((id) => id !== accountId));
     }
   };
 
@@ -637,6 +768,19 @@ export default function App() {
     }
   };
 
+  const handleSyncAnalytics = async (accountIds: string[] = selectedAccountIds) => {
+    const operationalIds = accountIds.filter((id) => !accounts.find((account) => account.id === id)?.is_sold);
+    if (!operationalIds.length) throw new Error('Không có account đang hoạt động để đồng bộ. Nhóm ĐÃ BÁN luôn bị bỏ qua.');
+    const response = await fetch('http://127.0.0.1:9000/api/v1/tasks/sync-analytics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_ids: operationalIds, concurrency_limit: Math.min(16, Math.max(8, concurrency * 2)) }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || 'Không thể bắt đầu đồng bộ hiệu suất.');
+    useAppStore.getState().addLog({ time: new Date().toLocaleTimeString(), username: 'System', message: result.message });
+  };
+
   const handleSelectBatch = (country: string, batch: string) => {
     setSelectedCountry(country);
     setSelectedBatch(batch);
@@ -649,8 +793,12 @@ export default function App() {
     );
   };
 
+  const selectedAnalyticsCount = selectedAccountIds.filter(
+    (id) => !accounts.find((account) => account.id === id)?.is_sold,
+  ).length;
+
   return (
-    <div className="min-h-screen bg-canvas text-fg flex select-none">
+    <div className="min-h-screen bg-canvas text-fg flex">
 
       {/* SIDEBAR TRÁI CỐ ĐỊNH: điều hướng + trạng thái hệ thống */}
       <NavSidebar activeTab={activeTab} setActiveTab={setActiveTab} isGloballyPaused={isGloballyPaused} />
@@ -659,7 +807,8 @@ export default function App() {
       <main className="flex-1 min-w-0 h-screen overflow-y-auto flex flex-col gap-3 px-4 py-4 md:px-5">
 
       {/* CONTROL PANEL COMPONENT (Chứa nút chọn thư mục ảnh cao cấp) */}
-      <ControlPanel
+      {activeTab !== 'videos' && <ControlPanel
+        proxyMode={proxyMode}
         concurrency={concurrency}
         setConcurrency={handleSetProxyConcurrency}
         avatarFolder={avatarFolder}
@@ -669,9 +818,8 @@ export default function App() {
         onGlobalPause={handleGlobalPause}
         onGlobalResume={handleGlobalResume}
         onGlobalStop={handleGlobalStop}
-        accounts={accounts}
         selectedAccountIds={selectedAccountIds}
-      />
+      />}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1">
         
@@ -698,7 +846,7 @@ export default function App() {
                   onCollapse={() => setIsTreeCollapsed(true)}
                 />
               ) : (
-                <Sidebar activeTab={activeTab} loading={loading} onFileUpload={handleFileUpload} />
+                <Sidebar activeTab="proxies" loading={loading} onFileUpload={handleFileUpload} />
               )}
             </div>
           );
@@ -715,10 +863,11 @@ export default function App() {
         }>
           
           {/* STATS SUMMARY */}
-          <StatsCards accounts={accounts} proxies={proxies} />
+          {activeTab !== 'videos' && activeTab !== 'screens' && <StatsCards accounts={accounts} proxies={proxies} />}
 
           {activeTab === 'accounts' ? (
             <div className="flex flex-col gap-4 min-h-[450px]">
+              <AccountPerformanceSummary accounts={filteredAccounts} />
               {/* THANH ĐIỀU KHIỂN & BỘ LỌC TRẠNG THÁI - LUÔN HIỂN THỊ, KHÔNG CÒN
                   BẮT BUỘC CHỌN LÔ MỚI THẤY BẢNG (view database đầy đủ mặc định) */}
               <div className="card p-4 flex flex-col gap-3">
@@ -755,7 +904,7 @@ export default function App() {
                     <span className="text-[10px] text-fg-subtle font-bold uppercase tracking-wider">Lọc nhanh</span>
                     <div className="flex gap-1 flex-wrap">
                       {['ALL', 'IDLE', 'RUNNING', 'QUEUED', 'SUCCESS', 'ERROR'].map((status) => {
-                        const count = status === 'ALL' ? filteredAccounts.length : filteredAccounts.filter(a => a.status === status).length;
+                        const count = status === 'ALL' ? treeFilteredAccounts.length : treeFilteredAccounts.filter(a => a.status === status).length;
                         const active = statusFilter === status;
                         return (
                           <button
@@ -782,6 +931,15 @@ export default function App() {
                     <button onClick={() => setIsExportModalOpen(true)} className="btn btn-sm bg-brand/10 text-brand border border-brand/25 hover:bg-brand/20">
                       <Download className="w-3.5 h-3.5" /> Xuất acc
                     </button>
+                    <button onClick={handleCopyAccounts} className="btn btn-sm bg-violet-500/10 text-violet-300 border border-violet-500/25 hover:bg-violet-500/20"
+                      title="Copy acc (đã chọn, hoặc cả lô đang hiện) ra clipboard — KHÔNG xóa khỏi app">
+                      <Copy className="w-3.5 h-3.5" /> Copy acc{selectedAccountIds.length > 0 ? ` (${selectedAccountIds.length})` : ''}
+                    </button>
+                    {selectedAccountIds.length > 0 && (
+                      <button onClick={() => { void handleSyncAnalytics().catch((reason) => alert(reason instanceof Error ? reason.message : 'Không thể đồng bộ hiệu suất TikTok.')); }} disabled={!selectedAnalyticsCount} className="btn btn-sm bg-sky-500/10 text-sky-300 border border-sky-500/25 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-40" title="Profile dùng HTTP công khai; chi tiết video dùng một browser ẩn dùng chung khi cần; không OAuth, tự bỏ qua ĐÃ BÁN">
+                        <BarChart3 className="w-3.5 h-3.5" /> Đồng bộ nhanh ({selectedAnalyticsCount})
+                      </button>
+                    )}
                     {selectedAccountIds.length > 0 && (
                       <button onClick={handleMoveToGroup} className="btn btn-sm bg-indigo-500/10 text-indigo-300 border border-indigo-500/25 hover:bg-indigo-500/20"
                         title="Chuyển các tài khoản đã chọn sang 1 cụm (Lô) mới hoặc có sẵn để theo dõi">
@@ -815,15 +973,22 @@ export default function App() {
                 onPauseAccount={handlePauseAccount}
                 onResumeAccount={handleResumeAccount}
                 onUpdateAccount={handleUpdateAccount}
-                onDebugLogin={handleDebugLogin}
-                onStopDebug={handleStopDebug}
-                debugActiveIds={debugActiveIds}
+                onRunOneTest={handleManualSessionStart}
+                onStopRunOneTest={handleManualSessionStop}
+                manualSessionIds={manualSessionIds}
+                onSyncAnalytics={handleSyncAnalytics}
               />
             </div>
+          ) : activeTab === 'videos' ? (
+            <Suspense fallback={<div className="card min-h-96 animate-pulse bg-surface" aria-label="Đang tải quản lý video" />}>
+              <VideoManager accounts={accounts} selectedAccountIds={selectedAccountIds} onSelectedAccountIdsChange={setSelectedAccountIds} concurrency={concurrency} />
+            </Suspense>
           ) : activeTab === 'interactions' ? (
             <InteractionPanel accounts={accounts} selectedAccountIds={selectedAccountIds} />
           ) : activeTab === 'screens' ? (
-            <LiveScreens />
+            <Suspense fallback={<div className="card min-h-96 animate-pulse bg-surface" aria-label="Đang tải màn hình trực tiếp" />}>
+              <LiveScreens accounts={accounts} />
+            </Suspense>
           ) : (
             <ProxiesTable proxies={proxies} />
           )}
@@ -832,7 +997,7 @@ export default function App() {
       </div>
 
       {/* 7. TERMINAL CONSOLE COMPONENT */}
-      <TerminalConsole logs={logs} setLogs={setLogs} terminalEndRef={terminalEndRef} />
+      {activeTab === 'screens' && <TerminalConsole />}
 
       </main>
 
@@ -847,6 +1012,8 @@ export default function App() {
           onAutoAllocateProxies={handleAutoAllocateProxies}
           onBulkDelete={handleBulkDelete}
           onQuickHealthCheck={handleQuickHealthCheck}
+          proxyMode={proxyMode}
+          onSetProxyMode={handleSetProxyMode}
         />
       )}
 
@@ -867,6 +1034,11 @@ export default function App() {
         selectedAccountIds={selectedAccountIds}
         displayedAccountIds={filteredAccounts.map((a) => a.id)}
         onExported={loadData}
+      />
+
+      <TaskCompletionPopup
+        notices={taskCompletionNotices}
+        onDismiss={dismissTaskCompletionNotice}
       />
 
     </div>

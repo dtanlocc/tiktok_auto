@@ -2,7 +2,7 @@ uv run uvicorn --app-dir backend app.main:app --port 9000
 
 
 # =============================================================================
-# QUAN TRONG (WINDOWS): TUYET DOI KHONG DUNG --reload
+# QUAN TRONG (WINDOWS): KHONG DUNG --reload TRUC TIEP CUA UVICORN
 # =============================================================================
 # uvicorn --reload (hoac --workers>1) bat use_subprocess=True. Tren Windows,
 # uvicorn khi do EP dung asyncio.SelectorEventLoop (xem uvicorn/loops/asyncio.py:
@@ -15,11 +15,10 @@ uv run uvicorn --app-dir backend app.main:app --port 9000
 # (Dong set_event_loop_policy trong main.py KHONG cuu duoc vi uvicorn tu tao
 #  SelectorEventLoop truc tiep, bo qua policy.)
 #
-# - Frontend (Vite: npm run dev) VAN tu hot-reload rieng, KHONG bi anh huong.
-# - Neu sua code backend Python: Ctrl+C roi chay lai lenh tren (restart tay).
-# - Voi app dieu khien browser, --reload con co hai (restart giet browser
-#   dang chay giua chung), nen bo han la dung.
-
+# Backend chay mot tien trinh Uvicorn binh thuong, KHONG auto-reload. Sau khi sua
+# Python, restart backend co chu dich de khong giet browser/tac vu dang chay.
+# Frontend (Vite: npm run dev) van tu hot-reload rieng, khong bi anh huong.
+0beb934
 
 cd frontend
 npm install

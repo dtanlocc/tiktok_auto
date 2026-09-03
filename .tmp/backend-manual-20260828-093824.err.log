@@ -1,0 +1,92 @@
+INFO:     Started server process [18728]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:63685 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:54620 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     127.0.0.1:54624 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 2
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 4
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n goliashpohlingq@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n valensteincoville8215@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: goliashpohlingq@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: valensteincoville8215@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:     127.0.0.1:56505 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:56506 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 16.3s (lan 1/2).
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 1
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=35785872 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=35785872 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1907953303 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=3083564.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 3 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/upload?lang=en (lan 1, wait=commit)...
+WARNING:PlaywrightAdapter:[Upload] Playwright path channel bi firefox-20 B178; chuyen sang native chooser DWM-cloaked. Loi: ElementHandle.set_input_files: Protocol error (Page.setFileInputFiles): error in channel "content::13/17/2": exception while running method "setFileInputFiles" in namespace "page": An attempt was made to use an object that is not, or is no longer, usable 
+D:\tiktok_auto\.venv\Lib\site-packages\pywinauto\__init__.py:80: UserWarning: Revert to STA COM threading mode
+  warnings.warn("Revert to STA COM threading mode", UserWarning)
+INFO:PlaywrightAdapter:[Upload] Da gan 1 file video qua native chooser DWM-cloaked.
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Turn on
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Got it
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #manypaper -> #manypaper (usage=2)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #stopbullet -> #stopbullet (usage=9)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #many -> #many (usage=568500)
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã kích ho\u1ea1t hashtag TikTok: #manypaper, #stopbullet, #many
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã xác nh\u1eadn popup Post now.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/content?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_444cebf6-7cac-4a2f-9cda-c12526ccbc16
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 12.8s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=192941140 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=192941140 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 516529359 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=3345708.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 3 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/upload?lang=en (lan 1, wait=commit)...
+WARNING:PlaywrightAdapter:[Upload] Playwright path channel bi firefox-20 B178; chuyen sang native chooser DWM-cloaked. Loi: ElementHandle.set_input_files: Protocol error (Page.setFileInputFiles): error in channel "content::13/17/2": exception while running method "setFileInputFiles" in namespace "page": An attempt was made to use an object that is not, or is no longer, usable 
+INFO:PlaywrightAdapter:[Upload] Da gan 1 file video qua native chooser DWM-cloaked.
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Got it
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #scarrips -> #scarrips (usage=not-shown)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #steelplates -> #steelplates (usage=1200)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #scar -> #scar (usage=533800)
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã kích ho\u1ea1t hashtag TikTok: #scarrips, #steelplates, #scar
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã xác nh\u1eadn popup Post now.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/content?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_0df9c31c-f5b8-4ff1-9e40-0a3491ca4166

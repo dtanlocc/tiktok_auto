@@ -1,4 +1,4 @@
-from typing import Protocol, List, Optional
+from typing import Protocol, List, Optional, Tuple
 from app.domain.entities.account import TikTokAccount
 from app.domain.entities.proxy import Proxy
 
@@ -19,6 +19,11 @@ class IAccountRepository(Protocol):
     def get_all(self) -> List[TikTokAccount]:
         ...
     def save(self, account: TikTokAccount) -> TikTokAccount:
+        ...
+    def save_prioritizing_username(
+        self, account: TikTokAccount
+    ) -> Tuple[TikTokAccount, Optional[TikTokAccount]]:
+        """Save and atomically swap a conflicting username owner."""
         ...
     def update_status(self, account_id: str, status: str) -> None:
         ...

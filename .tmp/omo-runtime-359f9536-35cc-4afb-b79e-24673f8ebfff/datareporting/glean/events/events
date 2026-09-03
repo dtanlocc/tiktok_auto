@@ -1,0 +1,16 @@
+{"timestamp":134835040,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"path_key":"clean","can_load":"false","loadfail_reason":"File doesn't exist.","glean_timestamp":"1787889856953"}}
+{"timestamp":134835045,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"path_key":"recovery","loadfail_reason":"File doesn't exist.","can_load":"false","glean_timestamp":"1787889856958"}}
+{"timestamp":134835054,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"loadfail_reason":"File doesn't exist.","glean_timestamp":"1787889856967","can_load":"false","path_key":"recoveryBackup"}}
+{"timestamp":134835075,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"loadfail_reason":"File doesn't exist.","can_load":"false","path_key":"cleanBackup","glean_timestamp":"1787889856987"}}
+{"timestamp":134835080,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"loadfail_reason":"File doesn't exist.","can_load":"false","glean_timestamp":"1787889856993","path_key":"clean"}}
+{"timestamp":134835136,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"glean_timestamp":"1787889857049","loadfail_reason":"File doesn't exist.","path_key":"recovery","can_load":"false"}}
+{"timestamp":134835163,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"glean_timestamp":"1787889857076","loadfail_reason":"File doesn't exist.","path_key":"recoveryBackup","can_load":"false"}}
+{"timestamp":134835207,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"glean_timestamp":"1787889857120","can_load":"false","path_key":"cleanBackup","loadfail_reason":"File doesn't exist."}}
+{"timestamp":134835657,"category":"webcompatreporting","name":"reason_dropdown","extra":{"glean_timestamp":"1787889857570","setting":"required"}}
+{"timestamp":134835329,"category":"security","name":"pref_usage_content_process","extra":{"value":"juggler.timezone.override","glean_timestamp":"1787889857718"}}
+{"timestamp":134835907,"category":"containers","name":"container_profile_loaded","extra":{"glean_timestamp":"1787889857820","containers":"4"}}
+{"timestamp":134835989,"category":"upgrade_dialog","name":"trigger_reason","extra":{"glean_timestamp":"1787889857901","value":"not-major"}}
+{"timestamp":134837292,"category":"jsonfile","name":"load_logins","extra":{"glean_timestamp":"1787889859204","value":"error_notfounderror"}}
+{"timestamp":134835635,"category":"security","name":"pref_usage_content_process","extra":{"value":"juggler.timezone.override","glean_timestamp":"1787889861880"}}
+{"timestamp":134838104,"category":"security","name":"pref_usage_content_process","extra":{"value":"juggler.timezone.override","glean_timestamp":"1787889861880"}}
+{"timestamp":134843047,"category":"security","name":"pref_usage_content_process","extra":{"value":"juggler.timezone.override","glean_timestamp":"1787889866770"}}

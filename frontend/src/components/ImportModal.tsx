@@ -3,6 +3,11 @@ import React, { useState } from 'react';
 import { X, Globe, Files, FolderSync } from 'lucide-react';
 import { SUPPORTED_COUNTRIES } from '../utils/countries';
 
+const directoryInputProps: React.InputHTMLAttributes<HTMLInputElement> & {
+  webkitdirectory: string;
+  directory: string;
+} = { webkitdirectory: '', directory: '' };
+
 interface ImportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -102,13 +107,14 @@ export const ImportModal: React.FC<ImportModalProps> = ({
               <span className="text-[10px] font-bold text-fg">Chọn tệp lẻ .txt</span>
               <span className="text-[8px] text-fg-subtle mt-0.5">Tải một hoặc nhiều file</span>
               <input
+                {...directoryInputProps}
                 type="file"
                 accept=".txt"
                 multiple={true}
                 disabled={loading}
                 onChange={(e) => {
                   onFileUpload(e, 'accounts', importCountry, importBatchTag);
-                  onClose && onFileUpload(e, 'accounts', importCountry, importBatchTag);
+                  onClose();
                 }}
                 className="hidden"
               />
@@ -126,10 +132,6 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                   onFileUpload(e, 'accounts', importCountry, importBatchTag);
                 }}
                 className="hidden"
-                // @ts-ignore
-                webkitdirectory=""
-                // @ts-ignore
-                directory=""
                 multiple={true}
               />
             </label>

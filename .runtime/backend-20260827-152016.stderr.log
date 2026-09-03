@@ -1,0 +1,231 @@
+INFO:     Started server process [37196]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:56281 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:60653 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     127.0.0.1:60657 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     127.0.0.1:63375 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:49207 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:49208 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 4
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n laurievangheem39050@outlook.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n kepplervancea99@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n lorigascowic40@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n hattankliberh@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n jentzschmamiz78@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n hightmelinh2@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n kirmazlubaskyo@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n sheandreekreiplt5898@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n tiengormes5662@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n nylundvanvranken425@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n guemtherlmenassiem69@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n ceazareraybach8797@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n dulabaynawraz629@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n etridgepopphan80@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n goliashpohlingq@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n garveyrusack590@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n valensteincoville8215@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n underwoodmarzan10@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: laurievangheem39050@outlook.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: kepplervancea99@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: lorigascowic40@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: hattankliberh@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:     127.0.0.1:50025 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     127.0.0.1:50029 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     connection closed
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 2
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 13.0s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=6884854 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=6884854 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 766833151 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=3345990.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 6 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/upload?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 14.2s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=14551378 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=14551378 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 556326605 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=10029500.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+WARNING:PlaywrightAdapter:[Upload] Playwright path channel bi firefox-20 B178; chuyen sang native chooser DWM-cloaked. Loi: ElementHandle.set_input_files: Protocol error (Page.setFileInputFiles): error in channel "content::13/17/2": exception while running method "setFileInputFiles" in namespace "page": An attempt was made to use an object that is not, or is no longer, usable 
+INFO:PlaywrightAdapter:[Upload] Da gan 1 file video qua native chooser DWM-cloaked.
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 12 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+WARNING:PlaywrightAdapter:[LAUNCH] Lan 1/2 hong (could not discover the proxy egress IP via 3 endpoint(s) in 2.3s (last) -> don + mo lai.
+WARNING:PlaywrightAdapter:[LAUNCH] Lan 2/2 hong (could not discover the proxy egress IP via 3 endpoint(s) in 2.4s (last) -> don + mo lai.
+ERROR:PlaywrightAdapter:[-] Khong the khoi tao trinh duyet: could not discover the proxy egress IP via 3 endpoint(s) in 2.4s (last error: ConnectionError(MaxRetryError('SOCKSHTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by NewConnectionError("SOCKSHTTPSConnection(host=\'checkip.amazonaws.com\', port=443): Failed to establish a new connection: 0x02: Connection not allowed by ruleset"))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_925eed3a-0213-446d-bb7d-30b7a1bbde50
+ERROR:TaskDispatcher:[-] Th\u1ea5t b\u1ea1i chung cu\u1ed9c cho tài kho\u1ea3n lorigascowic40@hotmail.com
+Traceback (most recent call last):
+  File "D:\tiktok_auto\backend\app\use_cases\orchestration\task_dispatcher.py", line 691, in _execute_worker_with_semaphore
+    await browser_service.initialize(proxy_config=proxy_config, seed=seed_val)
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 472, in initialize
+    raise e
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 403, in initialize
+    raise _err or RuntimeError(f"Khong mo duoc trinh duyet sau {_tries} lan.")
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 359, in initialize
+    self._browser = await asyncio.wait_for(
+                    ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\tasks.py", line 489, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\async_api.py", line 103, in __aenter__
+    _geo = await asyncio.to_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\.venv\Lib\site-packages\invisible_core\_geo.py", line 532, in prepare_session_geo
+    raise egress_err or GeoTimezoneError("egress IP discovery failed")
+  File "D:\tiktok_auto\.venv\Lib\site-packages\invisible_core\_geo.py", line 504, in prepare_session_geo
+    egress_ip = discover_egress_ip(proxy)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\.venv\Lib\site-packages\invisible_core\_geo.py", line 156, in discover_egress_ip
+    raise GeoTimezoneError(
+invisible_core._geo.GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 2.4s (last error: ConnectionError(MaxRetryError('SOCKSHTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by NewConnectionError("SOCKSHTTPSConnection(host=\'checkip.amazonaws.com\', port=443): Failed to establish a new connection: 0x02: Connection not allowed by ruleset"))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: jentzschmamiz78@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Turn on
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Got it
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã kích ho\u1ea1t hashtag TikTok: #acpstops, #nimowins, #acp
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+WARNING:PlaywrightAdapter:[LAUNCH] Lan 1/2 hong (could not discover the proxy egress IP via 3 endpoint(s) in 2.3s (last) -> don + mo lai.
+WARNING:PlaywrightAdapter:[LAUNCH] Lan 2/2 hong (could not discover the proxy egress IP via 3 endpoint(s) in 2.3s (last) -> don + mo lai.
+ERROR:PlaywrightAdapter:[-] Khong the khoi tao trinh duyet: could not discover the proxy egress IP via 3 endpoint(s) in 2.3s (last error: ConnectionError(MaxRetryError('SOCKSHTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by NewConnectionError("SOCKSHTTPSConnection(host=\'checkip.amazonaws.com\', port=443): Failed to establish a new connection: 0x02: Connection not allowed by ruleset"))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_fe9651cb-144a-46b9-b49b-7454c9d06e28
+ERROR:TaskDispatcher:[-] Th\u1ea5t b\u1ea1i chung cu\u1ed9c cho tài kho\u1ea3n hattankliberh@hotmail.com
+Traceback (most recent call last):
+  File "D:\tiktok_auto\backend\app\use_cases\orchestration\task_dispatcher.py", line 691, in _execute_worker_with_semaphore
+    await browser_service.initialize(proxy_config=proxy_config, seed=seed_val)
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 472, in initialize
+    raise e
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 403, in initialize
+    raise _err or RuntimeError(f"Khong mo duoc trinh duyet sau {_tries} lan.")
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 359, in initialize
+    self._browser = await asyncio.wait_for(
+                    ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\tasks.py", line 489, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\async_api.py", line 103, in __aenter__
+    _geo = await asyncio.to_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\.venv\Lib\site-packages\invisible_core\_geo.py", line 532, in prepare_session_geo
+    raise egress_err or GeoTimezoneError("egress IP discovery failed")
+  File "D:\tiktok_auto\.venv\Lib\site-packages\invisible_core\_geo.py", line 504, in prepare_session_geo
+    egress_ip = discover_egress_ip(proxy)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\.venv\Lib\site-packages\invisible_core\_geo.py", line 156, in discover_egress_ip
+    raise GeoTimezoneError(
+invisible_core._geo.GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 2.3s (last error: ConnectionError(MaxRetryError('SOCKSHTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by NewConnectionError("SOCKSHTTPSConnection(host=\'checkip.amazonaws.com\', port=443): Failed to establish a new connection: 0x02: Connection not allowed by ruleset"))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: hightmelinh2@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã xác nh\u1eadn popup Post now.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/content?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_e3ee3d4f-61f5-4b60-ada5-7337aba158ba
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: kirmazlubaskyo@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+WARNING:PlaywrightAdapter:[UPLOAD] For You timeout, critical_inflight=0, tr\u1ea1ng thái cu\u1ed1i: {'ready': 'complete', 'loggedIn': True, 'login': False, 'feedItems': 11, 'mediaReady': 0, 'pendingImages': 1, 'busy': 0, 'fontsLoaded': True, 'fingerprint': '/foryou|11|https://p16-common-sign.tiktokcdn-us.com/tos-useast8-p-0068-tx2/okfRQL1UYgAt25kfHzbfX8F84AQGCFMqpgqGfW~tplv-tiktokx-origin.image?dr=9636&x-expires=1787990400&x-signature=q5fO6%2FlGq1AJ0iun5YV4kdVnihI%3D&t=4d5b0474&ps=13740610&shp=81f88b70&shcp=43f4a2f9&idc=useast8|947'}
+ERROR:TaskDispatcher:[-] Th\u1ea5t b\u1ea1i chung cu\u1ed9c cho tài kho\u1ea3n kepplervancea99@hotmail.com
+Traceback (most recent call last):
+  File "D:\tiktok_auto\backend\app\use_cases\orchestration\task_dispatcher.py", line 811, in _execute_worker_with_semaphore
+    success = await asyncio.wait_for(
+              ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\tasks.py", line 489, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "D:\tiktok_auto\backend\app\use_cases\upload\tiktok_upload_video.py", line 131, in execute_video_batch
+    raise Exception(
+Exception: Trang For You ch\u01b0a t\u1ea3i xong ho\u1eb7c ch\u01b0a xác nh\u1eadn \u0111\u01b0\u1ee3c phiên \u0111\u0103ng nh\u1eadp.
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_ecbb05b7-8694-4bdc-8418-8308e9bc8c3d
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: sheandreekreiplt5898@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 13.2s (lan 1/2).
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:TaskDispatcher:[!] [EMERGENCY STOP] Da huy 4 task dang chay va xoa 9 task con trong hang doi.
+WARNING:TaskDispatcher:[!] Task cua tai khoan jentzschmamiz78@hotmail.com da bi HUY (Emergency Stop / Shutdown).
+WARNING:TaskDispatcher:[!] Task cua tai khoan hightmelinh2@hotmail.com da bi HUY (Emergency Stop / Shutdown).
+WARNING:TaskDispatcher:[!] Task cua tai khoan kirmazlubaskyo@hotmail.com da bi HUY (Emergency Stop / Shutdown).
+WARNING:TaskDispatcher:[!] Task cua tai khoan sheandreekreiplt5898@hotmail.com da bi HUY (Emergency Stop / Shutdown).
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: tiengormes5662@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_08362fcc-e1fb-4bf1-a341-3f021da0e548
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 10.5s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=8654154 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=8654154 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 2109565458 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 6 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/upload?lang=en (lan 1, wait=commit)...
+WARNING:PlaywrightAdapter:[Upload] Playwright path channel bi firefox-20 B178; chuyen sang native chooser DWM-cloaked. Loi: ElementHandle.set_input_files: Protocol error (Page.setFileInputFiles): error in channel "content::13/17/2": exception while running method "setFileInputFiles" in namespace "page": An attempt was made to use an object that is not, or is no longer, usable 
+INFO:PlaywrightAdapter:[Upload] Da gan 1 file video qua native chooser DWM-cloaked.
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Turn on
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Got it
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã kích ho\u1ea1t hashtag TikTok: #withoutstopping, #pistol, #stopping
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/content?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_78ae6732-6944-481b-935c-77d770cf6513

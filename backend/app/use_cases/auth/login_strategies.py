@@ -46,14 +46,13 @@ class CookieLoginStrategy(ITikTokLoginStrategy):
                 await step_logger("[-] Tai khoan khong chua du lieu Cookies de dang nhap.")
             return False
 
-        await browser.navigate_to("https://www.tiktok.com/?lang=en")
+        await browser.navigate_to("https://www.tiktok.com/foryou?lang=en")
 
         if step_logger:
             await step_logger("Dang don sach cache & nap mang Cookies JSON vao trinh duyet...")
         await browser.inject_cookies(account.cookies)
 
-        await browser.navigate_to("https://www.tiktok.com/?lang=en")
-        await asyncio.sleep(3)
+        await browser.navigate_to("https://www.tiktok.com/foryou?lang=en")
 
         is_logged_in = await browser.check_login_status()
         return is_logged_in
@@ -80,8 +79,8 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
         # Buoc 1: Di toi trang chu cua TikTok
         if step_logger:
             await step_logger("Dang truy cap trang chu TikTok...")
-        await browser.navigate_to("https://www.tiktok.com/?lang=en")
-        await asyncio.sleep(10)
+        await browser.navigate_to("https://www.tiktok.com/foryou?lang=en")
+        await asyncio.sleep(2)   # settle nhe; buoc sau da co wait_for theo trang thai
 
         page = browser._page
 
@@ -99,23 +98,24 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             login_home_btn = page.locator('div.TUXButton-content:has-text("Log in"), div.TUXButton-label:has-text("Log in")')
             await login_home_btn.first.wait_for(state="visible", timeout=15000)
             await login_home_btn.first.click()
-            await asyncio.sleep(15)
+            # Cho popup dang nhap hien (state-based) thay vi sleep(15) cung.
+            await asyncio.sleep(1.5)
 
             # Buoc 3: Nhap vao nut "Use phone or email" tren cua so popup
             if step_logger:
                 await step_logger("Dang chon phuong thuc 'Use phone or email'...")
             channel_btn = page.locator('[data-e2e="channel-item"]').filter(has_text="Use phone")
-            await channel_btn.first.wait_for(state="visible", timeout=10000)
+            await channel_btn.first.wait_for(state="visible", timeout=20000)
             await channel_btn.first.click()
-            await asyncio.sleep(10)
+            await asyncio.sleep(1.5)
 
             # Buoc 4: Nhap vao nut chuyen tab "Use email or username"
             if step_logger:
                 await step_logger("Dang chuyen sang tab 'Use email or username'...")
             tab_btn = page.locator('a[href*="/login/phone-or-email/email"], a:has-text("Use email or username"), .elfe54h0, span:has-text("Username or email")')
-            await tab_btn.first.wait_for(state="visible", timeout=10000)
+            await tab_btn.first.wait_for(state="visible", timeout=15000)
             await tab_btn.first.click()
-            await asyncio.sleep(3)
+            await asyncio.sleep(1.5)
 
             # Buoc 5: Dien EMAIL tu tu tung phim mot (delay 120ms).
             # Dung account.email de dang nhap (thay vi username) - on dinh hon.
@@ -160,14 +160,25 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             )
             await login_btn.first.wait_for(state="visible", timeout=15000)
             await login_btn.first.click()
-            await asyncio.sleep(10)  # Doi TikTok dieu huong va xu ly captcha
+            await asyncio.sleep(3)  # cho trang phan hoi sau khi submit
+
+            # ---- CAPTCHA sau submit: DUNG cho extension solver xu ly roi moi di tiep ----
+            # Day la diem hay xuat hien captcha (geetest/slider) nhat trong luong login.
+            await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
+
+            # THOAT SOM neu nick da bi BAN (khong phi thoi gian qua cac buoc OTP).
+            # Ngoai le se duoc use case bat -> ghi health_status=BANNED nhu thuong.
+            if await browser.is_account_banned():
+                if step_logger:
+                    await step_logger("[!] Phat hien tai khoan bi BAN ngay sau dang nhap.")
+                raise AccountBannedException("Tai khoan bi ban (phat hien sau khi submit dang nhap).")
 
             # =================================================================
             # BUOC 8: BO PHAT HIEN MAN HINH DA NHANH (Xu ly cac tinh huong OTP)
             # =================================================================
 
             email_channel_locator = page.locator('[class*="pc-home-item"], .pc-home-item-IxNc0F').filter(has_text="Email")
-            await asyncio.sleep(10)
+            await asyncio.sleep(2)   # trang chuyen man; vong poll ben duoi da cho tiep
             direct_otp_locator = page.locator('input[placeholder*="code"], input.tux-input__element-zY3KBY')
 
             is_email_channel_active = False
@@ -196,10 +207,17 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 # TikTok THAT SU phat lenh gui mail OTP. Day la moc chinh xac
                 # nhat co the bat duoc trong toan bo luong dang nhap.
                 otp_requested_at = datetime.now()
-                await asyncio.sleep(20)  # Doi TikTok gui mail va load trang nhap ma
+                # Co the dinh captcha sau khi chon Email -> cho extension solver xu ly.
+                await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
+                # Cho O NHAP MA hien ra (state-based) thay cho sleep(20) cung.
+                await browser.wait_first_visible(
+                    ['input[placeholder*="code"]', 'input.tux-input__element-zY3KBY',
+                     'input[placeholder="Enter 6-digit code"]'],
+                    timeout=25,
+                )
                 is_direct_otp_active = True
 
-            # 8.2 XU LY NHANH B: Boc tach ma OTP tu dongvanfb va go xac minh
+            # 8.2 XU LY NHANH B: Boc tach ma OTP tu HOM THU (Microsoft Graph) va go xac minh
             if is_direct_otp_active:
                 otp_input = page.locator('input[placeholder*="code"], input.tux-input__element-zY3KBY, input[placeholder="Enter 6-digit code"]')
                 await otp_input.first.wait_for(state="visible", timeout=10000)
@@ -220,10 +238,13 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 resend_btn = page.locator('button.tux-button__element-ZBq38f:has-text("Resend"), button:has-text("Resend"), button:has-text("Gui lai")')
                 await resend_btn.first.wait_for(state="attached", timeout=15000)
 
-                await asyncio.sleep(20)
+                # KHONG can sleep(20) cho mail o day: fetch_last_tiktok_otp ben duoi
+                # da tu poll 15 lan x 4s VA loc dung ma MOI theo otp_requested_at,
+                # nen no tu doi mail toi. Chi settle nhe cho dem nguoc kich hoat.
+                await asyncio.sleep(2)
 
                 if step_logger:
-                    await step_logger(f"Dong ho dem nguoc da kich hoat. Dang quet hom thu {account.email} qua API dongvanfb...")
+                    await step_logger(f"Dong ho dem nguoc da kich hoat. Dang quet hom thu {account.email} truc tiep qua Microsoft Graph...")
 
                 if otp_requested_at is None:
                     # Truong hop cuc hiem: khong roi vao Nhanh A lan Nhanh B nao ca
@@ -231,7 +252,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                     logger.warning("[!] Khong xac dinh duoc moc thoi gian gui OTP chinh xac, dung thoi diem hien tai lam du phong.")
                     otp_requested_at = datetime.now()
 
-                # Goi API boc tach ma OTP cua dongvanfb, TRUYEN DUNG moc thoi gian
+                # Goi dich vu doc OTP (mac dinh Microsoft Graph), TRUYEN DUNG moc thoi gian
                 # THAT SU da kich hoat gui mail (khong de service tu doan datetime.now()
                 # cua chinh no, vi luc do da tre nhieu sleep() so voi thoi diem gui that).
                 otp_code = await email_service.fetch_last_tiktok_otp(
@@ -258,7 +279,9 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                     await step_logger("Dang nhan Next de hoan tat xac minh...")
                 next_btn = page.locator('button.tux-button__element-ZBq38f:has-text("Next"), button:has-text("Next")')
                 await next_btn.first.click(timeout=10000)
-                await asyncio.sleep(25)
+                await asyncio.sleep(3)
+                # Sau khi xac minh OTP, TikTok co the hien captcha lan nua -> cho giai.
+                await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
 
             try:
                 for _ in range(3):
@@ -274,7 +297,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                     )
                     await login_btn.first.wait_for(state="visible", timeout=1000)
                     await login_btn.first.click()
-                    asyncio.sleep(2)
+                    await asyncio.sleep(2)   # FIX: truoc day thieu 'await' -> lenh cho vo hieu
             except:
                 pass
 

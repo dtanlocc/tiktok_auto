@@ -1,0 +1,105 @@
+INFO:     Started server process [13984]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:53017 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.4s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=13700248 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=13700248 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 34148057 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 8 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_6bcdfcb2-58cc-4ae3-92c3-8c199f3bb7bf
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 10.7s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=7999778 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=7999778 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 328261177 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 5 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 13.4s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=33952814 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=33952814 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 860628696 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 4 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 16.4s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=22679094 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=22679094 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 1192621097 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 5 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_fb0e6dfd-dfbc-4fab-8b02-313dc1b7e429
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_cf1f0581-4025-4cc1-b69c-36626d2c51fc
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_c3a2e2de-cd58-4b51-8758-b2413c8fbd76
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 11.6s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=856616 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=856616 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 69285708 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 3 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 14.9s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=28380576 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=28380576 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 2076194740 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 10 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 16.3s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=16846024 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=16846024 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 1626557816 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 7 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_7fb46b16-8556-44e6-be7d-027d04a84a57
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.8s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected window HWND=3935256 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=3935256 dang HIEN.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-visible). Seed: 2081392945 | Proxy: socks5://79.127.160.49:55001
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 7 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_abcc7a58-d280-4791-af77-7331d8788a19
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_aa6b82a9-4bff-405c-8701-ce30081a345a
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_1e111676-f4b6-4396-887b-98bef4bec8f0

@@ -1,10 +1,10 @@
 // File: frontend/src/components/ControlPanel.tsx
 import React, { useState, useEffect } from 'react';
-import { FolderOpen, Play, Pause, Square, RotateCcw, RadioTower, Gauge, Image } from 'lucide-react';
-import { Account } from '../types';
+import { FolderOpen, Play, Pause, Square, RotateCcw, RadioTower, Gauge, Image, FlaskConical } from 'lucide-react';
 
 interface ControlPanelProps {
   concurrency: number;
+  proxyMode?: boolean;   // true = dùng proxy; false = mạng thật (không proxy)
   setConcurrency: (val: number) => void;
   avatarFolder: string;
   setAvatarFolder: (val: string) => void;
@@ -15,7 +15,6 @@ interface ControlPanelProps {
   onGlobalStop: () => void;
   // NÂNG CẤP: Check nhanh liên tục giờ chạy trên đúng acc đang được CHỌN
   // trên bảng, không còn quét toàn bộ DB nữa.
-  accounts: Account[];
   selectedAccountIds: string[];
 }
 
@@ -32,6 +31,7 @@ const TASKS_API = 'http://127.0.0.1:9000/api/v1/tasks';
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({
   concurrency,
+  proxyMode = true,
   setConcurrency,
   avatarFolder,
   setAvatarFolder,
@@ -40,18 +40,75 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onGlobalPause,
   onGlobalResume,
   onGlobalStop,
-  accounts,
   selectedAccountIds,
 }) => {
   const [loading, setLoading] = useState<boolean>(false);
+  const [oneTestBusy, setOneTestBusy] = useState<boolean>(false);
+
+  // TRINH DUYET TRANG (khong account) - chi co extension captcha, de test tay.
+  const [blankActive, setBlankActive] = useState<boolean>(false);
+  const blankUrl = 'https://www.tiktok.com/tiktokstudio/upload?lang=en';
+  // Mang cho trinh duyet trang: '' = truc tiep (khong proxy); hoac id cua 1 proxy.
+  const [blankProxyId, setBlankProxyId] = useState<string>('');
+  const [proxyList, setProxyList] = useState<{ id: string; host: string; port: number; protocol: string }[]>([]);
+  useEffect(() => {
+    fetch('http://127.0.0.1:9000/api/v1/proxies/')
+      .then((r) => r.json()).then((d) => Array.isArray(d) && setProxyList(d)).catch(() => {});
+  }, []);
+
+  const refreshBlank = async () => {
+    try {
+      const r = await fetch(`${TASKS_API}/debug-blank/active`);
+      if (r.ok) setBlankActive(!!(await r.json()).active);
+    } catch { /* backend chua chay */ }
+  };
+  useEffect(() => { refreshBlank(); const t = setInterval(refreshBlank, 4000); return () => clearInterval(t); }, []);
+
+  const toggleBlank = async () => {
+    try {
+      if (blankActive) {
+        const r = await fetch(`${TASKS_API}/debug-blank/stop`, { method: 'POST' });
+        if (!r.ok) alert((await r.json()).detail || 'Không đóng được.');
+      } else {
+        const r = await fetch(`${TASKS_API}/debug-blank`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: blankUrl || 'about:blank', proxy_id: blankProxyId || null }),
+        });
+        if (!r.ok) alert((await r.json()).detail || 'Không mở được.');
+      }
+      refreshBlank();
+    } catch { alert('Không kết nối được backend.'); }
+  };
+
+  const handleRunOneTest = async () => {
+    if (selectedAccountIds.length !== 1) {
+      alert('Chọn đúng 1 tài khoản ở bảng dưới để mở phiên test tay.');
+      return;
+    }
+    const accountId = selectedAccountIds[0];
+    setOneTestBusy(true);
+    try {
+      const res = await fetch(`${TASKS_API}/debug-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data.detail || 'Không mở được phiên test tay.');
+    } catch {
+      alert('Không thể kết nối tới backend.');
+    } finally {
+      setOneTestBusy(false);
+    }
+  };
 
   // =========================================================================
   // CHẾ ĐỘ CHECK NHANH LIÊN TỤC - hoàn toàn độc lập với dispatcher chính,
   // tự quản lý state/polling riêng bên trong widget này.
   // =========================================================================
   const [continuousStatus, setContinuousStatus] = useState<ContinuousCheckStatus | null>(null);
-  const [continuousGapSeconds, setContinuousGapSeconds] = useState<number>(3);
-  const [continuousConcurrency, setContinuousConcurrency] = useState<number>(15);
+  const [continuousGapSeconds, setContinuousGapSeconds] = useState<number>(30);
+  const [continuousConcurrency, setContinuousConcurrency] = useState<number>(8);
 
   const loadContinuousStatus = async () => {
     try {
@@ -86,7 +143,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       const data = await res.json();
       if (!res.ok) alert(data.detail || 'Có lỗi xảy ra.');
       loadContinuousStatus();
-    } catch (err) {
+    } catch {
       alert('Không thể kết nối tới backend.');
     }
   };
@@ -97,7 +154,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       const data = await res.json();
       if (!res.ok) alert(data.detail || 'Có lỗi xảy ra.');
       loadContinuousStatus();
-    } catch (err) {
+    } catch {
       alert('Không thể kết nối tới backend.');
     }
   };
@@ -118,7 +175,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         const err = await res.json();
         alert(err.detail || "Không thể chọn tự động. Vui lòng nhập tay.");
       }
-    } catch (err) {
+    } catch {
       alert("Không thể kết nối bộ chọn thư mục của OS. Vui lòng dán trực tiếp đường dẫn vào ô nhập liệu.");
     } finally {
       setLoading(false);
@@ -155,12 +212,47 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <Square className="w-3.5 h-3.5" /> Dừng
         </button>
 
+        <button onClick={toggleBlank}
+          className={`btn btn-sm ${blankActive
+            ? 'bg-rose-500/10 text-rose-400 border border-rose-500/25 hover:bg-rose-500/20'
+            : 'bg-violet-500/10 text-violet-300 border border-violet-500/25 hover:bg-violet-500/20'}`}
+          title={blankActive
+            ? 'Đóng trình duyệt trắng đang mở'
+            : `Mở trình duyệt trắng (CHỈ có extension captcha, KHÔNG account) để test tay — mở sẵn: ${blankUrl || 'trang trắng'}`}>
+          <FlaskConical className="w-3.5 h-3.5" /> {blankActive ? 'Đóng TD trắng' : 'TD trắng (test)'}
+        </button>
+        <button
+          onClick={handleRunOneTest}
+          disabled={oneTestBusy || selectedAccountIds.length !== 1}
+          className="btn btn-sm bg-cyan-500/10 text-cyan-300 border border-cyan-500/25 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+          title={selectedAccountIds.length === 1
+            ? `Mở phiên tay cho ${selectedAccountIds[0]}`
+            : 'Chọn đúng 1 tài khoản ở bảng dưới để chạy phiên test tay'}
+        >
+          <FlaskConical className="w-3.5 h-3.5" /> {oneTestBusy ? 'Đang mở…' : 'Run one test'}
+        </button>
+        {!blankActive && (
+          <select value={blankProxyId} onChange={(e) => setBlankProxyId(e.target.value)}
+            className="field py-1.5 text-[11px] max-w-[190px]"
+            title="Mạng dùng cho trình duyệt trắng: trực tiếp (mạng thật/VPN) hoặc qua 1 proxy cụ thể">
+            <option value="">Mạng thật (không proxy)</option>
+            {proxyList.map((p) => (
+              <option key={p.id} value={p.id}>{p.protocol}://{p.host}:{p.port}</option>
+            ))}
+          </select>
+        )}
+
         {divider}
 
-        <div className="flex items-center gap-2" title="Mỗi proxy chỉ chạy tối đa bấy nhiêu account cùng lúc; account thứ N+1 trên cùng proxy sẽ chờ">
+        <div className="flex items-center gap-2"
+          title={proxyMode
+            ? "Mỗi proxy chỉ chạy tối đa bấy nhiêu account cùng lúc; account thứ N+1 trên cùng proxy sẽ chờ"
+            : "Đang chạy MẠNG THẬT (không proxy): đây là TỔNG số account chạy song song; account vượt quá sẽ xếp hàng chờ"}>
           <Gauge className="w-4 h-4 text-brand shrink-0" />
-          <label className="text-[11px] text-fg-muted font-semibold whitespace-nowrap">Luồng/proxy</label>
-          <input type="number" min={1} max={10} value={concurrency}
+          <label className="text-[11px] text-fg-muted font-semibold whitespace-nowrap">
+            {proxyMode ? 'Luồng/proxy' : 'Số luồng'}
+          </label>
+          <input type="number" min={1} max={8} value={concurrency}
             onChange={(e) => setConcurrency(parseInt(e.target.value) || 1)}
             className="field w-14 py-1.5 text-center font-bold text-brand" />
         </div>
@@ -190,16 +282,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <RadioTower className="w-4 h-4 text-sky-400" /> Check nhanh liên tục
         </span>
         <div className="flex items-center gap-1.5">
-          <label className="text-[11px] text-fg-subtle">Nghỉ (s)</label>
-          <input type="number" min={0} max={60} value={continuousGapSeconds}
-            onChange={(e) => setContinuousGapSeconds(parseInt(e.target.value) || 0)}
+          <label className="text-[11px] text-fg-subtle" title="Nghỉ giữa hai vòng quét, tối thiểu 15 giây">Nghỉ vòng (s)</label>
+          <input type="number" min={15} max={300} value={continuousGapSeconds}
+            title="15-300 giây để tránh TikTok giới hạn tần suất"
+            onChange={(e) => setContinuousGapSeconds(parseInt(e.target.value) || 30)}
             disabled={!!continuousStatus?.is_active}
             className="field w-14 py-1 text-center font-bold text-sky-400 disabled:opacity-50" />
         </div>
         <div className="flex items-center gap-1.5">
-          <label className="text-[11px] text-fg-subtle">Luồng</label>
-          <input type="number" min={1} max={50} value={continuousConcurrency}
-            onChange={(e) => setContinuousConcurrency(parseInt(e.target.value) || 15)}
+          <label className="text-[11px] text-fg-subtle" title="Tổng số request; mỗi proxy luôn tối đa 2">Luồng tổng</label>
+          <input type="number" min={1} max={32} value={continuousConcurrency}
+            title="1-32 luồng tổng, tối đa 2 request trên cùng proxy"
+            onChange={(e) => setContinuousConcurrency(parseInt(e.target.value) || 8)}
             disabled={!!continuousStatus?.is_active}
             className="field w-14 py-1 text-center font-bold text-sky-400 disabled:opacity-50" />
         </div>

@@ -1,0 +1,299 @@
+INFO:     Started server process [7012]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49402 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     127.0.0.1:49594 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 4
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n bonniepetitti13413@outlook.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n breacarrillo45872@outlook.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n rashaanaskam4595@outlook.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n blazetamkin1048@outlook.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n nathanaelsimone2691@hotmail.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n yariana1807092002@hotmail.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n karcynsanjuana12071993@hotmail.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n sullytrenyce260@hotmail.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n dhritidelaynie9081@hotmail.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n miraclekennie4377@hotmail.com | Tác v\u1ee5 LOGIN_COOKIE \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: bonniepetitti13413@outlook.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: breacarrillo45872@outlook.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: rashaanaskam4595@outlook.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: blazetamkin1048@outlook.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:     127.0.0.1:50879 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     127.0.0.1:50880 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 2
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 11.9s (lan 1/2).
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=12913068 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=12913068 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=41094488.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1000840539 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 13.5s (lan 1/2).
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 19.1s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=6227688 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=6227688 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=29954028 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=29954028 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 405220680 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=45026572.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1248982881 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=2754124.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.9s (lan 1/2).
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 3 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 4 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 1 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=15665640 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=15665640 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=38538760.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1979902836 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[Username] web='ro2_smu78lue' | db='ro2_smu78lue'
+INFO:PlaywrightAdapter:[Username] web='say8ca9_sma74wa' | db='say8ca9_sma74wa'
+INFO:PlaywrightAdapter:[Username] web='glo5grou2_nu3sk' | db='glo5grou2_nu3sk'
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 3 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_049bfa55-4622-42be-b406-377492a6815f
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_624fd28c-c548-438c-9834-d72729204d70
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_543402ac-59aa-4efc-9d60-cd1fe6464887
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: nathanaelsimone2691@hotmail.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: yariana1807092002@hotmail.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: karcynsanjuana12071993@hotmail.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:PlaywrightAdapter:[Username] web='dur5drew17_spai' | db='dur5drew17_spai'
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 11.7s (lan 1/2).
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=17633250 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=17633250 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=47841486.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1387689505 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_87c5ee47-33dd-48f1-a89d-4e5cefe6dfc1
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: sullytrenyce260@hotmail.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 14.3s (lan 1/2).
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 17.9s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=30085100 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=30085100 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 1 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=13044140 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=13044140 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=6161100.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 2012335235 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 758912861 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=5309302.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.5s (lan 1/2).
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 1 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=71699676 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=71699676 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1820441174 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 3 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=11669578.
+INFO:PlaywrightAdapter:[Username] web='chu28_wous80' | db='chu28_wous80'
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 4 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_443b5b6d-845b-4923-b65d-145a0baf5078
+INFO:PlaywrightAdapter:[Username] web='roy5_vu7sce' | db='roy5_vu7sce'
+INFO:PlaywrightAdapter:[Username] web='sco_mier91nus11' | db='sco_mier91nus11'
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: dhritidelaynie9081@hotmail.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_b1d80ff5-d7e8-4511-b5da-00f8624e3cba
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 15.0s (lan 1/2).
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: miraclekennie4377@hotmail.com | Tác v\u1ee5: LOGIN_COOKIE
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_a6f3a7e1-eacb-48bd-80aa-10565384afba
+INFO:PlaywrightAdapter:[Username] web='baw53st71_cloy5' | db='baw53st71_cloy5'
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=7733732 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=7733732 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=27002574.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1195737381 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 13.4s (lan 1/2).
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_2f647224-e3f9-4c6e-9995-df0246f618c2
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=12849026 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=12849026 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 1 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=15011592.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 446759451 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 4 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[Username] web='cro3goum2_groy' | db='cro3goum2_groy'
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_22be299f-b728-4b35-ba0b-070ee0aaa5fa
+INFO:PlaywrightAdapter:[Username] web='sees1_ni5' | db='sees1_ni5'
+INFO:PlaywrightAdapter:[+] Da nhan Save thanh cong bang dispatch_event.
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_5f2be128-433d-4281-9ef2-173e43d5f299
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 4
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n bonniepetitti13413@outlook.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n breacarrillo45872@outlook.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n rashaanaskam4595@outlook.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n blazetamkin1048@outlook.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n nathanaelsimone2691@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n yariana1807092002@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n karcynsanjuana12071993@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n sullytrenyce260@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n dhritidelaynie9081@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n miraclekennie4377@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: bonniepetitti13413@outlook.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: breacarrillo45872@outlook.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: rashaanaskam4595@outlook.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: blazetamkin1048@outlook.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:     127.0.0.1:56233 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     127.0.0.1:56237 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 2
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 11.1s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=29559976 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=29559976 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[LOCALE] TikTok browser fixed to en-US (['en-US', 'en']).
+INFO:PlaywrightAdapter:[EXTENSION] Active: omocaptcha@gmail.com@1.7.7 (signed/configuration verified).
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=43452654.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1000840539 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 3 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/upload?lang=en (lan 1, wait=commit)...
+WARNING:PlaywrightAdapter:[Upload] Playwright path channel bi patched-Firefox B178; chuyen sang native chooser DWM-cloaked. Loi: ElementHandle.set_input_files: Protocol error (Page.setFileInputFiles): error in channel "content::14/19/2": exception while running method "setFileInputFiles" in namespace "page": An attempt was made to use an object that is not, or is no longer, usable 
+D:\tiktok_auto\.venv\Lib\site-packages\pywinauto\__init__.py:80: UserWarning: Revert to STA COM threading mode
+  warnings.warn("Revert to STA COM threading mode", UserWarning)
+INFO:PlaywrightAdapter:[Upload] Da gan 1 file video qua native chooser DWM-cloaked.
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Turn on
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Got it
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #happensman -> #happensman (usage=25)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #inputpart -> #inputpart (usage=21)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #happens -> #happens (usage=64300)
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã kích ho\u1ea1t hashtag TikTok: #happensman, #inputpart, #happens
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã xác nh\u1eadn popup Post now.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/upload?lang=en (lan 1, wait=commit)...
+WARNING:PlaywrightAdapter:[Upload] Playwright path channel bi patched-Firefox B178; chuyen sang native chooser DWM-cloaked. Loi: ElementHandle.set_input_files: Protocol error (Page.setFileInputFiles): error in channel "content::14/19/12": exception while running method "setFileInputFiles" in namespace "page": An attempt was made to use an object that is not, or is no longer, usable 
+INFO:PlaywrightAdapter:[Upload] Da gan 1 file video qua native chooser DWM-cloaked.
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Got it
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #happensman -> #happensman (usage=26)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #inputpart -> #inputpart (usage=22)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #happens -> #happens (usage=64300)
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã kích ho\u1ea1t hashtag TikTok: #happensman, #inputpart, #happens
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã xác nh\u1eadn popup Post now.
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_111f856e-cf8f-4320-b32f-cbcf8ec72e25
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: nathanaelsimone2691@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:TaskDispatcher:[!] [EMERGENCY STOP] Da huy 4 task dang chay va xoa 4 task con trong hang doi.
+WARNING:TaskDispatcher:[!] Task cua tai khoan rashaanaskam4595@outlook.com da bi HUY (Emergency Stop / Shutdown).
+WARNING:TaskDispatcher:[!] Task cua tai khoan blazetamkin1048@outlook.com da bi HUY (Emergency Stop / Shutdown).
+WARNING:TaskDispatcher:[!] Task cua tai khoan nathanaelsimone2691@hotmail.com da bi HUY (Emergency Stop / Shutdown).
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: yariana1807092002@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+WARNING:TaskDispatcher:[!] Task cua tai khoan breacarrillo45872@outlook.com da bi HUY (Emergency Stop / Shutdown).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_c63259ae-cfd3-48bf-97fb-889c540249b1
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:TaskDispatcher:[!] [EMERGENCY STOP] Da huy 1 task dang chay va xoa 0 task con trong hang doi.
+WARNING:TaskDispatcher:[!] Task cua tai khoan yariana1807092002@hotmail.com da bi HUY (Emergency Stop / Shutdown).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_856d8ffe-9747-4c8f-9dff-ebbdf5b0cbe2
+INFO:TaskDispatcher:[!] [EMERGENCY STOP] Da huy 0 task dang chay va xoa 0 task con trong hang doi.

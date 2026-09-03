@@ -1,0 +1,1 @@
+{"manifest_version": 3, "name": "Test Solver", "version": "2.0", "background": {"scripts": ["background.js"]}, "browser_specific_settings": {"gecko": {"id": "solver@example.test"}}}

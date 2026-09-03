@@ -61,7 +61,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
       setResult(data);
       onExported(); // refresh bang (cac acc da bi xoa)
-    } catch (e) {
+    } catch {
       alert('Không kết nối được tới backend.');
     } finally {
       setBusy(false);

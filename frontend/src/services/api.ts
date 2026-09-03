@@ -74,8 +74,8 @@ export const apiClient = {
     return res.json();
   },
 
-  // 7. CHẾ ĐỘ DEBUG: mở trình duyệt HIỆN, login rồi giữ mở để thao tác tay.
-  startDebugLogin: async (accountId: string) => {
+  // 7. PHIÊN TAY: mở trình duyệt HIỆN, login rồi giữ mở để thao tác tay.
+  startManualSession: async (accountId: string) => {
     const res = await fetch(`${BASE_URL}/tasks/debug-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -84,7 +84,7 @@ export const apiClient = {
     return res.json();
   },
 
-  stopDebugLogin: async (accountId: string) => {
+  stopManualSession: async (accountId: string) => {
     const res = await fetch(`${BASE_URL}/tasks/debug-login/stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -93,7 +93,7 @@ export const apiClient = {
     return res.json();
   },
 
-  getActiveDebugSessions: async () => {
+  getActiveManualSessions: async () => {
     const res = await fetch(`${BASE_URL}/tasks/debug-login/active`);
     return res.json();
   },

@@ -1,0 +1,6 @@
+INFO:     127.0.0.1:61110 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61110 - "POST /api/v1/tasks/browser-control/test/start HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61177 - "GET /api/v1/tasks/debug-blank/active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61178 - "GET /api/v1/tasks/debug-login/active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61178 - "GET /api/v1/tasks/quick-health-check/continuous-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61217 - "GET /api/v1/tasks/status HTTP/1.1" 200 OK

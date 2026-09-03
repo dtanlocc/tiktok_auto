@@ -1,6 +1,6 @@
 import React from 'react';
 import { Globe } from 'lucide-react';
-import { Proxy } from '../store/useAppStore';
+import { Proxy } from '../types';
 
 interface ProxiesTableProps {
   proxies: Proxy[];

@@ -1,0 +1,209 @@
+INFO:     Started server process [12488]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:60076 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sw59go_wost61?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sw59go_wost61/video/7678627583507926302 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ro53_sp6woy?lang=en "HTTP/1.1 200 OK"
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:64251 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     127.0.0.1:64256 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     connection closed
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ro53_sp6woy/video/7678628486046649630 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cie2_cuin98zie7?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@lewn3_gro4fea0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fre7lo6_wau48?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sc41_ka5soyn?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fru86sta2_vi9pl?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kou8mou2_sna9wo?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ceaf3crea1_ku1s?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spo60_drim43st2?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@plo_foos8sen27?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@chui62_sma3sk?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fi0_lau6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pla9sn3_vui6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@shoa7fui_fon6sn?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cre1_stra?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@wa4sna_bee0thof?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cl8_pla99?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@da15glay5_sm76g?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@scew1rai_roa5go?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@mo3_mowr57cre1?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spa8_nu8fl6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kai9pe97_ta?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cais1_lu?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@wuly3pr_rawc0ta?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cie2_cuin98zie7/video/7678538528929729823 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bl34_spa68fla28?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@lewn3_gro4fea0/video/7678538612585090334 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@lewn3_gro4fea0/video/7678542869094878495 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fre7lo6_wau48/video/7678538580108512526 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fru86sta2_vi9pl/video/7678539000482630926 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sc41_ka5soyn/video/7678538474043084063 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kou8mou2_sna9wo/video/7678539167940267295 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ceaf3crea1_ku1s/video/7678539546962824478 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spo60_drim43st2/video/7678539701128596750 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@plo_foos8sen27/video/7678540077554797854 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@chui62_sma3sk/video/7678542910031383838 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@chui62_sma3sk/video/7678539093508246815 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fi0_lau6/video/7678540254436969758 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pla9sn3_vui6/video/7678540772991405343 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@shoa7fui_fon6sn/video/7678540569093655821 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cre1_stra/video/7678541421523045663 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@wa4sna_bee0thof/video/7678541208330702094 "HTTP/1.1 200 OK"
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for wa4sna_bee0thof: video_detail_RuntimeError: video_detail_pages_empty
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cl8_pla99/video/7678541840139701535 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@da15glay5_sm76g/video/7678541983635279135 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@scew1rai_roa5go/video/7678542090535456030 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@mo3_mowr57cre1/video/7678575055965637902 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spa8_nu8fl6/video/7678541887992499487 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kai9pe97_ta/video/7678600727681420557 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cais1_lu/video/7678600872691109150 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@wuly3pr_rawc0ta/video/7678600737412173070 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bl34_spa68fla28/video/7678601229424921870 "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:56316 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:QuickHealthCheck:[+] Check nhanh TikTok xong: 1/1, alive=1, dead=0, inconclusive=0, reasons={'tiktok_account_info': 1}
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@jow6pr_wo5?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@thow27_da0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@stau35go_sm6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@voan24_spa7the5?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@coa19soul_rown7?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ka4_stra14be65?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fl85spue3_ble6l?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pas6cro28_fl48b?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@glau8_fra56la9?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cro1voy_na9smew?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@keny94_blu9tea8?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gras6blo_faic75?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pre4spo5_gaun7b?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@prir2_tho38fi35?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@zoy8dr_sko3prai?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ch96di91_slo?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fui5_ste34?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gle93sle54_sh49?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@dru1gr72_woa51c?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bloa6gl64_spu7s?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sha7_plai1?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pla89mowf92_le9?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@stau35go_sm6/video/7678374744462560543 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@stau35go_sm6/video/7678377679724350750 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@voan24_spa7the5/video/7678377751560146207 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@voan24_spa7the5/video/7678374828105157919 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@coa19soul_rown7/video/7678374708538068255 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@coa19soul_rown7/video/7678377518100991263 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ka4_stra14be65/video/7678374692566125854 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ka4_stra14be65/video/7678377423389347102 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fl85spue3_ble6l/video/7678375260370079006 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pas6cro28_fl48b/video/7678377895579979039 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pas6cro28_fl48b/video/7678375208964640030 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@glau8_fra56la9/video/7678375313390308638 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cro1voy_na9smew/video/7678375373075205406 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@keny94_blu9tea8/video/7678375713174474015 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gras6blo_faic75/video/7678375885036195103 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gras6blo_faic75/video/7678503605250346270 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pre4spo5_gaun7b/video/7678375766354185503 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@prir2_tho38fi35/video/7678375914543090974 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@zoy8dr_sko3prai/video/7678376459894869278 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ch96di91_slo/video/7678376635560725791 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fui5_ste34/video/7678376677222747422 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gle93sle54_sh49/video/7678376350113205534 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@dru1gr72_woa51c/video/7678503676239039774 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bloa6gl64_spu7s/video/7678376952293592351 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sha7_plai1/video/7678377177993186590 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pla89mowf92_le9/video/7678377222008212767 "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:50037 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 4
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n goliashpohlingq@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n valensteincoville8215@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA_BATCH \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: goliashpohlingq@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: valensteincoville8215@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA_BATCH
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:     127.0.0.1:52572 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     127.0.0.1:52606 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed
+INFO:     connection open
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 9.8s (lan 1/2).
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 1
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=16649074 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=16649074 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1907953303 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=11275570.
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 12.9s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=7933334 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=7933334 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 2 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=12520352.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 516529359 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 4 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/upload?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/upload?lang=en (lan 1, wait=commit)...
+WARNING:PlaywrightAdapter:[Upload] Playwright path channel bi firefox-20 B178; chuyen sang native chooser DWM-cloaked. Loi: ElementHandle.set_input_files: Protocol error (Page.setFileInputFiles): error in channel "content::13/17/2": exception while running method "setFileInputFiles" in namespace "page": An attempt was made to use an object that is not, or is no longer, usable 
+INFO:PlaywrightAdapter:[Upload] Da gan 1 file video qua native chooser DWM-cloaked.
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Turn on
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã ch\u1ea5p nh\u1eadn popup: Got it
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #bulletplows -> #bulletplows (usage=2)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #steelplates -> #steelplates (usage=1200)
+INFO:PlaywrightAdapter:[UPLOAD] Hashtag #bullet -> #bullet (usage=1400000)
+INFO:PlaywrightAdapter:[UPLOAD] \u0110ã kích ho\u1ea1t hashtag TikTok: #bulletplows, #steelplates, #bullet
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/content?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_962807a8-eb23-45a5-a730-c1c61c4478c3
+ERROR:UploadMediaUseCase:[UploadBatch] Video 1/1 failed for goliashpohlingq@hotmail.com
+Traceback (most recent call last):
+  File "D:\tiktok_auto\backend\app\use_cases\upload\tiktok_upload_video.py", line 167, in execute_video_batch
+    ok = await self.browser_service.publish_media(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 2762, in publish_media
+    return await self.upload_video(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 2874, in upload_video
+    raise Exception("Ô upload không xu\u1ea5t hi\u1ec7n (captcha ch\u01b0a gi\u1ea3i ho\u1eb7c trang l\u1ed7i).")
+Exception: Ô upload không xu\u1ea5t hi\u1ec7n (captcha ch\u01b0a gi\u1ea3i ho\u1eb7c trang l\u1ed7i).
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_1e1b060f-521c-47e4-ad15-7a50b4e35266
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:AccountsRouter:[Import] B\u1ecf qua account \u0111ã có/trùng trong t\u1ec7p: peem8clo_pond3s (kalynstebelton8780@hotmail.com)

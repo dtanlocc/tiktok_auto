@@ -107,6 +107,11 @@
 @keyframes pulse-soft { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
 .animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
 
+@keyframes task-notice-life {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }

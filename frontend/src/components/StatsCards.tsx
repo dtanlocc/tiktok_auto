@@ -1,6 +1,6 @@
 import React from 'react';
 import { Users, Zap, Globe, HeartPulse } from 'lucide-react';
-import { Account, Proxy } from '../store/useAppStore';
+import { Account, Proxy } from '../types';
 
 interface StatsCardsProps {
   accounts: Account[];

@@ -38,3 +38,25 @@ class IBrowserService(Protocol):
     async def check_login_status(self) -> bool:
         """Xác minh thực tế xem phiên trình duyệt hiện tại đã đăng nhập thành công hay chưa"""
         ...
+
+    async def prepare_foryou_home(self, step_logger: Optional[Any] = None) -> bool:
+        """Open /foryou and wait for network-idle plus stable, usable feed media."""
+        ...
+
+    async def publish_media(
+        self,
+        image_paths: Optional[List[str]] = None,
+        video_path: Optional[str] = None,
+        caption: str = "",
+        schedule_at: Optional[str] = None,
+        step_logger: Optional[Any] = None,
+        continue_session: bool = False,
+    ) -> bool:
+        """Publish media; continuation reuses the authenticated Studio session."""
+        ...
+
+    async def collect_studio_analytics(
+        self, step_logger: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Collect structured, first-party Studio video metrics."""
+        ...

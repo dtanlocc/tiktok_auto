@@ -13,6 +13,8 @@ from app.domain.ports.browser import IBrowserService
 from app.domain.ports.email import IEmailService
 from app.use_cases.auth.login_strategies import ITikTokLoginStrategy
 from app.core.exceptions import AccountBannedException  
+from app.core.tiktok_urls import ensure_tiktok_english_url
+from app.infrastructure.websocket.socket_manager import ws_manager
 
 logger = logging.getLogger("TikTokUpdateProfileUseCase")
 
@@ -64,7 +66,9 @@ class TikTokUpdateProfileUseCase:
         try:
             async with httpx.AsyncClient(proxy=proxy_url, headers=headers, timeout=25.0,
                                          follow_redirects=True, trust_env=False) as client:
-                r = await client.get(f"https://www.tiktok.com/@{quote(account.username, safe='')}")
+                r = await client.get(ensure_tiktok_english_url(
+                    f"https://www.tiktok.com/@{quote(account.username, safe='')}"
+                ))
                 result = _classify_profile_html(r.text or "", account.username)
         except Exception as e:
             logger.warning(f"[Username Sync] Lỗi pre-check @{account.username}: {str(e)[:80]}")
@@ -185,11 +189,13 @@ class TikTokUpdateProfileUseCase:
             )
 
             # RULE B: username web = username DB + phần đuôi -> cập nhật DB thành web.
+            username_changed = False
             if username_for_db and username_for_db != account.username:
                 if self.step_logger:
                     await self.step_logger(f"[*] Cập nhật username DB: '{account.username}' -> '{username_for_db}'")
                 logger.info(f"[+] [Username Rule B] Cap nhat username DB: {account.username} -> {username_for_db}")
                 account.username = username_for_db
+                username_changed = True
 
             # 5. Cập nhật kết quả cuối cùng sau khi hoàn tất trọn vẹn kịch bản
             if success:
@@ -206,7 +212,27 @@ class TikTokUpdateProfileUseCase:
                 account.health_status = "ALIVE"          # <-- ĐỒNG BỘ TRẠNG THÁI SỐNG Ở ĐÂY
                 account.current_step = "Lỗi đổi thông tin (Cookies đã bảo toàn)"
 
-            self.account_repo.save(account)
+            displaced_account = None
+            if username_changed:
+                _, displaced_account = self.account_repo.save_prioritizing_username(account)
+            else:
+                self.account_repo.save(account)
+
+            if displaced_account:
+                logger.warning(
+                    "[Username Sync] Uu tien %s -> %s; chuyen %s -> %s",
+                    account.email,
+                    account.username,
+                    displaced_account.email,
+                    displaced_account.username,
+                )
+                await ws_manager.broadcast({
+                    "event": "ACCOUNT_UPDATED",
+                    "data": {
+                        "id": displaced_account.id,
+                        "username": displaced_account.username,
+                    },
+                })
             return success
 
         # =====================================================================

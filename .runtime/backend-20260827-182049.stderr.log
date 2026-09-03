@@ -1,0 +1,126 @@
+INFO:     Started server process [31788]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:56073 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 1
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n curiocamarzenet@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: curiocamarzenet@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:PlaywrightAdapter:[LAUNCH] OK sau 11.8s (lan 1/2).
+INFO:PlaywrightAdapter:[HWND] Detected token-owned window HWND=15600882 for this session.
+INFO:PlaywrightAdapter:[WINDOW] HWND=15600882 dang CLOAK/OFF-SCREEN.
+INFO:PlaywrightAdapter:[HWND] Stream recovered token-owned HWND=16387716.
+INFO:PlaywrightAdapter:[*] Khoi tao tab moi sach.
+INFO:PlaywrightAdapter:[+] Khoi tao browser session (headed-cloaked). Seed: 1489653395 | Proxy: Direct NET
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dang doi trang chu TikTok on dinh phien dang nhap...
+INFO:PlaywrightAdapter:[+] Xac minh THANH CONG sau 4 giay (Phat hien nav-profile/upload/messages).
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/foryou?lang=en (lan 1, wait=commit)...
+INFO:PlaywrightAdapter:[*] Dieu huong toi https://www.tiktok.com/tiktokstudio/upload?lang=en (lan 1, wait=commit)...
+WARNING:PlaywrightAdapter:[Upload] Playwright path channel bi firefox-20 B178; chuyen sang native chooser DWM-cloaked. Loi: ElementHandle.set_input_files: Protocol error (Page.setFileInputFiles): error in channel "content::13/17/2": exception while running method "setFileInputFiles" in namespace "page": An attempt was made to use an object that is not, or is no longer, usable 
+INFO:PlaywrightAdapter:[Upload] Da gan 1 file video qua native chooser DWM-cloaked.
+INFO:     127.0.0.1:59021 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 2
+INFO:     connection open
+ERROR:TaskDispatcher:[-] Th\u1ea5t b\u1ea1i chung cu\u1ed9c cho tài kho\u1ea3n curiocamarzenet@hotmail.com
+Traceback (most recent call last):
+  File "D:\tiktok_auto\backend\app\use_cases\orchestration\task_dispatcher.py", line 821, in _execute_worker_with_semaphore
+    success = await asyncio.wait_for(
+              ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\tasks.py", line 489, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "D:\tiktok_auto\backend\app\use_cases\upload\tiktok_upload_video.py", line 38, in execute
+    ok = await self._execute_impl(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\backend\app\use_cases\upload\tiktok_upload_video.py", line 271, in _execute_impl
+    ok = await self.browser_service.publish_media(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 2729, in publish_media
+    return await self.upload_video(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 2922, in upload_video
+    await self._fill_publish_caption(caption, step_logger=step_logger)
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 2022, in _fill_publish_caption
+    raise RuntimeError(f"Khong focus duoc o caption sau khi dong popup: {last_error}")
+RuntimeError: Khong focus duoc o caption sau khi dong popup: Locator.click: Timeout 5000ms exceeded.
+Call log:
+  - waiting for locator(".public-DraftEditor-content, [contenteditable=\"true\"]").first
+    - locator resolved to <div role="combobox" spellcheck="false" aria-expanded="false" contenteditable="true" aria-autocomplete="list" class="notranslate public-DraftEditor-content">…</div>
+  - attempting click action
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - element is not visible
+  - retrying click action
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - done scrolling
+    - <div dir="ltr" class="TUXModal-overlay" data-transition-status="open" data-tux-color-scheme="light">…</div> from <div id=":r75:" data-floating-ui-portal="">…</div> subtree intercepts pointer events
+  - retrying click action
+    - waiting 20ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div dir="ltr" class="TUXModal-overlay" data-transition-status="open" data-tux-color-scheme="light">…</div> from <div id=":r75:" data-floating-ui-portal="">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 100ms
+    2 × waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - element is not visible
+    - retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div dir="ltr" class="TUXModal-overlay" data-transition-status="open" data-tux-color-scheme="light">…</div> from <div id=":r75:" data-floating-ui-portal="">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div dir="ltr" class="TUXModal-overlay" data-transition-status="open" data-tux-color-scheme="light">…</div> from <div id=":r75:" data-floating-ui-portal="">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 500ms
+      - waiting for element to be visible, enabled and stable
+      - element is visible, enabled and stable
+      - scrolling into view if needed
+      - done scrolling
+      - <div dir="ltr" class="TUXModal-overlay" data-transition-status="open" data-tux-color-scheme="light">…</div> from <div id=":r75:" data-floating-ui-portal="">…</div> subtree intercepts pointer events
+    - retrying click action
+      - waiting 500ms
+    - waiting for element to be visible, enabled and stable
+    - element is visible, enabled and stable
+    - scrolling into view if needed
+    - element is not visible
+  - retrying click action
+    - waiting 500ms
+
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed
+INFO:     127.0.0.1:61050 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_016ba359-1e77-4582-be05-75711da3bb9d

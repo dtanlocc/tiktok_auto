@@ -3,6 +3,11 @@ import React, { useState } from 'react';
 import { FileInput, FolderSync, Files, Plus } from 'lucide-react';
 import { SUPPORTED_COUNTRIES } from '../utils/countries'; // <-- IMPORT DANH SÁCH ĐỘNG
 
+const directoryInputProps: React.InputHTMLAttributes<HTMLInputElement> & {
+  webkitdirectory: string;
+  directory: string;
+} = { webkitdirectory: '', directory: '' };
+
 interface SidebarProps {
   activeTab: 'accounts' | 'proxies' | 'interactions';
   loading: boolean;
@@ -57,6 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, loading, onFileUplo
               <Files className="text-fg-muted w-4 h-4 mb-1 group-hover:text-brand transition-colors" />
               <span className="text-[10px] font-bold text-fg group-hover:text-fg">Chọn tệp .txt</span>
               <input
+                {...directoryInputProps}
                 type="file"
                 accept=".txt"
                 multiple={true}
@@ -74,8 +80,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, loading, onFileUplo
                 disabled={loading}
                 onChange={(e) => onFileUpload(e, 'accounts', importCountry, importBatchTag)}
                 className="hidden"
-                webkitdirectory=""
-                directory=""
                 multiple={true}
               />
             </label>

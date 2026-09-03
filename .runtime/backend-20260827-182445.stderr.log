@@ -1,0 +1,142 @@
+INFO:     Started server process [33392]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49524 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:TaskDispatcher:[+] \u0110ã c\u1eadp nh\u1eadt gi\u1edbi h\u1ea1n lu\u1ed3ng ch\u1ea1y \u0111\u1ed3ng th\u1eddi / 1 proxy thành: 1
+INFO:TaskDispatcher:[+] Tài kho\u1ea3n curiocamarzenet@hotmail.com | Tác v\u1ee5 UPLOAD_MEDIA \u0111ã \u0111\u01b0\u1ee3c \u0111\u01b0a vào hàng \u0111\u1ee3i.
+INFO:TaskDispatcher:[*] Kh\u1edfi ch\u1ea1y trình duy\u1ec7t cho tài kho\u1ea3n: curiocamarzenet@hotmail.com | Tác v\u1ee5: UPLOAD_MEDIA
+INFO:PlaywrightAdapter:[*] Da tao profile moi va gan 1 extension: omocaptcha@gmail.com@1.7.7
+INFO:     127.0.0.1:51340 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 2
+INFO:     connection open
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-39' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:PlaywrightAdapter:[LAUNCH] Lan 1/2 hong ([WinError 5] Access is denied) -> don + mo lai.
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.2s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-42' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:PlaywrightAdapter:[LAUNCH] Lan 2/2 hong ([WinError 5] Access is denied) -> don + mo lai.
+ERROR:PlaywrightAdapter:[-] Khong the khoi tao trinh duyet: [WinError 5] Access is denied
+INFO:PlaywrightAdapter:[+] Da dong phien trinh duyet va giai phong tai nguyen.
+INFO:PlaywrightAdapter:[*] Dang don dep ho so tam thoi: C:\Users\Admin\AppData\Local\Temp\tiktok_auto_profiles\temp_5b058db1-1acd-42a5-9fa7-d73a1d15bb3f
+ERROR:TaskDispatcher:[-] Th\u1ea5t b\u1ea1i chung cu\u1ed9c cho tài kho\u1ea3n curiocamarzenet@hotmail.com
+Traceback (most recent call last):
+  File "D:\tiktok_auto\backend\app\use_cases\orchestration\task_dispatcher.py", line 691, in _execute_worker_with_semaphore
+    await browser_service.initialize(proxy_config=proxy_config, seed=seed_val)
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 472, in initialize
+    raise e
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 403, in initialize
+    raise _err or RuntimeError(f"Khong mo duoc trinh duyet sau {_tries} lan.")
+  File "D:\tiktok_auto\backend\app\infrastructure\automation\playwright_adapter.py", line 359, in initialize
+    self._browser = await asyncio.wait_for(
+                    ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\tasks.py", line 489, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\async_api.py", line 139, in __aenter__
+    self._pw = await async_playwright().start()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\async_api\_context_manager.py", line 51, in start
+    return await self.__aenter__()
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\async_api\_context_manager.py", line 46, in __aenter__
+    playwright = AsyncPlaywright(next(iter(done)).result())
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed

@@ -4,7 +4,7 @@ import glob
 import os
 import time
 import random
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from sqlmodel import Session
 
 from app.core.config import settings
@@ -13,9 +13,29 @@ from app.infrastructure.database.sqlite_repository import SQLiteAccountRepositor
 from app.infrastructure.automation.playwright_adapter import InvisiblePlaywrightAdapter
 from app.infrastructure.websocket.socket_manager import ws_manager
 from app.use_cases.auth.tiktok_login import TikTokLoginUseCase
+from app.domain.account_rules import is_sold_account
 import hashlib
 
 logger = logging.getLogger("TaskDispatcher")
+
+_UPLOAD_TASK_TYPES = frozenset({"UPLOAD_MEDIA", "UPLOAD_VIDEO", "UPLOAD_MEDIA_BATCH"})
+
+
+def _upload_route_concurrency_override(task_type: str, use_proxy: bool) -> Optional[int]:
+    """Serialize publishing only when multiple sessions share one proxy.
+
+    In direct/VPN mode the UI concurrency value is the user's explicit total
+    concurrency choice, so imposing the old override of one made a displayed
+    value of four misleading: dispatcher coroutines were active while only one
+    browser could publish. Different direct sessions may now use every machine
+    slot selected by the user.
+    """
+    return 1 if use_proxy and task_type in _UPLOAD_TASK_TYPES else None
+
+
+class SoldAccountArchived(RuntimeError):
+    """Stop an in-flight task when its account is moved to the sold archive."""
+
 
 def _uuid_to_seed(uuid_str: str) -> int:
     """Chuyển đổi chuỗi UUID của tài khoản thành một số nguyên seed cố định"""
@@ -24,8 +44,15 @@ def _uuid_to_seed(uuid_str: str) -> int:
     # Băm UUID bằng SHA-256 để đảm bảo tính phân phối đều
     hash_object = hashlib.sha256(uuid_str.encode('utf-8'))
     hex_dig = hash_object.hexdigest()
-    # Lấy 8 ký tự đầu chuyển thành số nguyên (32-bit unsigned int)
-    return int(hex_dig[:8], 16)
+    # Lấy 8 ký tự đầu -> số nguyên, RỒI CHẶN VỀ 31-BIT (& 0x7FFFFFFF).
+    # ==========================  BUG ĐÃ ĐO ĐƯỢC (13/08/2026)  ==========================
+    # seed >= 2^31 (2.147.483.648) + profile_dir  ->  Firefox TREO CỨNG lúc khởi chạy
+    # (launch_persistent_context timeout 180s, "trình duyệt mở lên nhưng không làm gì").
+    # Đã kiểm chứng: seed=4028411051 + profile_dir -> treo; cùng seed KHÔNG profile_dir
+    # -> chạy OK; seed=834634588 + profile_dir -> chạy OK 8s.
+    # => Chặn 31-bit: seed nhỏ giữ NGUYÊN (không đổi vân tay), seed lớn được ánh xạ về
+    #    vùng an toàn. Vẫn cố định theo account (cùng account -> cùng seed).
+    return int(hex_dig[:8], 16) & 0x7FFFFFFF
 
 class ConcurrentTaskDispatcher:
     """Hệ thống điều phối, xếp hàng và khống chế giới hạn số luồng chạy song song"""
@@ -34,6 +61,9 @@ class ConcurrentTaskDispatcher:
         self.max_tabs = max_tabs
         self.semaphore = asyncio.Semaphore(max_tabs)
         self.active_tasks: Dict[str, asyncio.Task] = {}
+        # account_id -> adapter/browser DANG CHAY. Registry nay cap page hien tai
+        # cho streamer mot chieu; khong tao session/profile thu hai.
+        self.active_browsers: Dict[str, InvisiblePlaywrightAdapter] = {}
 
         # =================================================================
         # GIOI HAN DONG THOI THEO TUNG PROXY (moi proxy toi da N luong cung luc)
@@ -59,7 +89,38 @@ class ConcurrentTaskDispatcher:
         # Moc thoi gian (monotonic) lan MO GAN NHAT tren tung proxy (host:port).
         # Dung cho GIAN CACH THEO PROXY: 2 proxy KHAC nhau mo song song ngay, chi
         # gian cach khi mo lien tiep tren CUNG 1 proxy (tranh dam 1 IP don dap).
+        # DAY LA MOC DA DUOC DAT CHO (reserved), khong phai moc da mo that: xem
+        # _reserve_launch_slot().
         self._last_launch_monotonic: Dict[str, float] = {}
+        # Khoa bao ve _last_launch_monotonic. Bug cu: N task cung DOC 1 moc, cung
+        # tinh ra 1 khoang cho, cung ngu bang nhau roi CUNG BAT -> "gian cach" khong
+        # gian cach gi ca. Nay doc-tinh-GHI dien ra tron ven trong khoa (khong co
+        # await ben trong) roi moi ngu ben ngoai -> task sau nhin thay moc cua task
+        # truoc va xep hang phia sau.
+        self._stagger_lock: asyncio.Lock = asyncio.Lock()
+
+        # =================================================================
+        # CONG LAUNCH: gioi han so lan MO TRINH DUYET duoc chong nhau.
+        # =================================================================
+        # Do thuc te 25/08/2026 (6 phien): 1 launch chong nhau -> 8.7s/launch;
+        # 3 -> 23.2s; 6 -> 32.6-53.3s. Ly do da profile duoc: initialize() co doan
+        # CHEN event loop (LifetimeGuard.bind cua thu vien quet bien moi truong cua
+        # moi process bang psutil - 2.96s CPU thuan/lan launch). Bi chen nen cac
+        # launch KHONG that su song song, mo dong loat chi lam MOI launch cham gap
+        # N lan. Cong nay KHONG lam wall-time nhanh hon (nut that la thong luong
+        # launch cua may) - no giu do tre TUNG launch o muc thap va gioi han so doan
+        # chen loop chong nhau, nho vay dashboard/websocket do bi dong bang.
+        # CHI chan luc MO; mo xong roi thi ca 8 luong chay song song binh thuong.
+        self._launch_gate: asyncio.Semaphore = asyncio.Semaphore(
+            max(1, int(getattr(settings, "BROWSER_LAUNCH_GATE", 2)))
+        )
+
+        # SO LUONG DANG CHAY o CHE DO KHONG PROXY (USE_PROXY=False, chay thang qua
+        # mang that/VPN). Truoc day che do nay KHONG bi gioi han boi o "số luồng"
+        # tren UI (vi o do von la gioi han THEO PROXY) -> user dat 4 luong nhung
+        # thuc te chi tran tong MAX_CONCURRENT_TABS quyet dinh. Nay dung chinh o UI
+        # (proxy_max_concurrent) lam gioi han so luong chay song song truc tiep.
+        self._direct_running: int = 0
         self._loop_task: Optional[asyncio.Task] = None
         self.is_running = False
         
@@ -92,15 +153,33 @@ class ConcurrentTaskDispatcher:
         # lo hong TOCTOU cua active_tasks (chi dang ky sau khi da gianh slot tong).
         self._pending_accounts: set = set()
 
-    # LUU Y: KHONG con set_concurrency_limit() dong nua. Truoc day no THAY THE
-    # self.semaphore bang doi tuong Semaphore MOI luc dang chay -> worker cu release
-    # nham vao semaphore moi -> VO tran dong thoi (permit tang vo han). Gio tran
-    # tong (machine cap) CO DINH = MAX_CONCURRENT_TABS luc khoi tao; dieu khien
-    # dong thoi la theo PROXY (set_proxy_concurrency_limit) - an toan, khong swap.
+    # Khong thay semaphore luc dang chay. Voi MAX_CONCURRENT_TABS=0, semaphore tong
+    # duoc tat han; gioi han dong do UI dieu khien theo proxy/che do mang truc tiep.
 
     def is_account_busy(self, account_id: str) -> bool:
         """Account nay dang xep hang hoac dang chay? (de chan submit trung)."""
         return account_id in self._pending_accounts
+
+    def recover_orphaned_runtime_state(self) -> int:
+        """Clear runtime-only states left by a crashed/restarted backend.
+
+        Queue and browser handles are in-memory, so RUNNING/QUEUED rows from a
+        previous process can never complete. Mark them as an interrupted
+        runtime state before accepting new work; upload submission will then
+        overwrite the upload status with RUNNING for the new run.
+        """
+        recovered = 0
+        with Session(engine) as session:
+            repo = SQLiteAccountRepository(session)
+            for account in repo.get_all():
+                if account.status in ("RUNNING", "QUEUED"):
+                    account.status = "ERROR"
+                    account.current_step = "Backend restarted - task cũ đã được giải phóng"
+                    repo.save(account)
+                    recovered += 1
+        if recovered:
+            logger.warning("[RECOVERY] Đã giải phóng %s account RUNNING/QUEUED mồ côi.", recovered)
+        return recovered
 
     def set_proxy_concurrency_limit(self, limit: int) -> None:
         """Cap nhat dong so luong chay DONG THOI TREN MOI PROXY tu Web UI. Vi viec
@@ -142,7 +221,12 @@ class ConcurrentTaskDispatcher:
             # get_all() tra [] THANH CONG - khac voi truong hop nay.)
             raise RuntimeError(f"Khong doc duoc kho proxy (cache lanh): {str(e)}")
 
-    async def _acquire_balanced_proxy(self, account_id: str, session: Session):
+    async def _acquire_balanced_proxy(
+        self,
+        account_id: str,
+        session: Session,
+        max_concurrent_override: Optional[int] = None,
+    ):
         """Chon proxy IT TAI NHAT con slot (duoi proxy_max_concurrent) va tang bo
         dem. CHO neu tat ca proxy da day. Tra ve (proxy_entity, proxy_key='host:port')
         hoac (None, None) neu kho KHONG co proxy nao (-> chay truc tiep khong proxy)."""
@@ -152,11 +236,16 @@ class ConcurrentTaskDispatcher:
         waited_logged = False
         async with self._proxy_cond:
             while True:
+                effective_limit = self.proxy_max_concurrent
+                if max_concurrent_override is not None:
+                    effective_limit = min(
+                        effective_limit, max(1, max_concurrent_override)
+                    )
                 best = best_key = best_run = None
                 for p in proxies:
                     key = f"{p.host}:{p.port}"
                     run = self._proxy_running.get(key, 0)
-                    if run < self.proxy_max_concurrent and (best is None or run < best_run):
+                    if run < effective_limit and (best is None or run < best_run):
                         best, best_key, best_run = p, key, run
                 if best is not None:
                     self._proxy_running[best_key] = self._proxy_running.get(best_key, 0) + 1
@@ -166,10 +255,85 @@ class ConcurrentTaskDispatcher:
                     waited_logged = True
                     await self._update_account_status(
                         account_id, "QUEUED",
-                        step_desc=f"⏳ Mọi proxy đang đủ {self.proxy_max_concurrent} luồng, chờ slot trống...",
+                        step_desc=f"⏳ Mọi proxy đang đủ {effective_limit} luồng phù hợp, chờ slot trống...",
                         session=session,
                     )
                 await self._proxy_cond.wait()
+
+    async def _acquire_direct_slot(
+        self,
+        account_id: str,
+        session: Session,
+        max_concurrent_override: Optional[int] = None,
+    ) -> bool:
+        """CHE DO KHONG PROXY (USE_PROXY=False): gianh 1 slot trong so luong toi da
+        do NGUOI DUNG dat tren UI (o 'số luồng', chinh la self.proxy_max_concurrent).
+        CHO neu da du. Tra ve True khi da giu duoc slot (nho goi _release_direct_slot).
+        Nho vay o so luong tren UI co tac dung CA khi khong dung proxy."""
+        waited_logged = False
+        async with self._proxy_cond:
+            while True:
+                effective_limit = self.proxy_max_concurrent
+                if max_concurrent_override is not None:
+                    effective_limit = min(
+                        effective_limit, max(1, max_concurrent_override)
+                    )
+                if self._direct_running < effective_limit:
+                    self._direct_running += 1
+                    return True
+                if not waited_logged:
+                    waited_logged = True
+                    await self._update_account_status(
+                        account_id, "QUEUED",
+                        step_desc=f"⏳ Đang chạy đủ {effective_limit} luồng phù hợp, chờ slot trống...",
+                        session=session,
+                    )
+                await self._proxy_cond.wait()
+
+    async def _release_direct_slot(self) -> None:
+        """Tra lai 1 slot cua che do khong proxy + danh thuc account dang cho."""
+        async with self._proxy_cond:
+            self._direct_running = max(0, self._direct_running - 1)
+            self._proxy_cond.notify_all()
+
+    async def _reserve_launch_slot(self, stagger_key: str, has_proxy: bool) -> Tuple[float, str]:
+        """DAT CHO mot moc thoi diem duoc phep mo browser tren 'stagger_key'.
+
+        Tra ve (so_giay_phai_cho, ly_do). NGUOI GOI phai tu sleep so giay do - ham
+        nay KHONG ngu trong khi giu khoa.
+
+        CACH LAM: moc cua task nay = max(bay gio, moc_da_dat_truoc + khoang_gian_cach),
+        va GHI NGAY moc do lai khi VAN CON GIU KHOA. Nho vay task ke tiep doc duoc
+        moc cua task nay va tu xep sau -> N task xep thanh HANG DOI thay vi cung ngu
+        roi cung bat.
+
+        BUG DA SUA: ban cu doc self._last_launch_monotonic[key], tinh _remain, ngu,
+        RO I MOI ghi lai moc - nen N task cung doc 1 gia tri, cung ngu bang nhau va
+        bat dong loat. "Gian cach" khong he gian cach, dong thoi con lam moi launch
+        chong nhau -> tung launch cham gap N lan (do duoc: 6 launch cung luc =
+        53.3s/launch so voi 8.7s khi mo lan luot).
+        """
+        if has_proxy:
+            # CO PROXY: gian 30-60s tren CUNG 1 proxy (tranh dam 1 IP don dap).
+            lo = getattr(settings, "STAGGER_MIN_SECONDS", 30.0)
+            hi = getattr(settings, "STAGGER_MAX_SECONDS", 60.0)
+            why = "cùng proxy"
+        else:
+            # KHONG PROXY: moi account deu ra bang 1 IP (mang may/VPN) nen van can
+            # gian, nhung ngan hon - so luong song song da do o "số luồng" khong che.
+            lo = getattr(settings, "STAGGER_DIRECT_MIN_SECONDS", 3.0)
+            hi = getattr(settings, "STAGGER_DIRECT_MAX_SECONDS", 8.0)
+            why = "mở lệch nhau"
+
+        async with self._stagger_lock:          # KHONG co await nao ben trong khoa
+            now = time.monotonic()
+            last = self._last_launch_monotonic.get(stagger_key)
+            if last is None:
+                slot = now                      # phien dau tien tren khoa nay: mo ngay
+            else:
+                slot = max(now, last + random.uniform(lo, max(lo, hi)))
+            self._last_launch_monotonic[stagger_key] = slot
+        return max(0.0, slot - now), why
 
     async def _release_proxy(self, proxy_key: Optional[str]) -> None:
         """Tra 1 slot cua proxy (host:port) va danh thuc account dang cho."""
@@ -307,17 +471,42 @@ class ConcurrentTaskDispatcher:
         task_type: str,
         avatar_folder: Optional[str] = None,
         extra_config: Optional[Dict[str, Any]] = None,
-    ) -> None:
+    ) -> bool:
         """Gửi tác vụ vào hàng đợi kèm theo loại tác vụ (task_type).
         extra_config: cấu hình bổ sung tuỳ loại tác vụ - hiện dùng cho
         INTERACT_VIDEOS (mode, hashtag, duration_minutes, xác suất tym/cmt,
         danh sách câu bình luận...)."""
         # CHONG TRUNG: neu account nay dang xep hang / dang chay thi BO QUA (khong
         # mo 2 browser cho cung 1 account). Xoa khoi _pending_accounts o finally worker.
+        with Session(engine) as guard_session:
+            guarded_account = SQLiteAccountRepository(guard_session).get_by_id(account_id)
+            if is_sold_account(guarded_account):
+                logger.info("[ARCHIVE] Skip sold account %s for task %s", account_id, task_type)
+                await ws_manager.broadcast({
+                    "event": "TERMINAL_LOG",
+                    "data": {
+                        "account_id": account_id,
+                        "username": guarded_account.username if guarded_account else account_id,
+                        "message": "Đã bỏ qua: tài khoản thuộc mục ĐÃ BÁN (chỉ lưu trữ).",
+                    },
+                })
+                return False
         if account_id in self._pending_accounts:
             logger.info(f"[!] Bo qua submit TRUNG cho account {account_id} (dang xep hang/chay).")
-            return
+            return False
         self._pending_accounts.add(account_id)
+        # Start a fresh observable run. Do not let a previous FAILED/NEVER
+        # result remain visible while this upload is queued; otherwise a
+        # restarted backend looks as if the new task failed before it ran.
+        if task_type in ("UPLOAD_MEDIA", "UPLOAD_VIDEO", "UPLOAD_MEDIA_BATCH"):
+            with Session(engine) as run_session:
+                run_repo = SQLiteAccountRepository(run_session)
+                run_account = run_repo.get_by_id(account_id)
+                if run_account:
+                    run_account.last_upload_status = "RUNNING"
+                    run_account.last_upload_error = ""
+                    run_account.current_step = "Đang xếp hàng upload..."
+                    run_repo.save(run_account)
         await self._update_account_status(account_id, "QUEUED", step_desc="Đang xếp hàng...")
         await self.queue.put({
             "account_id": account_id,
@@ -326,6 +515,7 @@ class ConcurrentTaskDispatcher:
             "extra_config": extra_config or {},
         })
         logger.info(f"[+] Tài khoản {account_id} | Tác vụ {task_type} đã được đưa vào hàng đợi.")
+        return True
 
     async def start(self) -> None:
         if self.is_running:
@@ -416,8 +606,8 @@ class ConcurrentTaskDispatcher:
             browser_service = InvisiblePlaywrightAdapter()
             
             # Khởi tạo hòm thư dongvanfb chuyên dụng để sẵn sàng quét OTP
-            from app.infrastructure.email.dongvan_service import DongVanEmailService
-            email_service = DongVanEmailService()
+            from app.infrastructure.email.email_service_factory import create_email_service
+            email_service = create_email_service()
 
             # Task chup & stream anh man hinh trinh duyet ve Dashboard (neu bat).
             streamer_task: Optional[asyncio.Task] = None
@@ -428,17 +618,39 @@ class ConcurrentTaskDispatcher:
             # gianh (tranh tra nham neu bi cancel luc dang cho).
             proxy_key: Optional[str] = None
             proxy_acquired: bool = False
+            direct_slot_held: bool = False   # da giu slot che do KHONG proxy chua
+
+            def ensure_account_is_operational():
+                session.expire_all()
+                current_account = account_repo.get_by_id(account_id)
+                if is_sold_account(current_account):
+                    raise SoldAccountArchived(
+                        "Tài khoản vừa được chuyển vào mục ĐÃ BÁN; tác vụ đã dừng."
+                    )
+                return current_account
 
             async def log_step(step_desc: str):
                 # CHECKPOINT PAUSE: neu dang bi tam dung (toan cuc hoac rieng
                 # account nay), worker se dung ngay tai day cho toi khi duoc
                 # resume, truoc khi ghi log va tiep tuc buoc tiep theo.
+                ensure_account_is_operational()
                 await self._wait_if_paused(account_id)
                 await self._update_step_log(account_id, step_desc, session)
 
             try:
                 # 1. Truy vấn thông tin tài khoản và cấu hình Proxy động liên kết
                 account = account_repo.get_by_id(account_id)
+                if is_sold_account(account):
+                    logger.info("[ARCHIVE] Account %s moved to DA BAN before execution; skip.", account_id)
+                    await ws_manager.broadcast({
+                        "event": "TERMINAL_LOG",
+                        "data": {
+                            "account_id": account_id,
+                            "username": account.username if account else account_id,
+                            "message": "Đã hủy trước khi mở browser: account hiện thuộc mục ĐÃ BÁN.",
+                        },
+                    })
+                    return
 
                 # =========================================================
                 # GAN PROXY DONG luc chay (KHONG dung proxy gan san truoc): chon
@@ -446,8 +658,31 @@ class ConcurrentTaskDispatcher:
                 # luong / proxy. -> tu dong phan DEU cac account dang chay ra cac
                 # proxy, khong bi don cuc vao 1 proxy. CHO neu moi proxy da day.
                 # =========================================================
+                # USE_PROXY=False -> KHONG gan proxy, chay TRUC TIEP qua mang that
+                # (dung khi bat VPN toan may). Bat lai bang cach set USE_PROXY=True.
                 proxy_config = None
-                proxy_entity, proxy_key = await self._acquire_balanced_proxy(account_id, session)
+                proxy_entity, proxy_key = None, None
+                # Proxy mode keeps one publisher per proxy IP while allowing
+                # different proxies in parallel. Direct/VPN mode obeys the UI
+                # total-concurrency value instead of silently forcing one.
+                use_proxy = bool(getattr(settings, "USE_PROXY", True))
+                route_override = _upload_route_concurrency_override(
+                    task_type, use_proxy
+                )
+                if use_proxy:
+                    proxy_entity, proxy_key = await self._acquire_balanced_proxy(
+                        account_id,
+                        session,
+                        max_concurrent_override=route_override,
+                    )
+                else:
+                    # KHONG proxy -> van phai TON TRONG o "số luồng" tren UI.
+                    await self._acquire_direct_slot(
+                        account_id,
+                        session,
+                        max_concurrent_override=route_override,
+                    )
+                    direct_slot_held = True
                 proxy_acquired = proxy_key is not None
                 if proxy_entity is not None:
                     proxy_config = {
@@ -472,26 +707,48 @@ class ConcurrentTaskDispatcher:
                 # phần còn lại nếu proxy này vừa được mở gần đây.
                 # =========================================================
                 stagger_key = proxy_key if proxy_key is not None else "__direct__"
-                _last = self._last_launch_monotonic.get(stagger_key)
-                if _last is not None:
-                    _lo = getattr(settings, "STAGGER_MIN_SECONDS", 30.0)
-                    _hi = getattr(settings, "STAGGER_MAX_SECONDS", 60.0)
-                    _remain = random.uniform(_lo, max(_lo, _hi)) - (time.monotonic() - _last)
-                    if _remain > 0:
-                        await self._update_account_status(
-                            account_id, "QUEUED",
-                            step_desc=f"⏳ Giãn cách {_remain:.0f}s (cùng proxy) trước khi mở...",
-                            session=session,
-                        )
-                        await asyncio.sleep(_remain)
-                self._last_launch_monotonic[stagger_key] = time.monotonic()
+                _remain, _why = await self._reserve_launch_slot(stagger_key, proxy_key is not None)
+                if _remain > 0:
+                    await self._update_account_status(
+                        account_id, "QUEUED",
+                        step_desc=f"⏳ Giãn cách {_remain:.0f}s ({_why}) trước khi mở...",
+                        session=session,
+                    )
+                    await asyncio.sleep(_remain)
 
-                await self._update_account_status(account_id, "RUNNING", step_desc="Đang khởi chạy...", session=session)
+                # Account có thể bị chuyển sang ĐÃ BÁN trong lúc chờ proxy hoặc
+                # giãn cách. Chặn lại ngay trước điểm mở browser tốn tài nguyên.
+                account = ensure_account_is_operational()
 
                 # 2. THỐNG NHẤT KHỞI TẠO VÒNG ĐỜI TRÌNH DUYỆT TẠI ĐÂY:
                 # Đảm bảo 100% mọi tác vụ (LOGIN & UPDATE_PROFILE) đều chạy đúng Proxy cách ly và Seed vân tay cố định!
                 seed_val = _uuid_to_seed(account_id)
-                await browser_service.initialize(proxy_config=proxy_config, seed=seed_val)
+                # CỔNG LAUNCH: chỉ cho BROWSER_LAUNCH_GATE lần mở chồng nhau. Mở dồn
+                # KHÔNG xong sớm hơn (một phần của initialize() chẹn event loop nên
+                # các launch không thật sự song song) mà chỉ kéo mỗi launch chậm gấp
+                # N lần. Chờ ở cổng KHÔNG tính vào timeout của adapter.
+                if self._launch_gate.locked():
+                    await self._update_account_status(
+                        account_id, "QUEUED",
+                        step_desc="⏳ Đang chờ lượt mở trình duyệt...",
+                        session=session,
+                    )
+                async with self._launch_gate:
+                    await self._update_account_status(
+                        account_id, "RUNNING", step_desc="Đang khởi chạy...", session=session
+                    )
+                    await browser_service.initialize(proxy_config=proxy_config, seed=seed_val)
+
+                # Siết thêm một lần sau launch: nếu người dùng vừa chuyển nhóm
+                # trong lúc Firefox khởi tạo, đóng ngay trước khi truy cập TikTok.
+                account = ensure_account_is_operational()
+
+                # Dang ky SAU launch va TRUOC frame dau tien. Khi preview xuat hien,
+                # UI se luon tim thay chinh browser tao ra frame do.
+                browser_service.bind_automation_gate(
+                    self._get_or_create_account_event(account_id)
+                )
+                self.active_browsers[account_id] = browser_service
 
                 # STREAM man hinh: bat dau chup dinh ky page hien tai va day ve
                 # Dashboard qua WebSocket (event BROWSER_FRAME) de xem da luong.
@@ -504,6 +761,8 @@ class ConcurrentTaskDispatcher:
                             account_id,
                             _uname,
                             get_hwnd=lambda: getattr(browser_service, "_hwnd", None),
+                            recover_hwnd=browser_service.recover_stream_hwnd,
+                            capture_allowed=lambda: not browser_service.stream_suspended,
                         )
                     )
 
@@ -564,24 +823,64 @@ class ConcurrentTaskDispatcher:
                         max_watch_seconds=extra_config.get("max_watch_seconds", 15.0),
                     )
 
-                elif task_type == "UPLOAD_VIDEO":
-                    from app.use_cases.upload.tiktok_upload_video import TikTokUploadVideoUseCase
+                elif task_type == "SYNC_ANALYTICS":
+                    from app.use_cases.analytics.tiktok_analytics_sync import TikTokAnalyticsSyncUseCase
+                    from app.use_cases.auth.login_strategies import CookieThenCredentialLoginStrategy
+
+                    use_case = TikTokAnalyticsSyncUseCase(
+                        account_repo=account_repo,
+                        browser_service=browser_service,
+                        login_strategy=CookieThenCredentialLoginStrategy(),
+                        email_service=email_service,
+                        step_logger=log_step,
+                    )
+                    success = await use_case.execute(account_id)
+
+                elif task_type in ("UPLOAD_VIDEO", "UPLOAD_MEDIA", "UPLOAD_MEDIA_BATCH"):
+                    from app.use_cases.upload.tiktok_upload_video import TikTokUploadMediaUseCase
                     from app.use_cases.auth.login_strategies import CookieThenCredentialLoginStrategy
 
                     login_strategy = CookieThenCredentialLoginStrategy()
-                    use_case = TikTokUploadVideoUseCase(
+                    use_case = TikTokUploadMediaUseCase(
                         account_repo=account_repo,
                         browser_service=browser_service,
                         login_strategy=login_strategy,
                         email_service=email_service,
                         step_logger=log_step,
                     )
-                    success = await use_case.execute(
-                        account_id,
-                        video_path=extra_config.get("video_path", ""),
-                        caption=extra_config.get("caption", ""),
-                        schedule_at=extra_config.get("schedule_at"),
+                    video_paths = list(extra_config.get("video_paths") or [])
+                    item_count = len(video_paths) if task_type == "UPLOAD_MEDIA_BATCH" else 1
+                    upload_timeout = max(
+                        60,
+                        int(getattr(settings, "UPLOAD_TASK_TIMEOUT_SECONDS", 600))
+                        * max(1, item_count),
                     )
+                    try:
+                        if task_type == "UPLOAD_MEDIA_BATCH":
+                            success = await asyncio.wait_for(
+                                use_case.execute_video_batch(
+                                    account_id,
+                                    video_paths=video_paths,
+                                    captions=list(extra_config.get("captions") or []),
+                                    result_sink=extra_config.get("_result_sink"),
+                                ),
+                                timeout=upload_timeout,
+                            )
+                        else:
+                            success = await asyncio.wait_for(
+                                use_case.execute(
+                                    account_id,
+                                    image_path=extra_config.get("image_path"),
+                                    video_path=extra_config.get("video_path", ""),
+                                    caption=extra_config.get("caption", ""),
+                                    schedule_at=extra_config.get("schedule_at"),
+                                ),
+                                timeout=upload_timeout,
+                            )
+                    except asyncio.TimeoutError as exc:
+                        raise RuntimeError(
+                            f"Upload vuot qua {upload_timeout}s; da dong rieng browser bi treo de tra slot."
+                        ) from exc
 
                 if success:
                     # NÂNG CẤP ĐỘNG: Nạp lại tài khoản từ DB để lấy đúng trạng thái chuyên biệt
@@ -597,10 +896,17 @@ class ConcurrentTaskDispatcher:
                         final_status = "SUCCESS"
 
                     # ĐỒNG BỘ SỨC KHỎE NICK: Bắt buộc truyền thêm health_status="ALIVE" khi thành công
+                    success_step = (
+                        updated_account.current_step
+                        if task_type == "UPLOAD_MEDIA_BATCH"
+                        and updated_account
+                        and updated_account.current_step
+                        else "Thành công"
+                    )
                     await self._update_account_status(
                         account_id, 
                         final_status, 
-                        step_desc="Thành công", 
+                        step_desc=success_step,
                         health_status="ALIVE",      # <-- CẬP NHẬT Ở ĐÂY CHÍNH XÁC [1]
                         session=session
                     )
@@ -638,7 +944,31 @@ class ConcurrentTaskDispatcher:
                         })
                     except Exception:
                         pass
-                    await self._update_account_status(account_id, "ERROR", step_desc="Thất bại", session=session)
+                    failed_account = account_repo.get_by_id(account_id)
+                    failure_step = (
+                        failed_account.current_step
+                        if task_type == "UPLOAD_MEDIA_BATCH"
+                        and failed_account
+                        and failed_account.current_step
+                        else "Thất bại"
+                    )
+                    await self._update_account_status(
+                        account_id, "ERROR", step_desc=failure_step, session=session
+                    )
+
+            except SoldAccountArchived as exc:
+                logger.info("[ARCHIVE] Stop in-flight task %s: %s", account_id, exc)
+                try:
+                    await ws_manager.broadcast({
+                        "event": "TERMINAL_LOG",
+                        "data": {
+                            "account_id": account_id,
+                            "username": account.username if account else account_id,
+                            "message": str(exc),
+                        },
+                    })
+                except Exception:
+                    pass
 
             except asyncio.CancelledError:
                 # Task nay bi huy do bam "Dung khan cap toan cuc" (emergency_stop_all)
@@ -722,10 +1052,14 @@ class ConcurrentTaskDispatcher:
                         # slot -> task moi ket cung. Phai bat BaseException.
                         pass
                 await browser_service.close()
+                if self.active_browsers.get(account_id) is browser_service:
+                    self.active_browsers.pop(account_id, None)
                 # Tra slot PROXY truoc (neu da gianh) roi moi nha slot TONG -> account
                 # khac dang cho proxy nay duoc chay ngay khi slot tong con trong.
                 if proxy_acquired:
                     await self._release_proxy(proxy_key)
+                if direct_slot_held:
+                    await self._release_direct_slot()
                 self.semaphore.release()
                 self.active_tasks.pop(account_id, None)
                 # Go khoi _pending_accounts -> account co the duoc submit lai (chay
@@ -776,10 +1110,31 @@ class ConcurrentTaskDispatcher:
             "event": "ACCOUNT_STATUS_CHANGED",
             "data": {
                 "id": account_id,
+                # Username co the vua duoc dong bo tu profile TikTok trong use
+                # case. Gui lai gia tri moi nhat de bang account tren Web UI cap
+                # nhat ngay, khong can reload trang/GET lai danh sach.
+                "username": account.username if account else "",
                 "status": status,
                 "health_status": account.health_status if account else "UNKNOWN",
                 "profile_status": account.profile_status if account else "PENDING",
-                "current_step": step_desc
+                "current_step": step_desc,
+                "upload_success_count": account.upload_success_count if account else 0,
+                "upload_failure_count": account.upload_failure_count if account else 0,
+                "last_upload_status": account.last_upload_status if account else "NEVER",
+                "last_upload_at": account.last_upload_at if account else "",
+                "last_upload_error": account.last_upload_error if account else "",
+                "video_count": account.video_count if account else None,
+                "follower_count": account.follower_count if account else None,
+                "following_count": account.following_count if account else None,
+                "likes_count": account.likes_count if account else None,
+                "total_views": account.total_views if account else None,
+                "total_video_likes": account.total_video_likes if account else None,
+                "total_comments": account.total_comments if account else None,
+                "total_shares": account.total_shares if account else None,
+                "collected_video_count": account.collected_video_count if account else 0,
+                "analytics_sync_status": account.analytics_sync_status if account else "NEVER",
+                "analytics_sync_error": account.analytics_sync_error if account else "",
+                "metrics_updated_at": account.metrics_updated_at if account else "",
             }
         })
 

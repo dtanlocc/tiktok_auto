@@ -76,7 +76,7 @@ export const useAppStore = create<AppState>((set) => ({
   })),
 
   addLog: (log) => set((state) => ({
-    logs: [...state.logs, log]
+    logs: [...state.logs.slice(-499), log]
   })),
 
   clearLogs: () => set({ logs: [] })

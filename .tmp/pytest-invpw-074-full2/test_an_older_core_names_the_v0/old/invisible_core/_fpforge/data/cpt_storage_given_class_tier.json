@@ -1,0 +1,474 @@
+{
+  "_meta": {
+    "name": "storage_quota_mb | gpu_class",
+    "parents": [
+      "gpu_class",
+      "intra_tier"
+    ],
+    "child": "storage_quota_mb",
+    "value_shape": "int megabytes (reported as navigator.storage.estimate().quota / (1024*1024))",
+    "description": "Storage quota override returned by navigator.storage.estimate(). Real Firefox computes quota from disk space, which is a fingerprinting signal (stable per host). We replace it with a realistic per-session value conditioned on gpu_class â€” modern/high-end users tend to have larger SSDs, integrated_old older/smaller disks.",
+    "source": "Typical Windows 11 disk sizes 2024-2026 per segment: budget laptops 256-512GB SSD, mainstream 512GB-1TB SSD, gaming/workstation 1-4TB SSD. Firefox default storage quota is ~50% of available disk (capped). We simulate that computation per-tier.",
+    "rationale": "Values are pre-quota-limit MB as Firefox would return to navigator.storage.estimate().quota. Probabilities cover realistic ranges centered on the segment median. A single session returns one value; fingerprinters that hash the exact quota get per-session variance, matching cross-user diversity.",
+    "note": "Auto-generated from single-parent CPT by tier-splitting. 'standard' matches original distribution; 'budget' biases towards low-magnitude values; 'premium' biases towards high-magnitude values."
+  },
+  "table": {
+    "[\"integrated_old\", \"budget\"]": [
+      {
+        "value": 10240,
+        "prob": 0.1739
+      },
+      {
+        "value": 10240,
+        "prob": 0.4109
+      },
+      {
+        "value": 10240,
+        "prob": 0.25
+      },
+      {
+        "value": 10240,
+        "prob": 0.1261
+      },
+      {
+        "value": 10240,
+        "prob": 0.0391
+      }
+    ],
+    "[\"integrated_old\", \"standard\"]": [
+      {
+        "value": 10240,
+        "prob": 0.1
+      },
+      {
+        "value": 10240,
+        "prob": 0.3
+      },
+      {
+        "value": 10240,
+        "prob": 0.25
+      },
+      {
+        "value": 10240,
+        "prob": 0.2
+      },
+      {
+        "value": 10240,
+        "prob": 0.15
+      }
+    ],
+    "[\"integrated_old\", \"premium\"]": [
+      {
+        "value": 10240,
+        "prob": 0.0261
+      },
+      {
+        "value": 10240,
+        "prob": 0.1891
+      },
+      {
+        "value": 10240,
+        "prob": 0.25
+      },
+      {
+        "value": 10240,
+        "prob": 0.2739
+      },
+      {
+        "value": 10240,
+        "prob": 0.2609
+      }
+    ],
+    "[\"integrated_modern\", \"budget\"]": [
+      {
+        "value": 10240,
+        "prob": 0.1665
+      },
+      {
+        "value": 10240,
+        "prob": 0.2073
+      },
+      {
+        "value": 10240,
+        "prob": 0.3297
+      },
+      {
+        "value": 10240,
+        "prob": 0.204
+      },
+      {
+        "value": 10240,
+        "prob": 0.0799
+      },
+      {
+        "value": 10240,
+        "prob": 0.0125
+      }
+    ],
+    "[\"integrated_modern\", \"standard\"]": [
+      {
+        "value": 10240,
+        "prob": 0.1
+      },
+      {
+        "value": 10240,
+        "prob": 0.15
+      },
+      {
+        "value": 10240,
+        "prob": 0.3
+      },
+      {
+        "value": 10240,
+        "prob": 0.25
+      },
+      {
+        "value": 10240,
+        "prob": 0.15
+      },
+      {
+        "value": 10240,
+        "prob": 0.05
+      }
+    ],
+    "[\"integrated_modern\", \"premium\"]": [
+      {
+        "value": 10240,
+        "prob": 0.0273
+      },
+      {
+        "value": 10240,
+        "prob": 0.0874
+      },
+      {
+        "value": 10240,
+        "prob": 0.2675
+      },
+      {
+        "value": 10240,
+        "prob": 0.3003
+      },
+      {
+        "value": 10240,
+        "prob": 0.2266
+      },
+      {
+        "value": 10240,
+        "prob": 0.091
+      }
+    ],
+    "[\"low_end\", \"budget\"]": [
+      {
+        "value": 10240,
+        "prob": 0.2561
+      },
+      {
+        "value": 10240,
+        "prob": 0.2689
+      },
+      {
+        "value": 10240,
+        "prob": 0.2946
+      },
+      {
+        "value": 10240,
+        "prob": 0.1547
+      },
+      {
+        "value": 10240,
+        "prob": 0.0256
+      }
+    ],
+    "[\"low_end\", \"standard\"]": [
+      {
+        "value": 10240,
+        "prob": 0.15
+      },
+      {
+        "value": 10240,
+        "prob": 0.2
+      },
+      {
+        "value": 10240,
+        "prob": 0.3
+      },
+      {
+        "value": 10240,
+        "prob": 0.25
+      },
+      {
+        "value": 10240,
+        "prob": 0.1
+      }
+    ],
+    "[\"low_end\", \"premium\"]": [
+      {
+        "value": 10240,
+        "prob": 0.0399
+      },
+      {
+        "value": 10240,
+        "prob": 0.1285
+      },
+      {
+        "value": 10240,
+        "prob": 0.3056
+      },
+      {
+        "value": 10240,
+        "prob": 0.3488
+      },
+      {
+        "value": 10240,
+        "prob": 0.1772
+      }
+    ],
+    "[\"mid_range\", \"budget\"]": [
+      {
+        "value": 10240,
+        "prob": 0.0845
+      },
+      {
+        "value": 10240,
+        "prob": 0.2804
+      },
+      {
+        "value": 10240,
+        "prob": 0.3345
+      },
+      {
+        "value": 10240,
+        "prob": 0.2069
+      },
+      {
+        "value": 10240,
+        "prob": 0.0811
+      },
+      {
+        "value": 10240,
+        "prob": 0.0127
+      }
+    ],
+    "[\"mid_range\", \"standard\"]": [
+      {
+        "value": 10240,
+        "prob": 0.05
+      },
+      {
+        "value": 10240,
+        "prob": 0.2
+      },
+      {
+        "value": 10240,
+        "prob": 0.3
+      },
+      {
+        "value": 10240,
+        "prob": 0.25
+      },
+      {
+        "value": 10240,
+        "prob": 0.15
+      },
+      {
+        "value": 10240,
+        "prob": 0.05
+      }
+    ],
+    "[\"mid_range\", \"premium\"]": [
+      {
+        "value": 10240,
+        "prob": 0.0134
+      },
+      {
+        "value": 10240,
+        "prob": 0.1147
+      },
+      {
+        "value": 10240,
+        "prob": 0.2634
+      },
+      {
+        "value": 10240,
+        "prob": 0.2957
+      },
+      {
+        "value": 10240,
+        "prob": 0.2231
+      },
+      {
+        "value": 10240,
+        "prob": 0.0896
+      }
+    ],
+    "[\"high_end\", \"budget\"]": [
+      {
+        "value": 10240,
+        "prob": 0.1642
+      },
+      {
+        "value": 10240,
+        "prob": 0.2726
+      },
+      {
+        "value": 10240,
+        "prob": 0.2709
+      },
+      {
+        "value": 10240,
+        "prob": 0.2011
+      },
+      {
+        "value": 10240,
+        "prob": 0.0788
+      },
+      {
+        "value": 10240,
+        "prob": 0.0123
+      }
+    ],
+    "[\"high_end\", \"standard\"]": [
+      {
+        "value": 10240,
+        "prob": 0.1
+      },
+      {
+        "value": 10240,
+        "prob": 0.2
+      },
+      {
+        "value": 10240,
+        "prob": 0.25
+      },
+      {
+        "value": 10240,
+        "prob": 0.25
+      },
+      {
+        "value": 10240,
+        "prob": 0.15
+      },
+      {
+        "value": 10240,
+        "prob": 0.05
+      }
+    ],
+    "[\"high_end\", \"premium\"]": [
+      {
+        "value": 10240,
+        "prob": 0.0277
+      },
+      {
+        "value": 10240,
+        "prob": 0.1183
+      },
+      {
+        "value": 10240,
+        "prob": 0.2264
+      },
+      {
+        "value": 10240,
+        "prob": 0.305
+      },
+      {
+        "value": 10240,
+        "prob": 0.2301
+      },
+      {
+        "value": 10240,
+        "prob": 0.0924
+      }
+    ],
+    "[\"workstation\", \"budget\"]": [
+      {
+        "value": 10240,
+        "prob": 0.0892
+      },
+      {
+        "value": 10240,
+        "prob": 0.153
+      },
+      {
+        "value": 10240,
+        "prob": 0.2556
+      },
+      {
+        "value": 10240,
+        "prob": 0.2563
+      },
+      {
+        "value": 10240,
+        "prob": 0.1545
+      },
+      {
+        "value": 10240,
+        "prob": 0.078
+      },
+      {
+        "value": 10240,
+        "prob": 0.0134
+      }
+    ],
+    "[\"workstation\", \"standard\"]": [
+      {
+        "value": 10240,
+        "prob": 0.05
+      },
+      {
+        "value": 10240,
+        "prob": 0.1
+      },
+      {
+        "value": 10240,
+        "prob": 0.2
+      },
+      {
+        "value": 10240,
+        "prob": 0.25
+      },
+      {
+        "value": 10240,
+        "prob": 0.2
+      },
+      {
+        "value": 10240,
+        "prob": 0.15
+      },
+      {
+        "value": 10240,
+        "prob": 0.05
+      }
+    ],
+    "[\"workstation\", \"premium\"]": [
+      {
+        "value": 10240,
+        "prob": 0.0127
+      },
+      {
+        "value": 10240,
+        "prob": 0.0495
+      },
+      {
+        "value": 10240,
+        "prob": 0.1471
+      },
+      {
+        "value": 10240,
+        "prob": 0.244
+      },
+      {
+        "value": 10240,
+        "prob": 0.2433
+      },
+      {
+        "value": 10240,
+        "prob": 0.2185
+      },
+      {
+        "value": 10240,
+        "prob": 0.0849
+      }
+    ]
+  },
+  "note": "Every value is 10240 MB = 10 GiB, and that is not a placeholder. Firefox caps the per-group quota at 10 GB (QuotaManager::GetGroupLimitForLimit, 'cap the group limit to 10GB'), so navigator.storage.estimate().quota returns exactly 10737418240 on any machine with a disk of 100 GiB or more, which is all of them. The 13 values this table used to hold, 40 GiB to 3 TB, were all outside what a real Firefox can report. Measured 2026-08-09 against stock 151: stock 10737418240, ours 429496729600. The rows keep their exact probabilities and positions so the draw structure does not move; the field stays pinnable for a persona on a genuinely small disk, where the real rule is disk/10."
+}

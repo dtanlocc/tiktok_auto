@@ -1,5 +1,4 @@
 # File: backend/app/interfaces/api/accounts_router.py
-import uuid
 import json
 import logging
 import os
@@ -15,9 +14,46 @@ from app.interfaces.api.deps import get_account_repository, get_proxy_repository
 from app.interfaces.dto.account_dto import AccountCreateIn, AccountOut
 from app.infrastructure.websocket.socket_manager import ws_manager
 from app.core.cookie_utils import parse_cookies_any, cookies_to_string
+from app.domain.account_rules import is_sold_account
+from app.infrastructure.database.connection import engine
+from app.infrastructure.database.schemas import TikTokVideoMetricDbTable
+from sqlmodel import Session, select
 
 logger = logging.getLogger("AccountsRouter")
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
+
+
+def _performance_fields(account: TikTokAccount) -> dict:
+    """Một nguồn ánh xạ duy nhất để mọi response không làm rơi số liệu KPI."""
+    return {
+        "upload_success_count": account.upload_success_count,
+        "upload_failure_count": account.upload_failure_count,
+        "last_upload_status": account.last_upload_status,
+        "last_upload_at": account.last_upload_at,
+        "last_upload_error": account.last_upload_error,
+        "video_count": account.video_count,
+        "follower_count": account.follower_count,
+        "following_count": account.following_count,
+        "likes_count": account.likes_count,
+        "tiktok_user_id": account.tiktok_user_id,
+        "tiktok_sec_uid": account.tiktok_sec_uid,
+        "display_name": account.display_name,
+        "bio": account.bio,
+        "avatar_url": account.avatar_url,
+        "verified": account.verified,
+        "private_account": account.private_account,
+        "website_url": account.website_url,
+        "total_views": account.total_views,
+        "total_video_likes": account.total_video_likes,
+        "total_comments": account.total_comments,
+        "total_shares": account.total_shares,
+        "collected_video_count": account.collected_video_count,
+        "analytics_sync_status": account.analytics_sync_status,
+        "analytics_sync_source": account.analytics_sync_source,
+        "analytics_sync_error": account.analytics_sync_error,
+        "metrics_updated_at": account.metrics_updated_at,
+        "is_sold": is_sold_account(account),
+    }
 
 
 def _get_least_used_proxy_id(account_repo: IAccountRepository, proxy_repo: IProxyRepository) -> Optional[str]:
@@ -53,10 +89,12 @@ async def create_account(
     current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     current_date_str = datetime.now().strftime("%Y%m%d")
 
+    canonical_email = payload.email.strip().lower()
     new_account = TikTokAccount(
-        id=str(uuid.uuid4()),
+        id=canonical_email,
         username=payload.username,
         password=payload.password,
+        email=canonical_email,
         proxy_id=proxy_id,
         status="IDLE",
         health_status="UNKNOWN",
@@ -74,6 +112,7 @@ async def create_account(
             "event": "ACCOUNT_ADDED",
             "data": {
                 "id": saved_account.id,
+                "email": saved_account.email or "",
                 "username": saved_account.username,
                 "status": saved_account.status,
                 "health_status": saved_account.health_status,
@@ -83,12 +122,14 @@ async def create_account(
                 "current_step": saved_account.current_step,
                 "country": saved_account.country,
                 "batch_tag": saved_account.batch_tag,
-                "created_at": saved_account.created_at
+                "created_at": saved_account.created_at,
+                **_performance_fields(saved_account),
             }
         })
         
         return AccountOut(
             id=saved_account.id,
+            email=saved_account.email or "",
             username=saved_account.username,
             status=saved_account.status,
             health_status=saved_account.health_status,
@@ -98,7 +139,8 @@ async def create_account(
             has_cookies=len(saved_account.cookies) > 0,
             country=saved_account.country,
             batch_tag=saved_account.batch_tag,
-            created_at=saved_account.created_at
+            created_at=saved_account.created_at,
+            **_performance_fields(saved_account),
         )
     except Exception as e:
         raise HTTPException(
@@ -116,6 +158,7 @@ async def list_accounts(
     return [
         AccountOut(
             id=acc.id,
+            email=acc.email or "",
             username=acc.username,
             status=acc.status,
             health_status=acc.health_status,          # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
@@ -126,10 +169,60 @@ async def list_accounts(
             country=acc.country,                      # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
             batch_tag=acc.batch_tag,                  # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
             created_at=acc.created_at or "",          # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
-            note=acc.note or ""
+            note=acc.note or "",
+            **_performance_fields(acc),
         )
         for acc in accounts
     ]
+
+
+def _find_existing_account(account_repo, email: str, username: str):
+    """Tim account DA CO trong DB de UPDATE thay vi tao ban ghi moi.
+
+    Doi chieu theo EMAIL truoc (email la dinh danh ON DINH - khong doi), roi moi
+    den username. Ly do: TikTok hay TU DOI username (them duoi, vd 'stor128' ->
+    'stor1285') va he thong dong bo lai username do vao DB; neu import lai file cu
+    (van con username cu) ma chi so khop theo username thi se KHONG khop -> tao
+    ban ghi MOI -> 1 account bi nhan doi trong DB (dung loi dang gap)."""
+    email_n = (email or "").strip().lower()
+    user_n = (username or "").strip().lower()
+    by_user = None
+    for acc in account_repo.get_all():
+        if email_n and (acc.email or "").strip().lower() == email_n:
+            return acc                      # khop EMAIL -> chac chan cung 1 account
+        if user_n and (acc.username or "").strip().lower() == user_n:
+            by_user = by_user or acc        # du phong: khop username
+    return by_user
+
+
+def _merge_into_existing(existing, *, username, password, email, email_password,
+                         refresh_token, client_id, cookies, country, batch_tag):
+    """Cap nhat account DA CO bang du lieu moi import, GIU LAI nhung gi quy hon.
+
+    - GIU id, proxy_id, created_at, status/health/profile (tien trinh da chay).
+    - GIU username trong DB neu ho so DA COMPLETED (luc do DB dang giu username
+      THAT tren web, con file import co the con username CU) -> tranh lam hong.
+    - Cookies: chi ghi de khi file co cookies (file khong co thi giu cookies cu).
+    """
+    if username and not (existing.profile_status == "COMPLETED" and existing.username):
+        existing.username = username
+    if password:
+        existing.password = password
+    if email:
+        existing.email = email
+    if email_password:
+        existing.email_password = email_password
+    if refresh_token:
+        existing.refresh_token = refresh_token
+    if client_id:
+        existing.client_id = client_id
+    if cookies:
+        existing.cookies = cookies
+    if country:
+        existing.country = country
+    if batch_tag:
+        existing.batch_tag = batch_tag
+    return existing
 
 
 @router.post("/import-raw", status_code=status.HTTP_201_CREATED)
@@ -163,13 +256,34 @@ async def import_raw_account(
         # Chap nhan CA 2 dang: JSON (mang Playwright) HOAC chuoi 'a=b; c=d'.
         cookies = parse_cookies_any(cookies_raw)
 
-        allocated_proxy_id = _get_least_used_proxy_id(account_repo, proxy_repo)
-        
         current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if not batch_tag:
             batch_tag = f"LÔ_{datetime.now().strftime('%Y%m%d')}"
 
-        account_id = str(uuid.uuid4())
+        # CHONG NHAN DOI: neu account DA CO (theo email, roi den username) -> UPDATE
+        # dung ban ghi do thay vi tao uuid moi.
+        existing = _find_existing_account(account_repo, email, username)
+        if existing is not None:
+            merged = _merge_into_existing(
+                existing, username=username, password=password, email=email,
+                email_password=email_password, refresh_token=refresh_token,
+                client_id=client_id, cookies=cookies,
+                country=country.upper().strip(), batch_tag=batch_tag.strip(),
+            )
+            saved_account = account_repo.save(merged)
+            await ws_manager.broadcast({
+                "event": "ACCOUNT_UPDATED",
+                "data": {"id": saved_account.id, "email": saved_account.email or "", "username": saved_account.username,
+                         "has_cookies": len(saved_account.cookies) > 0},
+            })
+            logger.info(f"[Import] Da UPDATE account san co: {saved_account.username} ({email})")
+            return {"status": "SUCCESS", "updated": True,
+                    "username": saved_account.username, "id": saved_account.id}
+
+        allocated_proxy_id = _get_least_used_proxy_id(account_repo, proxy_repo)
+        if not email:
+            raise HTTPException(status_code=400, detail="Email/Hotmail là bắt buộc vì đây là khóa chính.")
+        account_id = email.strip().lower()
 
         account = TikTokAccount(
             id=account_id,
@@ -196,6 +310,7 @@ async def import_raw_account(
             "event": "ACCOUNT_ADDED",
             "data": {
                 "id": saved_account.id,
+                "email": saved_account.email or "",
                 "username": saved_account.username,
                 "status": saved_account.status,
                 "health_status": saved_account.health_status,
@@ -231,6 +346,23 @@ async def import_accounts_from_files(
             batch_tag = f"LÔ_{datetime.now().strftime('%Y%m%d')}"
 
         imported_count = 0
+        skipped_existing_count = 0
+        skipped_invalid_count = 0
+        failed_count = 0
+        # Snapshot keys once instead of scanning the full DB for every line.
+        # New keys are added after each successful insert, so duplicates across
+        # multiple selected files are skipped in the same import request too.
+        existing_accounts = account_repo.get_all()
+        known_emails = {
+            (account.email or account.id or "").strip().lower()
+            for account in existing_accounts
+            if (account.email or account.id or "").strip()
+        }
+        known_usernames = {
+            (account.username or "").strip().lower()
+            for account in existing_accounts
+            if (account.username or "").strip()
+        }
         for file in files:
             content = await file.read()
             lines = content.decode("utf-8").splitlines()
@@ -242,6 +374,7 @@ async def import_accounts_from_files(
                 # Toi thieu 6 truong (cookies o truong 7 la TUY CHON). Cac dong
                 # thieu truong bat buoc se bi bo qua.
                 if len(parts) < 6:
+                    skipped_invalid_count += 1
                     continue
 
                 username = parts[0].strip()
@@ -252,17 +385,39 @@ async def import_accounts_from_files(
                 client_id = parts[5].strip()
                 cookies_raw = parts[6].strip() if len(parts) > 6 else ""
 
+                canonical_email = email.lower()
+                canonical_username = username.lower()
+                if not canonical_email:
+                    skipped_invalid_count += 1
+                    logger.warning("[Import] Bỏ qua dòng thiếu email/Hotmail (khóa chính).")
+                    continue
+
+                # File import is insert-only. Existing accounts are immutable:
+                # do not overwrite username, password, cookies, status, country,
+                # batch, proxy, or any accumulated metrics.
+                if (
+                    canonical_email in known_emails
+                    or (canonical_username and canonical_username in known_usernames)
+                ):
+                    skipped_existing_count += 1
+                    logger.info(
+                        "[Import] Bỏ qua account đã có/trùng trong tệp: %s (%s)",
+                        username,
+                        canonical_email,
+                    )
+                    continue
+
                 # Chap nhan CA 2 dang: JSON (mang Playwright) HOAC chuoi 'a=b; c=d'.
                 cookies = parse_cookies_any(cookies_raw)
 
                 allocated_proxy_id = _allocate_next_proxy(proxy_repo, account_repo)
-                account_id = str(uuid.uuid4())
+                account_id = canonical_email
 
                 account = TikTokAccount(
                     id=account_id,
                     username=username,
                     password=password,
-                    email=email,
+                    email=canonical_email,
                     email_password=email_password,
                     refresh_token=refresh_token,
                     client_id=client_id,
@@ -280,11 +435,15 @@ async def import_accounts_from_files(
                 try:
                     account_repo.save(account)
                     imported_count += 1
+                    known_emails.add(canonical_email)
+                    if canonical_username:
+                        known_usernames.add(canonical_username)
 
                     await ws_manager.broadcast({
                         "event": "ACCOUNT_ADDED",
                         "data": {
                             "id": account.id,
+                            "email": account.email or "",
                             "username": account.username,
                             "status": account.status,
                             "health_status": account.health_status,
@@ -299,11 +458,27 @@ async def import_accounts_from_files(
                     })
                 except Exception as db_err:
                     logger.warning(f"Bỏ qua dòng lỗi hoặc trùng lặp vấp phải: {str(db_err)}")
+                    failed_count += 1
                     if hasattr(account_repo, "session"):
                         account_repo.session.rollback()
                     continue
 
-        return {"status": "SUCCESS", "message": f"Đã nhập thành công {imported_count} tài khoản vào {batch_tag}."}
+        msg = f"Đã nhập {imported_count} tài khoản MỚI vào {batch_tag}."
+        if skipped_existing_count:
+            msg += f" Bỏ qua {skipped_existing_count} tài khoản đã có/trùng trong tệp; dữ liệu cũ được giữ nguyên."
+        if skipped_invalid_count:
+            msg += f" Bỏ qua {skipped_invalid_count} dòng sai định dạng."
+        if failed_count:
+            msg += f" Có {failed_count} dòng lỗi khi lưu."
+        return {
+            "status": "SUCCESS",
+            "imported": imported_count,
+            "updated": 0,
+            "skipped_existing": skipped_existing_count,
+            "skipped_invalid": skipped_invalid_count,
+            "failed": failed_count,
+            "message": msg,
+        }
     except Exception as e:
         logger.error(f"Lỗi đọc file tài khoản: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Không thể xử lý tệp: {str(e)}")
@@ -319,6 +494,8 @@ async def bind_proxy_to_account(
     account = account_repo.get_by_id(account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+    if is_sold_account(account):
+        raise HTTPException(status_code=403, detail="Account ĐÃ BÁN chỉ được lưu trữ; không thay đổi proxy.")
     
     account.proxy_id = proxy_id
     saved = account_repo.save(account)
@@ -333,6 +510,7 @@ async def bind_proxy_to_account(
 
     return AccountOut(
         id=saved.id,
+        email=saved.email or "",
         username=saved.username,
         status=saved.status,
         health_status=saved.health_status,            # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
@@ -343,7 +521,8 @@ async def bind_proxy_to_account(
         country=saved.country,                        # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
         batch_tag=saved.batch_tag,                    # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
         created_at=saved.created_at or "",            # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
-        note=saved.note or ""
+        note=saved.note or "",
+        **_performance_fields(saved),
     )
 
 
@@ -368,9 +547,13 @@ async def auto_allocate_proxies_endpoint(
             proxy_usage[acc.proxy_id] += 1
 
     allocated_count = 0
+    skipped_sold = 0
     for acc_id in account_ids:
         account = account_repo.get_by_id(acc_id)
         if not account:
+            continue
+        if is_sold_account(account):
+            skipped_sold += 1
             continue
         
         best_proxy_id = min(proxies, key=lambda p: proxy_usage[p.id]).id
@@ -390,8 +573,10 @@ async def auto_allocate_proxies_endpoint(
         })
 
     return {
-        "status": "SUCCESS", 
-        "message": f"Đã tự động phân bổ đều Proxy khả dụng cho {allocated_count} tài khoản."
+        "status": "SUCCESS",
+        "allocated": allocated_count,
+        "skipped_sold": skipped_sold,
+        "message": f"Đã phân bổ Proxy cho {allocated_count} tài khoản; bỏ qua {skipped_sold} account ĐÃ BÁN."
     }
 
 
@@ -403,6 +588,60 @@ def _allocate_next_proxy(proxy_repo: IProxyRepository, account_repo: IAccountRep
         return None
 
 
+@router.get("/{account_id}/analytics")
+async def get_account_analytics(
+    account_id: str,
+    account_repo: IAccountRepository = Depends(get_account_repository),
+):
+    """Detailed, server-verified Studio metrics for one Hotmail account."""
+    account = account_repo.get_by_id(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản.")
+    with Session(engine) as session:
+        rows = session.exec(
+            select(TikTokVideoMetricDbTable)
+            .where(TikTokVideoMetricDbTable.account_email == account.id)
+            .order_by(TikTokVideoMetricDbTable.create_time.desc())
+        ).all()
+    videos = [
+        {
+            "video_id": row.video_id,
+            "title": row.title,
+            "create_time": row.create_time,
+            "view_count": row.view_count,
+            "like_count": row.like_count,
+            "comment_count": row.comment_count,
+            "share_count": row.share_count,
+            "cover_url": row.cover_url,
+            "share_url": row.share_url,
+            "synced_at": row.synced_at,
+        }
+        for row in rows
+    ]
+    return {
+        "account_id": account.id,
+        "is_sold": is_sold_account(account),
+        "sync_status": account.analytics_sync_status,
+        "sync_source": account.analytics_sync_source,
+        "sync_error": account.analytics_sync_error,
+        "metrics_updated_at": account.metrics_updated_at,
+        "collected_video_count": account.collected_video_count,
+        "profile_video_count": account.video_count,
+        "profile": {
+            "follower_count": account.follower_count,
+            "following_count": account.following_count,
+            "likes_count": account.likes_count,
+        },
+        "totals": {
+            "views": account.total_views,
+            "likes": account.total_video_likes,
+            "comments": account.total_comments,
+            "shares": account.total_shares,
+        },
+        "videos": videos,
+    }
+
+
 @router.delete("/{account_id}", status_code=status.HTTP_200_OK)
 async def delete_account(
     account_id: str,
@@ -412,6 +651,16 @@ async def delete_account(
     success = account_repo.delete(account_id)
     if not success:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản để xóa.")
+    # Per-video rows use the Hotmail primary key and are deliberately removed
+    # with the owning account to avoid invisible orphaned analytics history.
+    with Session(engine) as metrics_session:
+        metric_rows = metrics_session.exec(
+            select(TikTokVideoMetricDbTable)
+            .where(TikTokVideoMetricDbTable.account_email == account_id)
+        ).all()
+        for metric_row in metric_rows:
+            metrics_session.delete(metric_row)
+        metrics_session.commit()
     
     # Gửi tín hiệu thông báo đến toàn bộ Client qua Websocket
     await ws_manager.broadcast({
@@ -450,6 +699,7 @@ async def update_account_fields(
     if not account:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản.")
 
+    old_account_id = account.id
     data = payload.model_dump(exclude_unset=True)
     changed = {}
     for field, value in data.items():
@@ -458,6 +708,8 @@ async def update_account_fields(
         val = value.strip() if isinstance(value, str) else value
         if field == "country":
             val = str(val).upper().strip()
+        elif field == "email":
+            val = str(val).lower().strip()
         setattr(account, field, val)
         changed[field] = val
 
@@ -473,17 +725,33 @@ async def update_account_fields(
             except Exception: pass
         raise HTTPException(status_code=400, detail=f"Không thể cập nhật (có thể trùng username): {str(e)}")
 
+    # Email is the primary key. Keep every per-video metric attached when the
+    # user corrects a Hotmail address instead of silently orphaning the rows.
+    if saved.id != old_account_id and hasattr(account_repo, "session"):
+        metric_rows = account_repo.session.exec(
+            select(TikTokVideoMetricDbTable)
+            .where(TikTokVideoMetricDbTable.account_email == old_account_id)
+        ).all()
+        for metric_row in metric_rows:
+            metric_row.account_email = saved.id
+            account_repo.session.add(metric_row)
+        account_repo.session.commit()
+
+    if "batch_tag" in changed:
+        changed["is_sold"] = is_sold_account(saved)
+
     await ws_manager.broadcast({
         "event": "ACCOUNT_UPDATED",
         "data": {"id": account_id, **changed},
     })
     return AccountOut(
-        id=saved.id, username=saved.username, status=saved.status,
+        id=saved.id, email=saved.email or "", username=saved.username, status=saved.status,
         health_status=saved.health_status, profile_status=saved.profile_status,
         current_step=saved.current_step, proxy_id=saved.proxy_id,
         has_cookies=len(saved.cookies) > 0, country=saved.country,
         batch_tag=saved.batch_tag, created_at=saved.created_at or "",
         note=saved.note or "",
+        **_performance_fields(saved),
     )
 
 
@@ -512,7 +780,7 @@ async def move_accounts_to_group(
         moved += 1
         await ws_manager.broadcast({
             "event": "ACCOUNT_UPDATED",
-            "data": {"id": acc_id, "batch_tag": target},
+            "data": {"id": acc_id, "batch_tag": target, "is_sold": is_sold_account(account)},
         })
 
     return {
@@ -531,9 +799,13 @@ async def clear_cookies(
     """XOA COOKIES cua cac account da chon (giu nguyen account, chi xoa cookies ->
     lan sau bat buoc login lai bang Credential+OTP)."""
     cleared = 0
+    skipped_sold = 0
     for aid in account_ids:
         account = account_repo.get_by_id(aid)
         if not account:
+            continue
+        if is_sold_account(account):
+            skipped_sold += 1
             continue
         account.cookies = []
         account_repo.save(account)
@@ -542,8 +814,8 @@ async def clear_cookies(
             "event": "ACCOUNT_UPDATED",
             "data": {"id": aid, "has_cookies": False},
         })
-    return {"status": "SUCCESS", "cleared": cleared,
-            "message": f"Đã xóa cookies của {cleared} tài khoản."}
+    return {"status": "SUCCESS", "cleared": cleared, "skipped_sold": skipped_sold,
+            "message": f"Đã xóa cookies của {cleared} tài khoản; bỏ qua {skipped_sold} account ĐÃ BÁN."}
 
 
 @router.post("/export", status_code=status.HTTP_200_OK)
@@ -618,6 +890,38 @@ async def export_accounts(
         "requested": quantity,
         "took_all_available": took_all_available,
     }
+
+
+@router.post("/copy", status_code=status.HTTP_200_OK)
+async def copy_accounts(
+    account_ids: List[str] = Body(..., embed=True),
+    account_repo: IAccountRepository = Depends(get_account_repository)
+):
+    """COPY account ra chuoi (GIONG format export) NHUNG KHONG XOA khoi DB.
+    Dung de sao chep acc ra clipboard ma van GIU acc trong app.
+    Dinh dang moi dong: username|password|email|email_password|refresh_token|client_id|cookies
+    (cookies dang chuoi 'name=value; ...' giong test_cookies.txt)."""
+    lines = []
+    count = 0
+    for aid in account_ids:
+        acc = account_repo.get_by_id(aid)
+        if not acc:
+            continue
+        cookies_str = cookies_to_string(acc.cookies or [])
+        line = "|".join([
+            acc.username or "",
+            acc.password or "",
+            acc.email or "",
+            acc.email_password or "",
+            acc.refresh_token or "",
+            acc.client_id or "",
+            cookies_str,
+        ])
+        lines.append(line)
+        count += 1
+    if count == 0:
+        raise HTTPException(status_code=400, detail="Không có tài khoản hợp lệ nào để copy.")
+    return {"status": "SUCCESS", "content": "\n".join(lines), "copied_count": count}
 
 
 @router.post("/bulk-delete", status_code=status.HTTP_200_OK)

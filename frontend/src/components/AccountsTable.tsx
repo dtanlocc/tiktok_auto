@@ -1,8 +1,9 @@
 // File: frontend/src/components/AccountsTable.tsx
 import React, { useMemo, useState } from 'react';
-import { CheckSquare, Square, Folder, Pause, Play, Search, ArrowUp, ArrowDown, ArrowUpDown, Copy, X, Bug, Square as StopSquare, Check, Zap } from 'lucide-react';
+import { AlertCircle, BarChart3, CheckCircle2, CheckSquare, Square, Folder, Pause, Play, Search, ArrowUp, ArrowDown, ArrowUpDown, Copy, X, Square as StopSquare, Check, Zap, LockKeyhole, Mail, FlaskConical } from 'lucide-react';
 import { Account, Proxy } from '../types';
 import { getCountryFlagUrl } from '../utils/countries'; // <-- NẠP TẬP TRUNG TỪ UTILS CHUẨN XÁC
+import { AccountAnalyticsModal } from './AccountAnalyticsModal';
 
 interface AccountsTableProps {
   accounts: Account[];
@@ -19,22 +20,27 @@ interface AccountsTableProps {
   setSelectedAccountIds: (ids: string[]) => void;
   // Sửa trường trực tiếp trên UI (username/country/batch_tag) -> cập nhật ngay.
   onUpdateAccount: (accountId: string, fields: Partial<Account>) => void;
-  // CHẾ ĐỘ DEBUG: mở trình duyệt HIỆN, login rồi giữ mở để thao tác tay.
-  onDebugLogin: (accountId: string) => void;
-  onStopDebug: (accountId: string) => void;
-  debugActiveIds: string[];
+  // CHẾ ĐỘ PHIÊN TAY: mở trình duyệt HIỆN, login rồi giữ mở để thao tác tay.
+  onRunOneTest: (accountId: string) => void;
+  onStopRunOneTest: (accountId: string) => void;
+  manualSessionIds: string[];
+  onSyncAnalytics: (accountIds: string[]) => Promise<void>;
 }
 
-type SortKey = 'username' | 'country' | 'batch_tag' | 'status' | 'health_status' | 'profile_status' | 'created_at';
+type SortKey = 'email' | 'username' | 'country' | 'batch_tag' | 'health_status' | 'profile_status' | 'created_at';
 type SortDirection = 'asc' | 'desc' | null;
 
 const SORTABLE_COLUMNS: { key: SortKey; label: string }[] = [
-  { key: 'username', label: 'Tài khoản' },
+  { key: 'email', label: 'Hotmail' },
+  { key: 'username', label: 'Username' },
   { key: 'country', label: 'Quốc Gia / Lô hàng' },
-  { key: 'status', label: 'Phiên chạy' },
   { key: 'health_status', label: 'Sức khỏe Nick' },
   { key: 'profile_status', label: 'Cập nhật Profile' },
 ];
+
+const compactNumber = new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 });
+const formatMetric = (value: number | null | undefined) => value === null || value === undefined ? '—' : compactNumber.format(value);
+const formatDateTime = (value: string) => value ? new Date(value).toLocaleString('vi-VN') : 'Chưa có';
 
 export const AccountsTable: React.FC<AccountsTableProps> = ({
   accounts,
@@ -48,21 +54,25 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
   onResumeAccount,
   setSelectedAccountIds,
   onUpdateAccount,
-  onDebugLogin,
-  onStopDebug,
-  debugActiveIds,
+  onRunOneTest,
+  onStopRunOneTest,
+  manualSessionIds,
+  onSyncAnalytics,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [batchSize, setBatchSize] = useState<number>(10);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
+  const [analyticsAccount, setAnalyticsAccount] = useState<Account | null>(null);
+  const selectedSet = useMemo(() => new Set(selectedAccountIds), [selectedAccountIds]);
+  const allVisibleSelected = accounts.length > 0 && accounts.every((account) => selectedSet.has(account.id));
 
   // =========================================================================
   // SỬA TRƯỜNG TRỰC TIẾP (inline edit): double-click 1 ô -> hiện input ->
   // Enter/blur lưu ngay (gọi onUpdateAccount), Esc hủy.
   // =========================================================================
-  type EditableField = 'username' | 'country' | 'batch_tag' | 'note';
+  type EditableField = 'email' | 'country' | 'batch_tag' | 'note';
   const [editing, setEditing] = useState<{ id: string; field: EditableField } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
 
@@ -112,13 +122,13 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
   };
 
   // =========================================================================
-  // TÌM NHANH (giống thanh search của 1 bảng SQL view) - lọc theo username/ID
+  // Tìm theo Hotmail trước; username và ID chỉ là khóa đối chiếu phụ.
   // =========================================================================
   const searchedAccounts = useMemo(() => {
     if (!searchQuery.trim()) return accounts;
     const q = searchQuery.trim().toLowerCase();
     return accounts.filter(
-      (a) => a.username.toLowerCase().includes(q) || a.id.toLowerCase().includes(q)
+      (a) => (a.email || '').toLowerCase().includes(q) || a.username.toLowerCase().includes(q) || a.id.toLowerCase().includes(q)
     );
   }, [accounts, searchQuery]);
 
@@ -180,12 +190,13 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
     }
   };
 
-  const handleCopyUsername = (e: React.MouseEvent, username: string) => {
+  const handleCopyValue = (e: React.MouseEvent, value: string) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(username).catch(() => {});
+    navigator.clipboard.writeText(value).catch(() => {});
   };
 
   return (
+    <>
     <div className="card overflow-hidden flex-1 flex flex-col">
       <div className="p-3.5 border-b border-line-soft flex justify-between items-center bg-surface-2/40 flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -193,7 +204,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
             onClick={toggleSelectAll}
             className="text-xs font-bold text-brand hover:text-brand flex items-center gap-1.5"
           >
-            {selectedAccountIds.length === accounts.length && accounts.length > 0 ? (
+            {allVisibleSelected ? (
               <CheckSquare className="w-4 h-4" />
             ) : (
               <Square className="w-4 h-4" />
@@ -224,7 +235,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
             />
             <button
               onClick={() => {
-                const remaining = displayedAccounts.filter((a) => !selectedAccountIds.includes(a.id));
+                const remaining = displayedAccounts.filter((a) => !selectedSet.has(a.id));
                 const nextBatch = remaining.slice(0, batchSize).map((a) => a.id);
                 setSelectedAccountIds([...selectedAccountIds, ...nextBatch]);
               }}
@@ -242,7 +253,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm theo username hoặc ID..."
+            placeholder="Tìm theo Hotmail, username hoặc ID..."
             className="w-full bg-transparent py-1.5 text-xs focus:outline-none text-fg"
           />
           {searchQuery && (
@@ -252,15 +263,15 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
           )}
         </div>
 
-        <div className="text-[10px] text-fg-muted italic hidden lg:block">
-          💡 Click <span className="text-brand font-bold">bất kỳ đâu</span> trên hàng để chọn ·
+        <div className="text-[10px] text-fg-muted hidden lg:block">
+          Click <span className="text-brand font-bold">bất kỳ đâu</span> trên hàng để chọn ·
           {' '}<span className="text-brand font-bold">Shift+Click</span> chọn cả dải ·
           {' '}<span className="text-brand font-bold">Chuột phải</span> để mở Menu nâng cao
         </div>
       </div>
 
-      <div className="overflow-y-auto max-h-[380px] flex-1">
-        <table className="w-full text-left border-collapse">
+      <div className="min-h-[380px] max-h-[620px] flex-1 overflow-auto overscroll-contain">
+        <table className="w-full min-w-[1540px] text-left border-collapse">
           <thead className="sticky top-0 z-10">
             <tr className="bg-surface-2 text-[11px] font-semibold text-fg-subtle uppercase tracking-wide">
               <th className="px-3 py-2 w-12 text-center">Tích</th>
@@ -276,8 +287,9 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                   </span>
                 </th>
               ))}
+              <th className="px-3 py-2">Khả năng đăng</th>
+              <th className="px-3 py-2">Hiệu suất TikTok</th>
               <th className="px-3 py-2">Liên kết IP Proxy</th>
-              <th className="px-3 py-2">Tiến trình chạy</th>
               <th className="px-3 py-2">Ghi chú</th>
               <th className="px-3 py-2 text-center">Điều khiển</th>
             </tr>
@@ -285,7 +297,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
           <tbody className="divide-y divide-slate-800 text-xs">
             {displayedAccounts.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-8 text-center text-fg-subtle font-semibold">
+                <td colSpan={11} className="p-8 text-center text-fg-subtle font-semibold">
                   {searchQuery
                     ? `Không tìm thấy tài khoản nào khớp với "${searchQuery}".`
                     : 'Không tìm thấy tài khoản nào khớp với bộ lọc hoặc Lô đang chọn.'}
@@ -293,7 +305,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
               </tr>
             ) : (
               displayedAccounts.map((acc: Account, rowIndex: number) => {
-                const isSelected = selectedAccountIds.includes(acc.id);
+                const isSelected = selectedSet.has(acc.id);
                 return (
                   <tr
                     key={acc.id}
@@ -316,18 +328,42 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </button>
                     </td>
 
-                    <td className="px-3 py-2 font-medium text-fg">
+                    <td className="px-3 py-2 font-medium text-fg min-w-[220px]">
                       <div className="flex items-center gap-1.5 group">
-                        {renderEditable(acc, 'username', acc.username)}
+                        <Mail className="w-3.5 h-3.5 text-brand shrink-0" aria-hidden="true" />
+                        {renderEditable(
+                          acc,
+                          'email',
+                          acc.email || <span className="text-amber-300">Chưa có Hotmail</span>,
+                        )}
                         <button
-                          onClick={(e) => handleCopyUsername(e, acc.username)}
+                          onClick={(e) => handleCopyValue(e, acc.email || '')}
+                          disabled={!acc.email}
                           className="opacity-0 group-hover:opacity-100 text-fg-subtle hover:text-brand transition-opacity"
-                          title="Sao chép username"
+                          title="Sao chép Hotmail"
                         >
                           <Copy className="w-3 h-3" />
                         </button>
                       </div>
                       <div className="text-[10px] text-fg-subtle font-mono mt-0.5">{acc.id}</div>
+                    </td>
+
+                    <td className="px-3 py-2 min-w-[150px]">
+                      <div className="flex items-center gap-1.5 group" title="Username do TikTok quản lý, chỉ hiển thị để đối chiếu">
+                        <LockKeyhole className="w-3 h-3 text-fg-subtle shrink-0" aria-hidden="true" />
+                        <span className="truncate font-medium text-fg-muted">@{acc.username || '—'}</span>
+                        <button
+                          onClick={(e) => handleCopyValue(e, acc.username)}
+                          className="opacity-0 group-hover:opacity-100 text-fg-subtle hover:text-brand transition-opacity"
+                          title="Sao chép username"
+                          aria-label={`Sao chép username ${acc.username}`}
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <span className="mt-1 inline-flex items-center gap-1 text-[10px] text-fg-subtle">
+                        Chỉ đọc
+                      </span>
                     </td>
 
                     {/* QUỐC GIA & PHÂN LÔ ĐỒ HỌA SẮC NÉT CHẠY HOÀN HẢO TRÊN WINDOWS */}
@@ -349,18 +385,6 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       <div className="text-[10px] text-fg-subtle font-mono mt-0.5">
                         {acc.created_at || "—"}
                       </div>
-                    </td>
-
-                    <td className="px-3 py-2 text-center">
-                      <span className={`badge border ${
-                        acc.status === 'RUNNING' ? 'bg-amber-500/10 text-amber-400 border-amber-500/25 animate-pulse-soft' :
-                        acc.status === 'QUEUED' ? 'bg-brand/10 text-brand border-brand/25' :
-                        acc.status === 'SUCCESS' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25' :
-                        acc.status === 'ERROR' ? 'bg-rose-500/10 text-rose-400 border-rose-500/25' :
-                        'bg-white/5 text-fg-subtle border-line'
-                      }`}>
-                        {acc.status}
-                      </span>
                     </td>
 
                     {/* CỘT SỨC KHỎE NICK - THỐNG NHẤT 1 TẬP GIÁ TRỊ VỚI LUỒNG LOGIN */}
@@ -393,11 +417,42 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       </button>
                     </td>
 
+                    <td className="min-w-[170px] px-3 py-2">
+                      {acc.is_sold ? (
+                        <><span className="badge border border-slate-500/30 bg-slate-500/10 text-slate-300 normal-case tracking-normal">ĐÃ BÁN</span><p className="mt-1.5 text-[10px] text-fg-subtle">Chỉ lưu trữ lịch sử, không vận hành.</p></>
+                      ) : (acc.upload_success_count || 0) > 0 ? (
+                        <span className="badge border border-emerald-500/25 bg-emerald-500/10 text-emerald-300 normal-case tracking-normal"><CheckCircle2 className="h-3 w-3" /> Đã đăng được</span>
+                      ) : acc.last_upload_status === 'FAILED' ? (
+                        <span className="badge border border-rose-500/25 bg-rose-500/10 text-rose-300 normal-case tracking-normal"><AlertCircle className="h-3 w-3" /> Cần chạy lại</span>
+                      ) : (
+                        <span className="badge border border-line bg-white/5 text-fg-subtle normal-case tracking-normal">Chưa xác minh</span>
+                      )}
+                      <p className="mt-1.5 text-[10px] tabular-nums text-fg-muted"><span className="text-emerald-300">{acc.upload_success_count || 0} thành công</span> · <span className="text-rose-300">{acc.upload_failure_count || 0} lỗi</span></p>
+                      <p className="mt-0.5 max-w-[190px] truncate text-[10px] text-fg-subtle" title={acc.last_upload_error || formatDateTime(acc.last_upload_at)}>{acc.last_upload_status === 'FAILED' && acc.last_upload_error ? acc.last_upload_error : formatDateTime(acc.last_upload_at)}</p>
+                    </td>
+
+                    <td className="min-w-[215px] px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      {acc.is_sold ? <div><span className="badge border border-slate-500/30 bg-slate-500/10 text-slate-300 normal-case tracking-normal">ĐÃ BÁN · chỉ lưu trữ</span><p className="mt-1.5 text-[10px] text-fg-subtle">Không check, không mở browser, không đồng bộ.</p></div> : <>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-fg-muted">
+                          <span>Video <strong className="text-fg">{formatMetric(acc.collected_video_count || acc.video_count)}</strong></span>
+                          <span>View <strong className="text-fg">{formatMetric(acc.total_views)}</strong></span>
+                          <span>Follower <strong className="text-fg">{formatMetric(acc.follower_count)}</strong></span>
+                          <span>Like video <strong className="text-fg">{formatMetric(acc.total_video_likes)}</strong></span>
+                          <span>Comment <strong className="text-fg">{formatMetric(acc.total_comments)}</strong></span>
+                          <span>Share <strong className="text-fg">{formatMetric(acc.total_shares)}</strong></span>
+                        </div>
+                        <p className={`mt-1.5 text-[10px] ${acc.analytics_sync_status === 'FAILED' ? 'text-rose-300' : acc.analytics_sync_status === 'PARTIAL' ? 'text-amber-300' : 'text-fg-subtle'}`}>{acc.analytics_sync_status === 'FAILED' ? 'Đồng bộ lỗi' : acc.analytics_sync_status === 'PARTIAL' ? 'Dữ liệu một phần' : acc.metrics_updated_at ? `Đồng bộ ${formatDateTime(acc.metrics_updated_at)}` : 'Chưa đồng bộ TikTok'}</p>
+                        <button type="button" onClick={() => setAnalyticsAccount(acc)} className="mt-2 inline-flex min-h-8 items-center gap-1 rounded-md border border-brand/25 bg-brand/10 px-2 text-[10px] font-bold text-brand hover:bg-brand/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"><BarChart3 className="h-3 w-3" /> Chi tiết</button>
+                      </>}
+                    </td>
+
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                       <select
                         value={acc.proxy_id || 'none'}
+                        disabled={acc.is_sold}
                         onChange={(e) => handleBindProxy(acc.id, e.target.value)}
-                        className="bg-surface-2 border border-line rounded-lg p-1.5 text-xs text-brand font-medium focus:outline-none focus:ring-1 focus:ring-teal-400"
+                        title={acc.is_sold ? 'Account ĐÃ BÁN chỉ lưu trữ, không đổi proxy' : 'Đổi proxy cho account'}
+                        className="bg-surface-2 border border-line rounded-lg p-1.5 text-xs text-brand font-medium focus:outline-none focus:ring-1 focus:ring-teal-400 disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         <option value="none">Mạng LAN (Không Proxy)</option>
                         {proxies.map((p) => (
@@ -406,16 +461,6 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                           </option>
                         ))}
                       </select>
-                    </td>
-
-                    <td className="px-3 py-2 font-mono font-bold text-fg">
-                      {acc.status === 'RUNNING' ? (
-                        <span className="flex items-center gap-1 text-amber-400 animate-pulse">
-                          ⏳ {acc.current_step}
-                        </span>
-                      ) : (
-                        <span>{acc.current_step}</span>
-                      )}
                     </td>
 
                     {/* GHI CHÚ tự do - nhấp đúp để sửa (được phép để trống) */}
@@ -429,10 +474,10 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                       )}
                     </td>
 
-                    {/* NÚT TẠM DỪNG / TIẾP TỤC RIÊNG + DEBUG (mở trình duyệt HIỆN) */}
+                    {/* NÚT TẠM DỪNG / TIẾP TỤC RIÊNG + RUN ONE TEST (thao tác tay) */}
                     <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col items-center gap-1.5">
-                        {(acc.status === 'RUNNING' || acc.is_paused) ? (
+                        {!acc.is_sold && (acc.status === 'RUNNING' || acc.is_paused) ? (
                           acc.is_paused ? (
                             <button
                               onClick={() => onResumeAccount(acc.id)}
@@ -452,22 +497,23 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                           )
                         ) : null}
 
-                        {/* DEBUG: mở trình duyệt HIỆN lên, login rồi giữ để thao tác tay. */}
-                        {debugActiveIds.includes(acc.id) ? (
+                        {/* RUN ONE TEST: mở trình duyệt HIỆN lên, login rồi giữ để thao tác tay. */}
+                        {manualSessionIds.includes(acc.id) ? (
                           <button
-                            onClick={() => onStopDebug(acc.id)}
+                            onClick={() => onStopRunOneTest(acc.id)}
                             className="inline-flex items-center gap-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-bold px-2.5 py-1 rounded-md transition-all animate-pulse"
-                            title="Đóng cửa sổ debug đang mở"
+                            title="Đóng phiên đang mở"
                           >
-                            <StopSquare className="w-3 h-3" /> Dừng debug
+                            <StopSquare className="w-3 h-3" /> Đóng phiên
                           </button>
                         ) : (
                           <button
-                            onClick={() => onDebugLogin(acc.id)}
-                            className="btn btn-sm bg-violet-500/10 text-violet-300 border border-violet-500/25 hover:bg-violet-500/20"
-                            title="Mở trình duyệt HIỆN, tự login rồi dừng lại để bạn thao tác tay tới khi đóng"
+                            onClick={() => onRunOneTest(acc.id)}
+                            disabled={acc.is_sold}
+                            className="btn btn-sm bg-violet-500/10 text-violet-300 border border-violet-500/25 hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                            title={acc.is_sold ? 'Account ĐÃ BÁN được khóa mọi thao tác browser' : 'Mở phiên tay trong trình duyệt HIỆN để bạn thao tác tới khi đóng'}
                           >
-                            <Bug className="w-3 h-3" /> Debug
+                            <FlaskConical className="w-3 h-3" /> {acc.is_sold ? 'Đã khóa' : 'Run one test'}
                           </button>
                         )}
                       </div>
@@ -480,5 +526,7 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
         </table>
       </div>
     </div>
+    <AccountAnalyticsModal account={analyticsAccount} onClose={() => setAnalyticsAccount(null)} onSync={onSyncAnalytics} />
+    </>
   );
 };

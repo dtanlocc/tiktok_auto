@@ -31,3 +31,6 @@ class WebSocketConnectionManager:
 
 # Singleton Instance dùng chung toàn hệ thống
 ws_manager = WebSocketConnectionManager()
+# Frame JPEG và remote input đi trên kênh riêng, tránh gửi ảnh nặng tới mọi
+# client chỉ đang nghe log/trạng thái của dashboard.
+screen_ws_manager = WebSocketConnectionManager()

@@ -64,7 +64,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
       } else if (data.status !== 'CANCELLED') {
         alert(data.detail || 'Không thể chọn file. Vui lòng dán đường dẫn thủ công.');
       }
-    } catch (err) {
+    } catch {
       alert('Không thể kết nối bộ chọn file của OS.');
     } finally {
       setBusy(false);
@@ -109,7 +109,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
       } else {
         alert(data.detail || 'Có lỗi xảy ra.');
       }
-    } catch (e) {
+    } catch {
       alert('Không thể kết nối tới backend.');
     } finally {
       setBusy(false);
@@ -140,7 +140,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
       } else {
         alert(data.detail || 'Có lỗi xảy ra.');
       }
-    } catch (e) {
+    } catch {
       alert('Không thể kết nối tới backend.');
     } finally {
       setBusy(false);
@@ -158,7 +158,7 @@ export const InteractionPanel: React.FC<InteractionPanelProps> = ({ accounts, se
         const data = await res.json();
         alert(data.detail || 'Có lỗi xảy ra.');
       }
-    } catch (e) {
+    } catch {
       alert('Không thể kết nối tới backend.');
     }
   };

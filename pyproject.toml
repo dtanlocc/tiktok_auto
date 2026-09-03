@@ -11,7 +11,7 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     "sqlmodel>=0.0.16",
     "websockets>=12.0",
-    "invisible-playwright @ git+https://github.com/feder-cr/invisible_playwright.git",
+    "invisible-playwright",
     "python-multipart>=0.0.32",
     "httpx[socks]>=0.28.1",
     "pillow>=12.3.0",
@@ -20,6 +20,9 @@ dependencies = [
 ]
 
 # Chuẩn mới của uv thay thế cho tool.uv.dev-dependencies
+[tool.uv.sources]
+invisible-playwright = { path = "tools/invisible_playwright", editable = true }
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",

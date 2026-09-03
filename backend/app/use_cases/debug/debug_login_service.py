@@ -31,7 +31,9 @@ def _uuid_to_seed(uuid_str: str) -> int:
     """Giong het dispatcher: seed van tay co dinh theo id account."""
     if not uuid_str:
         return 42
-    return int(hashlib.sha256(uuid_str.encode("utf-8")).hexdigest()[:8], 16)
+    # & 0x7FFFFFFF: seed >= 2^31 + profile_dir lam Firefox TREO khi khoi chay
+    # (da kiem chung 13/08/2026) -> chan ve 31-bit. Giong het dispatcher.
+    return int(hashlib.sha256(uuid_str.encode("utf-8")).hexdigest()[:8], 16) & 0x7FFFFFFF
 
 
 class DebugLoginService:
@@ -107,9 +109,10 @@ class DebugLoginService:
 
             uname = account.username or account_id
 
-            # Proxy cach ly giong dispatcher.
+            # Proxy cach ly giong dispatcher (chi khi USE_PROXY=True; False -> truc tiep).
+            from app.core.config import settings as _settings
             proxy_config = None
-            if account.proxy_id:
+            if getattr(_settings, "USE_PROXY", True) and account.proxy_id:
                 proxy = proxy_repo.get_by_id(account.proxy_id)
                 if proxy:
                     proxy_config = {
@@ -118,10 +121,10 @@ class DebugLoginService:
                         "password": proxy.password,
                     }
 
-            from app.infrastructure.email.dongvan_service import DongVanEmailService
+            from app.infrastructure.email.email_service_factory import create_email_service
             from app.use_cases.auth.login_strategies import CookieThenCredentialLoginStrategy
 
-            email_service = DongVanEmailService()
+            email_service = create_email_service()
             browser = InvisiblePlaywrightAdapter()
             self._sessions[account_id] = browser
 
@@ -189,6 +192,69 @@ class DebugLoginService:
                     pass
                 self._sessions.pop(account_id, None)
                 self._tasks.pop(account_id, None)
+
+    # =====================================================================
+    # TRINH DUYET TRANG (khong account) - de test tay
+    # =====================================================================
+    # Mo 1 browser HIEN voi cac extension ngoai da cau hinh gan dong theo phien
+    # nhung KHONG nap cookies, KHONG dang nhap. Dung de tu vao trang bat ky, tu bam,
+    # tu kiem tra captcha co duoc giai khong ma KHONG dung toi account that.
+    _BLANK_ID = "__blank__"
+
+    def is_blank_running(self) -> bool:
+        return self._BLANK_ID in self._sessions
+
+    def start_blank(self, url: str = "about:blank", proxy_id: Optional[str] = None) -> bool:
+        """proxy_id=None -> chay TRUC TIEP (mang that/VPN). Co proxy_id -> chay qua
+        dung proxy do (de test proxy song hay chet, IP ra nuoc nao...)."""
+        if self._BLANK_ID in self._sessions or self._BLANK_ID in self._tasks:
+            return False
+        self._tasks[self._BLANK_ID] = asyncio.create_task(self._run_blank(url, proxy_id))
+        return True
+
+    async def stop_blank(self) -> bool:
+        return await self.stop(self._BLANK_ID)
+
+    async def _run_blank(self, url: str, proxy_id: Optional[str] = None) -> None:
+        import random
+        browser = InvisiblePlaywrightAdapter()
+        self._sessions[self._BLANK_ID] = browser
+        uname = "Trình duyệt trắng"
+        try:
+            # Proxy: chi dung khi NGUOI DUNG chon (khong phu thuoc USE_PROXY toan cuc,
+            # vi day la phien test tay - muon test proxy nao thi chi dinh proxy do).
+            proxy_config = None
+            proxy_desc = "TRỰC TIẾP (không proxy)"
+            if proxy_id:
+                with Session(engine) as _s:
+                    _p = SQLiteProxyRepository(_s).get_by_id(proxy_id)
+                if _p:
+                    proxy_config = {"server": _p.connection_string, "username": _p.username, "password": _p.password}
+                    proxy_desc = _p.connection_string
+                else:
+                    proxy_desc = "TRỰC TIẾP (không tìm thấy proxy đã chọn)"
+            await self._broadcast_log(self._BLANK_ID, uname, f"🧪 Đang mở trình duyệt trắng (extension captcha, không account) — mạng: {proxy_desc}...")
+            # Seed ngau nhien (phien nhap, khong gan account). & 0x7FFFFFFF: seed >= 2^31 lam treo.
+            await browser.initialize(proxy_config=proxy_config, seed=random.randint(1, 0x7FFFFFFF), force_visible=True)
+            if url and url != "about:blank":
+                await browser.navigate_to(url)
+            await self._broadcast_log(self._BLANK_ID, uname, f"✅ Đã mở. Thao tác tay tự do. Đóng cửa sổ (hoặc bấm Dừng) khi xong.")
+            try:
+                if browser._page:
+                    await browser._page.wait_for_event("close", timeout=0)
+            except Exception:
+                pass
+            await self._broadcast_log(self._BLANK_ID, uname, "🛑 Đã đóng trình duyệt trắng.")
+        except Exception as e:
+            logger.exception("[BLANK] Loi phien trinh duyet trang")
+            await self._broadcast_log(self._BLANK_ID, uname, f"❌ Lỗi: {type(e).__name__}: {str(e)[:90]}")
+        finally:
+            try:
+                await browser.close()
+            except Exception:
+                pass
+            self._sessions.pop(self._BLANK_ID, None)
+            self._tasks.pop(self._BLANK_ID, None)
 
 
 # Singleton dung chung toan app (giong quick_health_check_service).

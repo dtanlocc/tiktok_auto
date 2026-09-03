@@ -29,8 +29,15 @@ export const initWebSocket = () => {
       const store = useAppStore.getState();
       
       if (message.event === 'ACCOUNT_STATUS_CHANGED') {
-        const { id, status, current_step, health_status, profile_status } = message.data;
-        store.updateAccountStatus(id, status, current_step, health_status, profile_status);
+        // Merge the complete account snapshot carried by the backend. This also
+        // refreshes username immediately when TikTok's real username is synced
+        // back to the database at the end of a task.
+        const { id, ...fields } = message.data;
+        store.updateAccountFields(id, fields);
+      }
+      else if (message.event === 'ACCOUNT_UPDATED') {
+        const { id, ...fields } = message.data;
+        store.updateAccountFields(id, fields);
       }
       else if (message.event === 'ACCOUNT_ADDED') {
         store.addAccount(message.data);

@@ -1,0 +1,1350 @@
+INFO:     Started server process [36092]
+INFO:     Waiting for application startup.
+INFO:Application:[*] H\u1ec7 th\u1ed1ng \u0111ang kh\u1edfi \u0111\u1ed9ng...
+INFO:Application:[+] Kh\u1edfi t\u1ea1o C\u01a1 s\u1edf d\u1eef li\u1ec7u thành công.
+INFO:TaskDispatcher:[*] Task Dispatcher ch\u1ea1y ng\u1ea7m \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ConcurrentTaskDispatcher thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:InteractionScheduler:[+] InteractionScheduler \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o InteractionScheduler thành công.
+INFO:apscheduler.scheduler:Scheduler started
+INFO:ScheduledUpload:[+] ScheduledUploadService \u0111ã kh\u1edfi \u0111\u1ed9ng.
+INFO:Application:[+] Kh\u1edfi t\u1ea1o ScheduledUploadService thành công.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:53870 - "WebSocket /ws" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sc41_ka5soyn?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fre7lo6_wau48?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@lewn3_gro4fea0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cie2_cuin98zie7?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@chui62_sma3sk?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fru86sta2_vi9pl?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kou8mou2_sna9wo?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ceaf3crea1_ku1s?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spo60_drim43st2?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fi0_lau6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@shoa7fui_fon6sn?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@plo_foos8sen27?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pla9sn3_vui6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@wa4sna_bee0thof?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cre1_stra?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cl8_pla99?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@da15glay5_sm76g?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spa8_nu8fl6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@mo3_mowr57cre1?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@scew1rai_roa5go?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kai9pe97_ta?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@wuly3pr_rawc0ta?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cais1_lu?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bl34_spa68fla28?lang=en "HTTP/1.1 200 OK"
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.8s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-258' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for sc41_ka5soyn: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.5s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-272' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for fre7lo6_wau48: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-280' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for lewn3_gro4fea0: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-293' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for cie2_cuin98zie7: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-304' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for fru86sta2_vi9pl: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-311' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for kou8mou2_sna9wo: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.6s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-312' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for chui62_sma3sk: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.5s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-313' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for ceaf3crea1_ku1s: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-314' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for spo60_drim43st2: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.4s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-321' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for fi0_lau6: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.5s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-322' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for shoa7fui_fon6sn: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.2s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-323' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for plo_foos8sen27: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.4s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-324' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for pla9sn3_vui6: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-325' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for wa4sna_bee0thof: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.4s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-332' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for cre1_stra: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.4s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-333' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for cl8_pla99: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-334' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for da15glay5_sm76g: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-335' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for spa8_nu8fl6: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-342' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for mo3_mowr57cre1: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.4s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-345' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for scew1rai_roa5go: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.5s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-353' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for kai9pe97_ta: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.5s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-366' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for wuly3pr_rawc0ta: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.6s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-377' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for cais1_lu: video_detail_PermissionError: [WinError 5] Access is denied
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.4s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-389' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for bl34_spa68fla28: video_detail_PermissionError: [WinError 5] Access is denied
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:QuickHealthCheck:[+] Check nhanh TikTok xong: 18/18, alive=18, dead=0, inconclusive=0, reasons={'tiktok_account_info': 18}
+INFO:     127.0.0.1:59236 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:59237 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:60408 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     127.0.0.1:60411 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 2
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/oembed?url=https%3A%2F%2Fwww.tiktok.com%2F%40swa0stra77_st8t "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@plea5sm_gru32to?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sc9_vu6sna?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@saw5stue_taw?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pl_wo7baw92?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/oembed?url=https%3A%2F%2Fwww.tiktok.com%2F%40sk44sno2_sk68we "HTTP/1.1 200 OK"
+INFO:QuickHealthCheck:[+] Check nhanh TikTok xong: 91/91, alive=91, dead=0, inconclusive=0, reasons={'tiktok_account_info': 85, 'tiktok_oembed': 2, 'tiktok_user_info': 4}
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:61649 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:     127.0.0.1:61650 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:63260 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     127.0.0.1:63261 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 2
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/passport/web/account/info/?aid=1459 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/oembed?url=https%3A%2F%2Fwww.tiktok.com%2F%40vi3_sca84 "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@lum3bie6_fr0cli?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/oembed?url=https%3A%2F%2Fwww.tiktok.com%2F%40dr_leel5so "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/oembed?url=https%3A%2F%2Fwww.tiktok.com%2F%40soof18cri_slay "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@va53_bru?lang=en "HTTP/1.1 200 OK"
+INFO:QuickHealthCheck:[+] Check nhanh TikTok xong: 139/139, alive=139, dead=0, inconclusive=0, reasons={'tiktok_account_info': 134, 'tiktok_oembed': 3, 'tiktok_user_info': 2}
+INFO:     127.0.0.1:64579 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection open
+INFO:     127.0.0.1:64584 - "WebSocket /ws/screens" [accepted]
+INFO:WebSocketManager:[+] K\u1ebft n\u1ed1i WebSocket m\u1edbi thi\u1ebft l\u1eadp. T\u1ed5ng k\u1ebft n\u1ed1i: 2
+INFO:     connection open
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 1
+INFO:     connection closed
+INFO:WebSocketManager:[-] M\u1ed9t k\u1ebft n\u1ed1i WebSocket \u0111ã \u0111óng. T\u1ed5ng k\u1ebft n\u1ed1i: 0
+INFO:     connection closed
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pren6_woys32?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ne57_blu4st5?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cl1_gaun7zea57?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@baw_pl1glu?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fl9joys_ko?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@mu4cr28_th?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@vai3pe1_bru?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pla60shun_scu?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@st0dr_sko4?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sta4pea_smay6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@scai6_mu?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@mo91trow4_spau?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sco2blu_fo16zew?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@me1tr2_law3zoy?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gla70_poa7?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cha8moc75_fie?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@do6lew9_mair3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sna4dr44_ch1?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@jeck4_pl?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sm8slou36_skau?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@wu51_sal9?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@vo_pea9sca5?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@swai72_baun38?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@loan41_coa14gro?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@so_nus88spa?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@lo70_sho0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@mau42_sp0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@grin32sw70_mawf?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@vo1jo7_blo6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@jau4_lee7str1?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@she90_spie2?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fr6fl76_cru70sl?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cr39swui_no3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fo3swoy_la8?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@vi3_sca84?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@lum3bie6_fr0cli?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@jowm1sna7_slie?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@dr_leel5so?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@voa9vayr1_kue?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spui33sew81_tro?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@soof18cri_slay?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@plai6prof0_woas?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sne4_gro7nain?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@trow38_glou60be?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@slu_chue6gawr2?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cel1_zint71?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pa6st32_coy6slu?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@st_th36fou87?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fru5_nu1gou8?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ge7pie_chou1?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@brin7_tue4sl?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fiel58ca_flu35d?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kew_pl70la0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@br85dro_tru62vo?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@clau23fr9_sla10?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@smi7_cl6ko3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@st2thie7_clo6na?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bos_vi0blui0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@grow46dul48_cr3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@smo3glu_zee?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@smew32_fue93?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spoy_bles10br11?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pl3sto10_sl6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@tai50_tre64?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sc_me61fra7?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@link1rue_gro5ri?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bl3pro6_spa3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bloy1th6_cle9pr?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@may2slo2_ro?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cla3lu0_te?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sc6scoo_sn60mir?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sp5fe8_pau?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@skea2fle_chol2?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fou8crai_ch?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ke25_gi37cl5?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@nawn51kowr2_bl9?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ze3_zoar5sta7?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@br7st45_gi0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ju7shu15_scea9d?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@men3_kie66sku?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spo4_st8lail84?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@nuly61vaur1_pl8?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@few_blai3cl2?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@va53_bru?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sma97blay1_sta8?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cows5_gue5?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pr1_smo93ji2?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@pew8sko_test14?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ji9_snaw80tr7?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gin9ki31_ke3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cr8ce75_frea6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sko0_gus7lue22?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@clo49kow7_le?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@clec2_ju84tr93?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@flai78_cla63cro?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@stro2clie_che17?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sm96sc68_goor8f?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@mai8gre7_bea7?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@smes7_swaw15pra?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@lim11lou_fl21no?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@zany9ji_pu6?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@glew0_payr28?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@tro3sma0_scow90?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@coy9de_sc1?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@plai92rert99_sn?lang=en "HTTP/1.1 200 OK"
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.2s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-1123' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for lum3bie6_fr0cli: video_detail_PermissionError: [WinError 5] Access is denied
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@crow19ch_bl84jo?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@co0glee91_zaw5?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@dri5_cra8pl3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gre66fr12_vay1?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@nain5_po?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@fra8_soyn9show?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sti6_sta?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@swor_sla5dee0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cha0to4_gro0?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@glow5sm8_troa5j?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@smes5_gues6spe?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spoy9_li50?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ne2_ple41?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sca8fue_cem3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@bla8_brow68?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@tr8so6_flea?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@th5skie24_prau?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@mu3_fre8lea?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@flas47_ch53swe?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@tr3ca0_spa14?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@cewr8fa91_smi2?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@dres24_sl3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@ze4sc_wui32sk?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sme0_geaf5?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@za11_li7koy?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sce9tr6_glo3?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@sle5_koar?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@proa23_prec4swo?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@flea4_fla?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@kee73_str?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@gui42_dre21?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@waw3_ce2pun81?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spa64st8_sho99?lang=en "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.tiktok.com/@spo22_ka14?lang=en "HTTP/1.1 200 OK"
+invisible-core: could not resolve the session locale with no proxy (GeoTimezoneError: could not discover the proxy egress IP via 3 endpoint(s) in 6.1s (last error: ProxyError(MaxRetryError('HTTPSConnectionPool(host=\'checkip.amazonaws.com\', port=443): Max retries exceeded with url: / (Caused by ProxyError(\'Unable to connect to proxy\', NewConnectionError("HTTPSConnection(host=\'127.0.0.1\', port=9): Failed to establish a new connection: [WinError 10061] No connection could be made because the target machine actively refused it")))'))). For SOCKS proxies make sure requests[socks] / PySocks is installed.); falling back to en-US. The timezone is still resolved from the egress IP, so this session may pair a non-US timezone with a US language - pass locale="xx-XX" to set it explicitly.
+ERROR:asyncio:Task exception was never retrieved
+future: <Task finished name='Task-1135' coro=<Connection.run() done, defined at D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py:305> exception=PermissionError(13, 'Access is denied', None, 5, None)>
+Traceback (most recent call last):
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_connection.py", line 312, in run
+    await self._transport.connect()
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 133, in connect
+    raise exc
+  File "D:\tiktok_auto\tools\invisible_playwright\src\invisible_playwright\_pw\_impl\_transport.py", line 120, in connect
+    self._proc = await asyncio.create_subprocess_exec(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\subprocess.py", line 223, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py", line 1708, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 399, in _make_subprocess_transport
+    transp = _WindowsSubprocessTransport(self, protocol, args, shell,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_subprocess.py", line 36, in __init__
+    self._start(args=args, shell=shell, stdin=stdin, stdout=stdout,
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_events.py", line 929, in _start
+    self._proc = windows_utils.Popen(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 136, in __init__
+    stdin_rh, stdin_wh = pipe(overlapped=(False, True), duplex=True)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Admin\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\asyncio\windows_utils.py", line 63, in pipe
+    h2 = _winapi.CreateFile(
+         ^^^^^^^^^^^^^^^^^^^
+PermissionError: [WinError 5] Access is denied
+WARNING:TikTokFastAnalyticsSync:Public video detail failed for soof18cri_slay: video_detail_PermissionError: [WinError 5] Access is denied

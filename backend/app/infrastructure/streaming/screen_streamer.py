@@ -8,7 +8,7 @@ khong cho dat vi tri cua so).
 Thiet ke:
 - 1 coroutine chay nen cho MOI task, doc page hien tai qua callable get_page()
   (page co the None luc dau, hoac bi dong khi user tu tay dong browser login).
-- Moi chu ky: screenshot JPEG chat luong thap -> base64 -> broadcast event
+- Moi chu ky: screenshot JPEG chat luong cao -> base64 -> broadcast event
   BROWSER_FRAME. Khi ket thuc (task xong / browser dong / bi cancel) -> phat
   BROWSER_FRAME_END de UI go o hinh do khoi luoi.
 - Loi screenshot (dang dieu huong, page dong...) duoc bo qua nhe nhang; neu
@@ -19,16 +19,21 @@ import base64
 import logging
 import sys
 import time
-from typing import Callable, Optional, Any
+from typing import Awaitable, Callable, Optional, Any
 
 from app.core.config import settings
-from app.infrastructure.websocket.socket_manager import ws_manager
-from app.infrastructure.streaming.win_capture import capture_hwnd_jpeg, move_window_offscreen
+from app.infrastructure.websocket.socket_manager import screen_ws_manager
+from app.infrastructure.streaming.win_capture import (
+    capture_hwnd_jpeg,
+    downscale_jpeg,
+)
 
 logger = logging.getLogger("ScreenStreamer")
 
-# So lan chup loi LIEN TIEP toi da truoc khi coi page da chet han.
-_MAX_CONSECUTIVE_FAILURES = 15
+# Log theo cum, nhung khong tu ket thuc streamer. Vong doi cua streamer do
+# dispatcher quan ly; navigation/captcha co the lam screenshot loi lau hon 15
+# frame trong khi browser va task van con song.
+_FAILURE_LOG_INTERVAL = 15
 
 # =============================================================================
 # CHI STREAM KHI CO NGUOI DANG XEM (tiet kiem CPU cho browser khi chay da luong)
@@ -55,23 +60,30 @@ async def stream_browser_frames(
     account_id: str,
     username: str,
     get_hwnd: Optional[Callable[[], Optional[int]]] = None,
+    recover_hwnd: Optional[Callable[[], Awaitable[Optional[int]]]] = None,
+    capture_allowed: Optional[Callable[[], bool]] = None,
 ) -> None:
     """Vong lap chup & phat frame cho 1 account. Tu ket thuc khi bi cancel
-    (dispatcher goi luc don dep) hoac khi chup loi lien tuc.
+    (dispatcher goi luc don dep). Loi chup tam thoi chi duoc log va retry.
 
-    Uu tien chup bang PrintWindow (Win32) qua get_hwnd() -> anh SACH va GIU
-    fingerprint (page.screenshot cua Firefox tang hinh bi nhieu hat). Neu khong
-    co HWND (khong phai Windows / chua nhan duoc cua so) thi fallback ve
-    page.screenshot()."""
+    Tren Windows uu tien PrintWindow qua HWND. Cach nay khong chen len kenh
+    Playwright cua automation. page.screenshot chi la fallback khi khong co HWND.
+    Stream chi xem mot chieu, khong pause va khong gui input vao browser."""
+    consecutive_failures = 0
+    last_capture_error = ""
     interval = max(0.1, settings.SCREEN_STREAM_INTERVAL_MS / 1000.0)
     quality = max(1, min(100, settings.SCREEN_STREAM_JPEG_QUALITY))
-    max_width = getattr(settings, "SCREEN_STREAM_MAX_WIDTH", 720)
+    max_width = max(320, getattr(settings, "SCREEN_STREAM_MAX_WIDTH", 1280))
     is_win = sys.platform == "win32"
-    consecutive_failures = 0
+    last_hwnd_recovery = 0.0
+    next_capture_at = time.monotonic()
 
     try:
         while True:
-            await asyncio.sleep(interval)
+            # Fixed cadence: capture work (normally ~10-90ms) does not get
+            # added on top of the configured interval and slowly lower FPS.
+            next_capture_at += interval
+            await asyncio.sleep(max(0.0, next_capture_at - time.monotonic()))
 
             # TOI UU DA LUONG: neu KHONG ai dang xem tab Man Hinh Truc Tiep thi
             # BO QUA toan bo chup/encode/broadcast -> giai phong CPU cho browser.
@@ -79,45 +91,87 @@ async def stream_browser_frames(
             if not screens_are_watched():
                 continue
 
+            # Pause only for the native Windows file chooser. Caption, Post,
+            # Post now and Studio verification remain visible because Windows
+            # capture uses HWND/PrintWindow, not Playwright's command channel.
+            if capture_allowed is not None and not capture_allowed():
+                consecutive_failures = 0
+                continue
+
             raw = None
-
-            # 1. Uu tien PrintWindow (Windows) - anh sach, giu fingerprint, chup
-            #    duoc ca cua so cloak/che.
+            captured_with_hwnd = False
             hwnd = get_hwnd() if get_hwnd else None
-            if is_win and hwnd:
-                # GIU cua so luon off-screen (phong TikTok keo ve / fullscreen video
-                # / detection cham). SetWindowPos toi vi tri cu la no-op re tien.
-                if getattr(settings, "HIDE_BROWSER_OFFSCREEN", True):
-                    try:
-                        await asyncio.to_thread(move_window_offscreen, hwnd)
-                    except Exception:
-                        pass
-                # capture_hwnd_jpeg dung GDI (blocking) -> chay trong thread.
-                raw = await asyncio.to_thread(capture_hwnd_jpeg, hwnd, max_width, quality)
+            if is_win and get_hwnd is not None and hwnd:
+                raw = await asyncio.to_thread(
+                    capture_hwnd_jpeg, hwnd, max_width, quality
+                )
+                captured_with_hwnd = raw is not None
 
-            # 2. Fallback: page.screenshot (co the bi nhieu voi Firefox tang hinh,
-            #    nhung dung cho non-Windows / khi chua co HWND).
-            if raw is None:
-                page = get_page()
-                if page is not None:
-                    try:
-                        raw = await page.screenshot(type="jpeg", quality=quality, timeout=5000)
-                    except Exception:
-                        raw = None
+            # Reacquire by the invisible session-token. Do this at most once a
+            # second, and only after OS capture is unavailable/failed.
+            if (
+                is_win
+                and get_hwnd is not None
+                and raw is None
+                and recover_hwnd is not None
+                and time.monotonic() - last_hwnd_recovery >= 1.0
+            ):
+                last_hwnd_recovery = time.monotonic()
+                try:
+                    hwnd = await recover_hwnd()
+                except Exception as exc:
+                    last_capture_error = f"HWND recovery: {type(exc).__name__}: {exc}"
+                    hwnd = None
+                if hwnd:
+                    raw = await asyncio.to_thread(
+                        capture_hwnd_jpeg, hwnd, max_width, quality
+                    )
+                    captured_with_hwnd = raw is not None
+
+            # On Windows headed/cloaked sessions, never fall back to
+            # page.screenshot(): it shares Playwright's command channel and can
+            # stall for 5 seconds exactly while captcha/Studio is busy. Other
+            # platforms and true-headless sessions still use that fallback.
+            page = get_page()
+            hwnd_capture_expected = is_win and get_hwnd is not None
+            if raw is None and page is not None and not hwnd_capture_expected:
+                try:
+                    raw = await page.screenshot(
+                        type="jpeg", quality=quality, timeout=5000
+                    )
+                except Exception as exc:
+                    last_capture_error = f"{type(exc).__name__}: {exc}"
+                    raw = None
+            elif raw is None and hwnd_capture_expected and not last_capture_error:
+                last_capture_error = "HWND cua phien chua san sang hoac PrintWindow that bai"
+            if raw is not None and not captured_with_hwnd:
+                # Chan frame bat thuong truoc khi base64 de tranh phinh RAM/WS.
+                if len(raw) > 8_000_000:
+                    raw = None
+                else:
+                    raw = await asyncio.to_thread(
+                        downscale_jpeg, raw, max_width, quality
+                    )
 
             if raw is None:
                 consecutive_failures += 1
-                if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
-                    logger.info(
-                        f"[*] [ScreenStreamer] Ngung stream {username} ({account_id}) "
-                        f"vi chup loi lien tuc {consecutive_failures} lan (browser co le da dong)."
+                if consecutive_failures % _FAILURE_LOG_INTERVAL == 0:
+                    logger.warning(
+                        "[ScreenStreamer] Chua chup duoc frame %s (%s) sau %d lan; "
+                        "tiep tuc thu cho den khi dispatcher dong task. Loi gan nhat: %s",
+                        username,
+                        account_id,
+                        consecutive_failures,
+                        last_capture_error or "HWND/Page khong tra frame",
                     )
-                    break
+                if time.monotonic() > next_capture_at + interval:
+                    next_capture_at = time.monotonic()
                 continue
 
             consecutive_failures = 0
+            last_capture_error = ""
             jpeg_b64 = base64.b64encode(raw).decode("ascii")
-            await ws_manager.broadcast({
+            await screen_ws_manager.broadcast({
                 "event": "BROWSER_FRAME",
                 "data": {
                     "account_id": account_id,
@@ -125,6 +179,10 @@ async def stream_browser_frames(
                     "jpeg_b64": jpeg_b64,
                 },
             })
+            # If OS capture/backpressure took longer than a whole frame, drop
+            # missed ticks instead of sending a burst of stale frames.
+            if time.monotonic() > next_capture_at + interval:
+                next_capture_at = time.monotonic()
     except asyncio.CancelledError:
         # Bi dispatcher huy luc don dep task - im lang thoat.
         pass
@@ -133,7 +191,7 @@ async def stream_browser_frames(
     finally:
         # Bao UI go o hinh nay khoi luoi (du ket thuc vi ly do gi).
         try:
-            await ws_manager.broadcast({
+            await screen_ws_manager.broadcast({
                 "event": "BROWSER_FRAME_END",
                 "data": {"account_id": account_id},
             })

@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
-import { Users, Heart, MonitorPlay, Globe, Bot } from 'lucide-react';
-
-type Tab = 'accounts' | 'proxies' | 'interactions' | 'screens';
+import { Users, Heart, MonitorPlay, Globe, Film } from 'lucide-react';
+import { AppTab } from '../types';
 
 interface NavSidebarProps {
-  activeTab: Tab;
-  setActiveTab: (t: Tab) => void;
+  activeTab: AppTab;
+  setActiveTab: (t: AppTab) => void;
   isGloballyPaused: boolean;
 }
 
-const NAV: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+const NAV: { id: AppTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'accounts', label: 'Tài khoản', icon: Users },
+  { id: 'videos', label: 'Quản lý video', icon: Film },
   { id: 'interactions', label: 'Tương tác video', icon: Heart },
   { id: 'screens', label: 'Màn hình trực tiếp', icon: MonitorPlay },
   { id: 'proxies', label: 'Proxies', icon: Globe },
@@ -22,17 +22,16 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab,
   const [hover, setHover] = useState(false);
 
   return (
-    // Aside TỰ nới rộng khi hover -> ĐẨY nội dung sang phải (không đè/che thông tin).
     <aside
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      className={`shrink-0 h-screen sticky top-0 flex flex-col bg-surface border-r border-line-soft transition-[width] duration-200 ease-out
-        ${hover ? 'w-[210px]' : 'w-[60px]'}`}
+      className="relative sticky top-0 z-40 h-screen w-[60px] shrink-0"
     >
+      <div className={`absolute inset-y-0 left-0 flex flex-col overflow-hidden border-r border-line-soft bg-surface shadow-2xl shadow-black/0 transition-[width,box-shadow] duration-200 ease-out ${hover ? 'w-[210px] shadow-black/25' : 'w-[60px]'}`}>
         {/* Brand */}
         <div className={`flex items-center h-14 border-b border-line-soft ${hover ? 'gap-2.5 px-3.5' : 'justify-center'}`}>
           <div className="grid place-items-center w-8 h-8 rounded-lg bg-brand/15 border border-brand/25 text-brand shrink-0">
-            <Bot className="w-[18px] h-[18px]" />
+            <img src="/app-mark.svg" alt="" className="w-7 h-7" aria-hidden="true" />
           </div>
           {hover && (
             <div className="min-w-0 flex-1 overflow-hidden">
@@ -81,6 +80,7 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab,
             />
           )}
         </div>
+      </div>
     </aside>
   );
 };

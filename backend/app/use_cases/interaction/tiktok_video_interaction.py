@@ -86,11 +86,11 @@ class TikTokVideoInteractionUseCase:
             # 1. Điều hướng tới nguồn video
             if mode == "hashtag" and hashtag:
                 clean_tag = hashtag.strip().lstrip("#")
-                target_url = f"https://www.tiktok.com/tag/{clean_tag}"
+                target_url = f"https://www.tiktok.com/tag/{clean_tag}?lang=en"
                 if self.step_logger:
                     await self.step_logger(f"Đang vào hashtag #{clean_tag}...")
             else:
-                target_url = "https://www.tiktok.com/foryou"
+                target_url = "https://www.tiktok.com/foryou?lang=en"
                 if self.step_logger:
                     await self.step_logger("Đang vào trang For You...")
 
@@ -107,7 +107,7 @@ class TikTokVideoInteractionUseCase:
                 except Exception:
                     if self.step_logger:
                         await self.step_logger("[!] Không tìm thấy video nào trong hashtag này, chuyển về For You.")
-                    await self.browser_service.navigate_to("https://www.tiktok.com/foryou")
+                    await self.browser_service.navigate_to("https://www.tiktok.com/foryou?lang=en")
                     await asyncio.sleep(4)
 
             comment_list = comment_list or []
