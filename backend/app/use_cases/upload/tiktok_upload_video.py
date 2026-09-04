@@ -194,7 +194,11 @@ class TikTokUploadMediaUseCase:
                     f"[{index}/{total}] Đã xác minh video xuất hiện trong Studio Posts."
                 )
             else:
-                failures.append(f"{Path(path).name}: {error or 'không xác nhận được'}")
+                failure_reason = error or "không xác nhận được"
+                failures.append(f"{Path(path).name}: {failure_reason}")
+                await self._log(
+                    f"[{index}/{total}] ❌ {Path(path).name}: {failure_reason}"
+                )
                 if index < total:
                     await self._log(
                         f"[{index}/{total}] Video lỗi; tiếp tục video kế tiếp trong cùng phiên..."

@@ -2201,6 +2201,18 @@ class InvisiblePlaywrightAdapter(IBrowserService):
     async def _fill_publish_caption(self, caption: str, step_logger=None) -> None:
         if not caption:
             return
+
+        async def log(message: str) -> None:
+            if step_logger:
+                await step_logger(message)
+
+        def normalize_caption(value: str) -> str:
+            # Draft.js inserts zero-width markers around hashtag entities. They
+            # are invisible in Studio but used to make the strict comparison
+            # reject a caption that was actually entered correctly.
+            without_markers = re.sub(r"[\u200b-\u200f\u2060\ufeff]", "", value or "")
+            return " ".join(without_markers.split())
+
         editor = self._page.locator('.public-DraftEditor-content, [contenteditable="true"]').first
         await editor.wait_for(state="visible", timeout=30000)
         last_error = None
@@ -2227,16 +2239,50 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # caption in one protocol command leaves plain text instead of a tag.
         # Type ordinary text in chunks, type each hashtag sequentially to open
         # the suggestion list, then click the matching visible option/link.
-        for _ in range(2):
-            await editor.click(timeout=5000)
-            await self._page.keyboard.press("Control+A")
-            await self._page.keyboard.press("Backspace")
-            await self._page.keyboard.press("Delete")
-            await asyncio.sleep(0.2)
-        try:
-            remaining = " ".join((await editor.inner_text(timeout=3000)).split())
-        except Exception:
-            remaining = ""
+        async def read_caption() -> str:
+            try:
+                return normalize_caption(await editor.inner_text(timeout=5000))
+            except Exception:
+                return ""
+
+        async def clear_caption() -> str:
+            for _ in range(2):
+                await editor.click(timeout=5000)
+                await self._page.keyboard.press("Control+A")
+                await self._page.keyboard.press("Backspace")
+                await self._page.keyboard.press("Delete")
+                await asyncio.sleep(0.2)
+            return await read_caption()
+
+        async def type_chunk(value: str, *, hashtag: bool = False) -> None:
+            if not value:
+                return
+            delay = random.randint(48, 92) if hashtag else random.randint(32, 68)
+            # A fixed 20-second timeout aborts legitimate long filenames and
+            # captions mid-entry. Budget for the chosen per-character delay,
+            # protocol overhead and a detached/re-rendered Draft.js frame.
+            timeout_ms = max(20_000, min(180_000, 10_000 + len(value) * (delay + 25)))
+            await editor.press_sequentially(value, delay=delay, timeout=timeout_ms)
+
+        expected = normalize_caption(caption)
+
+        async def restore_plain_caption() -> bool:
+            """Recover from optional rich-hashtag UI failures without losing the post."""
+            for _ in range(2):
+                try:
+                    remaining = await clear_caption()
+                    if remaining:
+                        continue
+                    await editor.click(timeout=5000)
+                    await self._page.keyboard.insert_text(caption)
+                    await asyncio.sleep(0.35)
+                    if expected in await read_caption():
+                        return True
+                except Exception:
+                    await asyncio.sleep(0.35)
+            return False
+
+        remaining = await clear_caption()
         if remaining:
             raise RuntimeError(f"Khong the xoa caption tu dong truoc khi nhap (con lai: {remaining[:100]})")
         # TikTok xác định ranh giới hashtag bằng khoảng trắng: mọi ký tự nối
@@ -2339,79 +2385,86 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             await editor.click(timeout=5000)
             await self._page.keyboard.press("Control+End")
 
-        for match in hashtag_re.finditer(caption):
-            before = caption[cursor:match.start()]
-            if before:
-                # Keep ordinary chunks on the Draft.js editor as real key
-                # events too. keyboard.insert_text() can restore the caret at
-                # the start of the block after a mention selection, which
-                # reverses text around the hashtag (e.g. #tagPrefix).
+        try:
+            for match in hashtag_re.finditer(caption):
+                before = caption[cursor:match.start()]
+                if before:
+                    # Keep ordinary chunks on the Draft.js editor as real key
+                    # events too. keyboard.insert_text() can restore the caret at
+                    # the start of the block after a mention selection, which
+                    # reverses text around the hashtag (e.g. #tagPrefix).
+                    await refocus_caption_end()
+                    await type_chunk(before)
+                    await asyncio.sleep(random.uniform(0.08, 0.28))
+                token = match.group(0)
+                # TikTok opens the hashtag suggestion menu from the literal '#'
+                # typed in Description. Keep the whole token as real key events;
+                # filling the editor in one operation does not trigger suggestions.
+                await type_chunk(token, hashtag=True)
+                await asyncio.sleep(random.uniform(0.38, 0.72))
+                selected_token = await select_hashtag(token)
+                if selected_token:
+                    selected_hashtags.append(selected_token)
+                    await log(f"Đã chọn hashtag TikTok: {selected_token}")
+                    await refocus_caption_end()
+                else:
+                    logger.warning("[UPLOAD] TikTok không hiện gợi ý hashtag cho %s; giữ nguyên text.", token)
+                    await refocus_caption_end()
+                cursor = match.end()
+            tail = caption[cursor:]
+            if tail:
                 await refocus_caption_end()
-                await editor.press_sequentially(
-                    before, delay=random.randint(32, 68), timeout=20000
-                )
-                await asyncio.sleep(random.uniform(0.08, 0.28))
-            token = match.group(0)
-            # TikTok opens the hashtag suggestion menu from the literal '#'
-            # typed in Description. Keep the whole token as real key events;
-            # filling the editor in one operation does not trigger suggestions.
-            await editor.press_sequentially(
-                token, delay=random.randint(48, 92), timeout=20000
-            )
-            await asyncio.sleep(random.uniform(0.38, 0.72))
-            selected_token = await select_hashtag(token)
-            if selected_token:
-                selected_hashtags.append(selected_token)
-                await refocus_caption_end()
-            else:
-                logger.warning("[UPLOAD] TikTok không hiện gợi ý hashtag cho %s; giữ nguyên text.", token)
-                await refocus_caption_end()
-            cursor = match.end()
-        tail = caption[cursor:]
-        if tail:
-            await refocus_caption_end()
-            await editor.press_sequentially(
-                tail, delay=random.randint(32, 68), timeout=20000
-            )
+                await type_chunk(tail)
 
-        # No explicit hashtag: query TikTok Studio with conservative title
-        # keywords and keep only options that its live suggestion menu returns.
-        # A failed query is deleted immediately; generic #fyp/#viral tags are
-        # never invented by the application.
-        max_auto_hashtags = max(0, int(getattr(settings, "AUTO_HASHTAGS_MAX", 3)))
-        for slug in auto_queries:
-            if len(selected_hashtags) >= max_auto_hashtags:
-                break
-            token = f"#{slug}"
-            await refocus_caption_end()
-            typed_query = f" {token}"
-            await editor.press_sequentially(
-                typed_query, delay=random.randint(48, 92), timeout=20000
-            )
-            await asyncio.sleep(random.uniform(0.38, 0.72))
-            selected_token = await select_hashtag(
-                token,
-                allow_keyboard_fallback=False,
-                excluded_tokens=selected_hashtags,
-            )
-            if selected_token:
-                selected_hashtags.append(selected_token)
-                auto_selected_hashtags.append(selected_token)
+            # No explicit hashtag: query TikTok Studio with conservative title
+            # keywords and keep only options that its live suggestion menu returns.
+            # A failed query is deleted immediately; generic #fyp/#viral tags are
+            # never invented by the application.
+            max_auto_hashtags = max(0, int(getattr(settings, "AUTO_HASHTAGS_MAX", 3)))
+            if auto_queries and max_auto_hashtags:
+                await log("Caption đã nhập xong. Đang tìm hashtag phù hợp từ TikTok...")
+            for slug in auto_queries:
+                if len(selected_hashtags) >= max_auto_hashtags:
+                    break
+                token = f"#{slug}"
                 await refocus_caption_end()
-                continue
-            # No TikTok suggestion means this is only a guessed keyword. Remove
-            # the exact query instead of publishing a low-confidence hashtag.
-            await refocus_caption_end()
-            for _ in range(len(typed_query)):
-                await self._page.keyboard.press("Backspace")
-            await asyncio.sleep(0.15)
+                typed_query = f" {token}"
+                await type_chunk(typed_query, hashtag=True)
+                await asyncio.sleep(random.uniform(0.38, 0.72))
+                selected_token = await select_hashtag(
+                    token,
+                    allow_keyboard_fallback=False,
+                    excluded_tokens=selected_hashtags,
+                )
+                if selected_token:
+                    selected_hashtags.append(selected_token)
+                    auto_selected_hashtags.append(selected_token)
+                    await log(f"Đã chọn hashtag TikTok: {selected_token}")
+                    await refocus_caption_end()
+                    continue
+                # No TikTok suggestion means this is only a guessed keyword. Remove
+                # the exact query instead of publishing a low-confidence hashtag.
+                await refocus_caption_end()
+                for _ in range(len(typed_query)):
+                    await self._page.keyboard.press("Backspace")
+                await asyncio.sleep(0.15)
+        except Exception as exc:
+            # Hashtag suggestions are optional UI. A transient popup/editor
+            # re-render must not cancel a video that already uploaded to 100%.
+            logger.warning("[UPLOAD] Hashtag UI failed; restoring plain caption: %s", exc)
+            await log(
+                "⚠️ Gợi ý hashtag bị gián đoạn; đã khôi phục caption gốc và tiếp tục đăng."
+            )
+            if not await restore_plain_caption():
+                raise RuntimeError(f"Khong khoi phuc duoc caption sau loi hashtag: {exc}") from exc
+            selected_hashtags.clear()
+            auto_selected_hashtags.clear()
 
         last_value = ""
-        expected = " ".join(caption.split())
         for _ in range(2):
             await asyncio.sleep(0.35)
             try:
-                last_value = " ".join((await editor.inner_text(timeout=5000)).split())
+                last_value = await read_caption()
                 if expected in last_value:
                     if auto_selected_hashtags and step_logger:
                         await step_logger(
@@ -2420,10 +2473,18 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         )
                     if selected_hashtags:
                         logger.info("[UPLOAD] Đã kích hoạt hashtag TikTok: %s", ", ".join(selected_hashtags))
+                    await log(
+                        "Caption và hashtag đã sẵn sàng."
+                        if selected_hashtags
+                        else "Caption đã sẵn sàng."
+                    )
                     return
             except Exception:
                 pass
             await editor.click(timeout=5000)
+        if await restore_plain_caption():
+            await log("⚠️ Đã nhập lại caption bằng chế độ dự phòng; tiếp tục đăng.")
+            return
         raise RuntimeError(
             f"Caption khong duoc ghi nhan day du (gia tri hien tai: {last_value[:80]})"
         )

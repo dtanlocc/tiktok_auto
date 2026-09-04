@@ -231,3 +231,58 @@ def test_video_batch_rejects_duplicate_video_before_login(tmp_path: Path):
             "account",
             video_paths=[str(video), str(video)],
         ))
+
+
+def test_video_batch_logs_the_per_video_failure_reason(tmp_path: Path):
+    video = tmp_path / "broken.mp4"
+    video.write_bytes(b"video")
+    account = SimpleNamespace(
+        id="account",
+        cookies=[],
+        health_status="UNKNOWN",
+        status="IDLE",
+        current_step="",
+        upload_success_count=0,
+        upload_failure_count=0,
+        last_upload_status="NEVER",
+        last_upload_error="",
+        last_upload_at="",
+    )
+
+    class Repo:
+        def get_by_id(self, _account_id):
+            return account
+
+        def save(self, _account):
+            return None
+
+    class Login:
+        async def login(self, *_args, **_kwargs):
+            return True
+
+    class Browser:
+        async def prepare_foryou_home(self, **_kwargs):
+            return True
+
+        async def extract_cookies(self):
+            return []
+
+        async def publish_media(self, **_kwargs):
+            raise RuntimeError("Caption editor detached")
+
+    logs = []
+
+    async def capture_log(message):
+        logs.append(message)
+
+    use_case = TikTokUploadMediaUseCase(
+        Repo(), Browser(), Login(), email_service=None, step_logger=capture_log
+    )
+
+    result = asyncio.run(use_case.execute_video_batch(
+        "account",
+        video_paths=[str(video)],
+    ))
+
+    assert result is False
+    assert any("Caption editor detached" in message for message in logs)

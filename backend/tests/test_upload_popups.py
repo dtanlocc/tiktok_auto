@@ -196,6 +196,63 @@ class _NoFallbackBrowser:
         raise AssertionError("auto-redirect must keep the current Studio page")
 
 
+class _CaptionKeyboard:
+    def __init__(self, editor):
+        self.editor = editor
+        self.select_all = False
+
+    async def press(self, key):
+        if key == "Control+A":
+            self.select_all = True
+        elif key in {"Backspace", "Delete"} and self.select_all:
+            self.editor.text = ""
+            self.select_all = False
+
+    async def insert_text(self, value):
+        if self.select_all:
+            self.editor.text = ""
+            self.select_all = False
+        self.editor.text += value
+
+
+class _CaptionEditor:
+    def __init__(self, fail_auto_hashtag=False):
+        self.text = "filename"
+        self.fail_auto_hashtag = fail_auto_hashtag
+        self.typing_calls = []
+
+    @property
+    def first(self):
+        return self
+
+    async def wait_for(self, **_kwargs):
+        return None
+
+    async def click(self, **_kwargs):
+        return None
+
+    async def inner_text(self, **_kwargs):
+        return self.text
+
+    async def press_sequentially(self, value, **kwargs):
+        self.typing_calls.append((value, kwargs))
+        if self.fail_auto_hashtag and value.startswith(" #"):
+            self.text += " #part"
+            raise TimeoutError("hashtag suggestions detached the editor")
+        self.text += value
+
+
+class _CaptionPage:
+    def __init__(self, fail_auto_hashtag=False):
+        self.editor = _CaptionEditor(fail_auto_hashtag=fail_auto_hashtag)
+        self.keyboard = _CaptionKeyboard(self.editor)
+
+    def locator(self, selector):
+        if selector.startswith(".public-DraftEditor-content"):
+            return self.editor
+        return _EmptyScopes()
+
+
 def test_upload_popups_accept_turn_on_then_got_it(monkeypatch):
     async def no_sleep(_seconds):
         return None
@@ -486,3 +543,49 @@ def test_post_now_is_checked_before_generic_success_text(monkeypatch):
 
     assert result is True
     assert confirmations == ["Post now"]
+
+
+def test_auto_hashtag_failure_restores_caption_and_continues(monkeypatch):
+    adapter = InvisiblePlaywrightAdapter()
+    adapter._page = _CaptionPage(fail_auto_hashtag=True)
+    logs = []
+
+    async def no_sleep(_seconds):
+        return None
+
+    async def no_interruptions(**_kwargs):
+        return 0
+
+    async def capture_log(message):
+        logs.append(message)
+
+    monkeypatch.setattr(adapter_module.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(adapter_module, "hashtag_query_candidates", lambda *_args, **_kwargs: ["topic"])
+    monkeypatch.setattr(adapter, "_handle_upload_interruptions", no_interruptions)
+
+    asyncio.run(adapter._fill_publish_caption("A useful title", step_logger=capture_log))
+
+    assert adapter._page.editor.text == "A useful title"
+    assert any("hashtag" in message.casefold() and "caption gốc" in message for message in logs)
+
+
+def test_long_caption_gets_length_aware_typing_timeout(monkeypatch):
+    adapter = InvisiblePlaywrightAdapter()
+    adapter._page = _CaptionPage()
+    caption = "x" * 500
+
+    async def no_sleep(_seconds):
+        return None
+
+    async def no_interruptions(**_kwargs):
+        return 0
+
+    monkeypatch.setattr(adapter_module.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(adapter_module.settings, "AUTO_HASHTAGS_ENABLED", False)
+    monkeypatch.setattr(adapter, "_handle_upload_interruptions", no_interruptions)
+
+    asyncio.run(adapter._fill_publish_caption(caption))
+
+    typed_caption, options = adapter._page.editor.typing_calls[0]
+    assert typed_caption == caption
+    assert options["timeout"] > 20_000
