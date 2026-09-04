@@ -117,6 +117,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         self._browser = None
         self._page = None
         self._temp_profile_path: Optional[str] = None
+        self._native_upload_staging_dirs: set[str] = set()
         # HWND cua so Firefox cua rieng phien nay (dung cho PrintWindow stream).
         self._hwnd: Optional[int] = None
         self._window_visible: bool = False
@@ -1866,6 +1867,15 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # never takes focus/clipboard, and preserves trusted input/change events
         # for files of any size.
         try:
+            # pywinauto's filename edit can corrupt supplementary Unicode
+            # characters (notably emoji) even though the original file exists.
+            # Give only the native chooser an ASCII alias. Keep the alias until
+            # the browser session ends because Firefox may read it after the
+            # chooser has already closed.
+            native_paths = await asyncio.to_thread(
+                self._stage_native_upload_paths,
+                abs_paths,
+            )
             inputs = self._page.locator('input[type="file"]')
             count = await asyncio.wait_for(inputs.count(), timeout=3.0)
             target = inputs.first
@@ -1887,7 +1897,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             trigger = await self._resolve_native_upload_trigger(target, media_kind)
             await set_input_files_native(
                 target,
-                abs_paths,
+                native_paths,
                 trigger=trigger,
                 allow_input_replacement=True,
                 timeout_ms=15000,
@@ -1908,6 +1918,46 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 exc_info=True,
             )
             return False
+
+    def _stage_native_upload_paths(self, paths: List[str]) -> List[str]:
+        """Return ASCII aliases for paths the Windows chooser cannot type.
+
+        A same-volume hard link avoids copying large videos. If the selected
+        media is on another drive, copying is the compatibility fallback. The
+        staging directory is owned by this adapter and removed by ``close``.
+        """
+        if all(str(path).isascii() for path in paths):
+            return list(paths)
+
+        if self._temp_profile_path:
+            staging_dir = os.path.join(self._temp_profile_path, "upload_staging")
+            os.makedirs(staging_dir, exist_ok=True)
+        else:
+            staging_dir = tempfile.mkdtemp(prefix="tiktok_auto_upload_")
+        self._native_upload_staging_dirs.add(staging_dir)
+
+        staged: List[str] = []
+        for index, source in enumerate(paths, start=1):
+            if str(source).isascii():
+                staged.append(source)
+                continue
+            suffix = Path(source).suffix.lower()
+            alias = os.path.join(
+                staging_dir,
+                f"media_{index}_{uuid.uuid4().hex}{suffix}",
+            )
+            try:
+                os.link(source, alias)
+                method = "hard-link"
+            except OSError:
+                shutil.copy2(source, alias)
+                method = "copy"
+            staged.append(alias)
+            logger.info(
+                "[Upload] Da tao alias ASCII bang %s cho ten file Unicode.",
+                method,
+            )
+        return staged
 
     async def _set_file_via_native_dialog(self, video_path: str) -> bool:
         """Compatibility wrapper for the previous video-only flow."""
@@ -3364,5 +3414,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 _p = self._temp_profile_path
                 self._temp_profile_path = None
                 await asyncio.to_thread(shutil.rmtree, _p, ignore_errors=True)
+
+            for staging_dir in list(self._native_upload_staging_dirs):
+                await asyncio.to_thread(shutil.rmtree, staging_dir, ignore_errors=True)
+            self._native_upload_staging_dirs.clear()
         except Exception as e:
             logger.error(f"[-] Loi phat sinh khi dong trinh duyet va don dep: {str(e)}")

@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+from pathlib import Path
 
 from app.core.config import settings
 from app.infrastructure.automation.playwright_adapter import (
@@ -155,3 +156,31 @@ def test_background_attach_uses_playwright_channel_before_native_dialog(tmp_path
 
     assert attached is True
     assert handle.paths == [str(video.resolve())]
+
+
+def test_native_upload_stages_unicode_filename_with_ascii_alias(tmp_path):
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    video = tmp_path / "clip 💀.mp4"
+    video.write_bytes(b"video-bytes")
+    adapter = InvisiblePlaywrightAdapter()
+    adapter._temp_profile_path = str(profile)
+
+    staged = adapter._stage_native_upload_paths([str(video.resolve())])
+
+    assert len(staged) == 1
+    assert staged[0].isascii()
+    assert staged[0] != str(video.resolve())
+    assert Path(staged[0]).read_bytes() == b"video-bytes"
+    assert Path(video).exists()
+
+
+def test_native_upload_keeps_ascii_paths_unchanged(tmp_path):
+    video = tmp_path / "plain-video.mp4"
+    video.write_bytes(b"video")
+    adapter = InvisiblePlaywrightAdapter()
+
+    staged = adapter._stage_native_upload_paths([str(video.resolve())])
+
+    assert staged == [str(video.resolve())]
+    assert adapter._native_upload_staging_dirs == set()
