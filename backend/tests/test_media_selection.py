@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from app.core.exceptions import StudioReauthenticationRequired
 from app.use_cases.upload.media_selection import MAX_IMAGES, select_preferred_media
 from app.use_cases.upload.tiktok_upload_video import (
     TikTokUploadMediaUseCase,
@@ -384,3 +385,85 @@ def test_video_batch_recovers_studio_false_negative_from_public_profile(tmp_path
     assert result is True
     assert account.upload_success_count == 1
     assert account.upload_failure_count == 0
+
+
+def test_video_batch_forces_otp_once_when_studio_rejects_cookie(tmp_path: Path):
+    video = tmp_path / "studio-reauth.mp4"
+    video.write_bytes(b"video")
+    account = SimpleNamespace(
+        id="account",
+        username="account_user",
+        cookies=[{"name": "sessionid", "value": "old"}],
+        health_status="UNKNOWN",
+        status="IDLE",
+        current_step="",
+        upload_success_count=0,
+        upload_failure_count=0,
+        last_upload_status="NEVER",
+        last_upload_error="",
+        last_upload_at="",
+    )
+
+    class Repo:
+        def get_by_id(self, _account_id):
+            return account
+
+        def save(self, _account):
+            return None
+
+    class InitialLogin:
+        async def login(self, *_args, **_kwargs):
+            return True
+
+    class ForcedOtpLogin:
+        def __init__(self):
+            self.calls = 0
+
+        async def login(self, *_args, **_kwargs):
+            self.calls += 1
+            return True
+
+    class Browser:
+        def __init__(self):
+            self.publish_calls = []
+            self.foryou_calls = 0
+            self.clears = 0
+
+        async def prepare_foryou_home(self, **_kwargs):
+            self.foryou_calls += 1
+            return True
+
+        async def extract_cookies(self):
+            return [{"name": "sessionid", "value": "fresh"}]
+
+        async def clear_auth_session(self):
+            self.clears += 1
+
+        async def publish_media(self, **kwargs):
+            self.publish_calls.append(kwargs)
+            if len(self.publish_calls) == 1:
+                raise StudioReauthenticationRequired("Studio login redirect")
+            return True
+
+    browser = Browser()
+    forced_login = ForcedOtpLogin()
+    use_case = TikTokUploadMediaUseCase(
+        Repo(),
+        browser,
+        InitialLogin(),
+        email_service=None,
+        credential_login_strategy_factory=lambda: forced_login,
+    )
+
+    result = asyncio.run(use_case.execute_video_batch(
+        "account",
+        video_paths=[str(video)],
+    ))
+
+    assert result is True
+    assert browser.clears == 1
+    assert forced_login.calls == 1
+    assert browser.foryou_calls == 2
+    assert len(browser.publish_calls) == 2
+    assert [call["continue_session"] for call in browser.publish_calls] == [False, False]
+    assert account.cookies == [{"name": "sessionid", "value": "fresh"}]

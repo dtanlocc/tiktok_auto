@@ -18,6 +18,10 @@ class IBrowserService(Protocol):
         """Lấy danh sách cookie hiện tại"""
         ...
 
+    async def clear_auth_session(self) -> None:
+        """Clear cookies/storage before a forced credential + OTP login."""
+        ...
+
     async def close(self) -> None:
         """Đóng trình duyệt và giải phóng tài nguyên"""
         ...

@@ -25,7 +25,7 @@ from invisible_playwright import (
 )
 from app.domain.ports.browser import IBrowserService
 from app.core.config import settings
-from app.core.exceptions import AccountBannedException
+from app.core.exceptions import AccountBannedException, StudioReauthenticationRequired
 from app.core.tiktok_urls import ensure_tiktok_english_url
 from app.infrastructure.automation.extension_profile_builder import (
     ExtensionProfileBuilder,
@@ -40,6 +40,42 @@ from app.use_cases.upload.caption_hashtags import (
 )
 
 logger = logging.getLogger("PlaywrightAdapter")
+
+
+_PLAYWRIGHT_COOKIE_FIELDS = {
+    "name",
+    "value",
+    "url",
+    "domain",
+    "path",
+    "expires",
+    "httpOnly",
+    "secure",
+    "sameSite",
+}
+
+
+def _sanitize_browser_cookies(cookies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop browser-export metadata that Playwright refuses on import."""
+    deduped: Dict[tuple, Dict[str, Any]] = {}
+    for raw in cookies or []:
+        if not isinstance(raw, dict) or not raw.get("name"):
+            continue
+        cookie = {
+            key: value
+            for key, value in raw.items()
+            if key in _PLAYWRIGHT_COOKIE_FIELDS and value is not None
+        }
+        same_site = cookie.get("sameSite")
+        if same_site not in {None, "Strict", "Lax", "None"}:
+            cookie.pop("sameSite", None)
+        key = (
+            cookie.get("name"),
+            cookie.get("domain", ""),
+            cookie.get("path", "/"),
+        )
+        deduped[key] = cookie
+    return list(deduped.values())
 
 
 def _foryou_state_ready(state: Dict[str, Any], network_idle: bool) -> bool:
@@ -869,13 +905,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # KHU TRUNG luc inject (giu ban CUOI cung theo name+domain+path): cookies
         # luu/xuat GIU DAY DU (co the co ten trung nhu msToken bi refresh), nhung
         # add_cookies khong nen nhan 2 cookie trung name+domain+path -> loc o day.
-        deduped: Dict[tuple, Dict[str, Any]] = {}
-        for c in cookies or []:
-            if not isinstance(c, dict) or not c.get("name"):
-                continue
-            key = (c.get("name"), c.get("domain", ""), c.get("path", "/"))
-            deduped[key] = c
-        clean = list(deduped.values())
+        clean = _sanitize_browser_cookies(cookies)
 
         contexts = getattr(self._browser, "contexts", [])
         if contexts:
@@ -893,6 +923,20 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             return await contexts[0].cookies()
         else:
             return await self._browser.cookies()
+
+    async def clear_auth_session(self) -> None:
+        """Clear the partial web session before a forced Studio re-login."""
+        await self._wait_automation_gate()
+        if not self._page:
+            raise RuntimeError("Trinh duyet chua khoi tao.")
+        try:
+            await self._page.evaluate(
+                "() => { try { localStorage.clear(); } catch (_) {} "
+                "try { sessionStorage.clear(); } catch (_) {} }"
+            )
+        except Exception:
+            pass
+        await self._page.context.clear_cookies()
 
     async def check_login_status(self) -> bool:
         await self._wait_automation_gate()
@@ -3220,7 +3264,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             await self._handle_upload_interruptions(step_logger=step_logger)
             current_url = (str(getattr(self._page, "url", "") or "")).lower()
             if "/login" in current_url and "redirect_url" in current_url:
-                raise RuntimeError(
+                raise StudioReauthenticationRequired(
                     "TikTok Studio yeu cau dang nhap lai; cookie hien tai khong co phien Studio hop le."
                 )
             if await self._video_upload_entry_ready():

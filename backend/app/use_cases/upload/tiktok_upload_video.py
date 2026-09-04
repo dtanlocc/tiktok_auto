@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from app.core.exceptions import StudioReauthenticationRequired
 from app.use_cases.upload.media_selection import select_preferred_media
 
 
@@ -50,6 +51,7 @@ class TikTokUploadMediaUseCase:
         email_service,
         step_logger=None,
         public_video_client_factory=None,
+        credential_login_strategy_factory=None,
     ):
         self.account_repo = account_repo
         self.browser_service = browser_service
@@ -57,6 +59,7 @@ class TikTokUploadMediaUseCase:
         self.email_service = email_service
         self.step_logger = step_logger
         self.public_video_client_factory = public_video_client_factory
+        self.credential_login_strategy_factory = credential_login_strategy_factory
 
     async def _log(self, message: str) -> None:
         if self.step_logger:
@@ -121,6 +124,60 @@ class TikTokUploadMediaUseCase:
                 await client.close()
             except Exception:
                 pass
+
+    async def _reauthenticate_for_studio(self, account_id: str, account):
+        """Force one credential/OTP login when Studio rejects a web cookie."""
+        await self._log(
+            "TikTok Studio yêu cầu đăng nhập lại; "
+            "đang xóa phiên cookie cũ và chuyển sang đăng nhập OTP..."
+        )
+        await self.browser_service.clear_auth_session()
+
+        factory = self.credential_login_strategy_factory
+        if factory is None:
+            from app.use_cases.auth.login_strategies import (
+                CredentialEmailOtpLoginStrategy,
+            )
+
+            factory = CredentialEmailOtpLoginStrategy
+
+        logged_in = await factory().login(
+            self.browser_service,
+            account,
+            step_logger=self.step_logger,
+            email_service=self.email_service,
+        )
+        if not logged_in:
+            raise RuntimeError(
+                "TikTok Studio yêu cầu đăng nhập lại nhưng login OTP thất bại."
+            )
+
+        home_ready = await self.browser_service.prepare_foryou_home(
+            step_logger=self.step_logger
+        )
+        if not home_ready:
+            raise RuntimeError(
+                "Đăng nhập OTP xong nhưng trang For You chưa sẵn sàng để thử lại Studio."
+            )
+
+        try:
+            fresh = await self.browser_service.extract_cookies()
+            if fresh:
+                latest = self.account_repo.get_by_id(account_id) or account
+                latest.cookies = fresh
+                latest.health_status = "ALIVE"
+                self.account_repo.save(latest)
+                account = latest
+        except Exception as exc:
+            logger.warning(
+                "[UploadBatch] Khong luu duoc cookie sau Studio re-auth %s: %s",
+                account_id,
+                exc,
+            )
+        await self._log(
+            "Đăng nhập OTP lại thành công; đang thử lại TikTok Studio một lần..."
+        )
+        return account
 
     async def execute(
         self,
@@ -264,14 +321,24 @@ class TikTokUploadMediaUseCase:
             error = ""
             publish_started_at = int(time.time())
             try:
-                ok = await self.browser_service.publish_media(
-                    image_paths=None,
-                    video_path=path,
-                    caption=caption,
-                    schedule_at=None,
-                    step_logger=self.step_logger,
-                    continue_session=index > 1,
-                )
+                for publish_attempt in range(2):
+                    try:
+                        ok = await self.browser_service.publish_media(
+                            image_paths=None,
+                            video_path=path,
+                            caption=caption,
+                            schedule_at=None,
+                            step_logger=self.step_logger,
+                            continue_session=index > 1 and publish_attempt == 0,
+                        )
+                        break
+                    except StudioReauthenticationRequired:
+                        if publish_attempt > 0:
+                            raise
+                        account = await self._reauthenticate_for_studio(
+                            account_id,
+                            account,
+                        )
                 if not ok:
                     error = "TikTok không xác nhận bài đăng trong Studio Posts."
             except Exception as exc:

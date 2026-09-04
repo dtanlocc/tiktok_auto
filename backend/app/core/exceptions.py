@@ -5,3 +5,9 @@ class AccountBannedException(Exception):
     def __init__(self, message: str = "Tài khoản của bạn đã bị cấm vĩnh viễn."):
         self.message = message
         super().__init__(self.message)
+
+
+class StudioReauthenticationRequired(RuntimeError):
+    """TikTok web session works, but TikTok Studio requires a fresh login."""
+
+    pass

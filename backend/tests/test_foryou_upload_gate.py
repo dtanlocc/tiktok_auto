@@ -8,6 +8,7 @@ from app.infrastructure.automation import playwright_adapter as adapter_module
 from app.infrastructure.automation.playwright_adapter import (
     InvisiblePlaywrightAdapter,
     _foryou_state_ready,
+    _sanitize_browser_cookies,
 )
 
 
@@ -146,3 +147,35 @@ def test_guest_upload_link_is_not_accepted_as_authenticated(monkeypatch):
     monkeypatch.setattr(adapter, "is_captcha_present", no_captcha)
 
     assert asyncio.run(adapter.check_login_status()) is False
+
+
+def test_cookie_import_drops_export_only_fields_and_keeps_latest_duplicate():
+    cookies = [
+        {
+            "name": "sessionid",
+            "value": "old",
+            "domain": ".tiktok.com",
+            "path": "/",
+            "size": 41,
+            "session": False,
+            "hostOnly": False,
+            "sameSite": "Lax",
+        },
+        {
+            "name": "sessionid",
+            "value": "fresh",
+            "domain": ".tiktok.com",
+            "path": "/",
+            "size": 43,
+            "session": False,
+            "sameSite": "Lax",
+        },
+    ]
+
+    assert _sanitize_browser_cookies(cookies) == [{
+        "name": "sessionid",
+        "value": "fresh",
+        "domain": ".tiktok.com",
+        "path": "/",
+        "sameSite": "Lax",
+    }]
