@@ -1,0 +1,4 @@
+[submodule "tools/invisible_playwright"]
+	path = tools/invisible_playwright
+	url = https://github.com/dtanlocc/invisible_playwright-custom.git
+	branch = custom/tiktok-auto-0.10.0

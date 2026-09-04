@@ -365,7 +365,7 @@ wheels = [
 
 [[package]]
 name = "invisible-core"
-version = "21.16.0"
+version = "26.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "maxminddb" },
@@ -374,14 +374,14 @@ dependencies = [
     { name = "requests", extra = ["socks"] },
     { name = "tzdata" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0e/e6/d539949cf87a839bb9080565ebd9a7a7f59f2e44ec3a642fa7604a471dd2/invisible_core-21.16.0.tar.gz", hash = "sha256:71d53305a9e1c8bbf027f29de2b43cc1727e6046c0f22db74e708a7697a448f6", size = 440333, upload-time = "2026-08-27T07:47:02.828Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7b/64/c4ae2f487e8e1c05e509cfa776874e7ef11edd6823ca2c1ddd70efae1e7b/invisible_core-26.17.0.tar.gz", hash = "sha256:ba2fe0dc0561872ec5be43313e1c94f16d4b062f1e982ab596c70811705fc918", size = 443281, upload-time = "2026-08-31T16:01:40.628Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/7a/2e11d0e80d13f45bc04d8cc07a36008c8ef22c39f54ad9d4f062ce90c1f0/invisible_core-21.16.0-py3-none-any.whl", hash = "sha256:fc8fc33fb364a4231722dc80d02e9b15e5245f015d391a9bca2281006e0f7fa8", size = 239217, upload-time = "2026-08-27T07:47:01.507Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/fa/f8440f722c5e2a9e9b037260b90cbeeaa91f0085a015408406dc1daeecae/invisible_core-26.17.0-py3-none-any.whl", hash = "sha256:d3b44254ada72827deb42c2b500ec240aebce49060430ad832c74f16778d3418", size = 242291, upload-time = "2026-08-31T16:01:39.068Z" },
 ]
 
 [[package]]
 name = "invisible-playwright"
-version = "0.7.4"
+version = "0.10.0"
 source = { editable = "tools/invisible_playwright" }
 dependencies = [
     { name = "greenlet" },
@@ -395,13 +395,14 @@ dependencies = [
 requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1" },
     { name = "greenlet", specifier = ">=3.1.1,<4.0.0" },
-    { name = "invisible-core", specifier = "==21.16.0" },
+    { name = "invisible-core", specifier = "==26.17.0" },
     { name = "playwright", marker = "extra == 'dev'", specifier = "==1.61.0" },
     { name = "psutil", specifier = ">=5.9" },
     { name = "pyee", specifier = ">=13,<14" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7" },
     { name = "pytest-rerunfailures", marker = "extra == 'dev'", specifier = ">=14" },
     { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3" },
     { name = "pywinauto", marker = "sys_platform == 'win32'", specifier = ">=0.6.9" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
