@@ -1,6 +1,8 @@
 """Publish photos or a fallback video to TikTok for one account."""
 
+import asyncio
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -11,17 +13,114 @@ from app.use_cases.upload.media_selection import select_preferred_media
 logger = logging.getLogger("UploadMediaUseCase")
 
 
+def _normalize_public_caption(value: Any) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _matches_recent_public_post(
+    videos: list[dict[str, Any]],
+    caption: str,
+    not_before_epoch: int,
+) -> bool:
+    """Match a newly-created public post without accepting an older duplicate."""
+    expected = _normalize_public_caption(caption)
+    if not expected:
+        return False
+    # Studio and the public profile may truncate a long title or slightly edit
+    # an auto-selected hashtag. The unchanged caption prefix is the stable part.
+    needle = expected[:48]
+    for video in videos:
+        try:
+            created_at = int(video.get("create_time") or 0)
+        except (TypeError, ValueError):
+            continue
+        if created_at < int(not_before_epoch) - 30:
+            continue
+        if needle in _normalize_public_caption(video.get("title")):
+            return True
+    return False
+
+
 class TikTokUploadMediaUseCase:
-    def __init__(self, account_repo, browser_service, login_strategy, email_service, step_logger=None):
+    def __init__(
+        self,
+        account_repo,
+        browser_service,
+        login_strategy,
+        email_service,
+        step_logger=None,
+        public_video_client_factory=None,
+    ):
         self.account_repo = account_repo
         self.browser_service = browser_service
         self.login_strategy = login_strategy
         self.email_service = email_service
         self.step_logger = step_logger
+        self.public_video_client_factory = public_video_client_factory
 
     async def _log(self, message: str) -> None:
         if self.step_logger:
             await self.step_logger(message)
+
+    async def _verify_recent_public_post(
+        self,
+        account,
+        caption: str,
+        not_before_epoch: int,
+    ) -> bool:
+        """Recover from a Studio false negative using the exact public profile.
+
+        This fallback runs only after TikTok acknowledged the publish action.
+        It also requires a new creation timestamp, so an older post with the
+        same caption cannot turn a failed upload into a false success.
+        """
+        username = str(getattr(account, "username", "") or "").lstrip("@").strip()
+        sec_uid = str(getattr(account, "tiktok_sec_uid", "") or "").strip()
+        if not username or not sec_uid:
+            return False
+
+        factory = self.public_video_client_factory
+        if factory is None:
+            from app.use_cases.analytics.tiktok_public_video_client import (
+                TikTokPublicVideoClient,
+            )
+
+            factory = TikTokPublicVideoClient
+
+        client = factory()
+        await self._log(
+            "Studio chưa hiển thị bài mới; đang đối chiếu hồ sơ TikTok công khai..."
+        )
+        try:
+            for attempt in range(3):
+                if attempt:
+                    await asyncio.sleep(8 if attempt == 1 else 15)
+                try:
+                    videos, _complete = await client.fetch_videos(
+                        username=username,
+                        sec_uid=sec_uid,
+                        max_videos=10,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[UploadBatch] Public verification attempt %d failed for %s: %s",
+                        attempt + 1,
+                        username,
+                        exc,
+                    )
+                    continue
+                if _matches_recent_public_post(videos, caption, not_before_epoch):
+                    await self._log(
+                        "Đã xác minh bài mới trên hồ sơ TikTok công khai; "
+                        "bỏ qua kết quả âm tính giả từ Studio Posts."
+                    )
+                    return True
+            return False
+        finally:
+            try:
+                await client.close()
+            except Exception:
+                pass
 
     async def execute(
         self,
@@ -163,6 +262,7 @@ class TikTokUploadMediaUseCase:
                 "trong cùng phiên trình duyệt..."
             )
             error = ""
+            publish_started_at = int(time.time())
             try:
                 ok = await self.browser_service.publish_media(
                     image_paths=None,
@@ -180,6 +280,18 @@ class TikTokUploadMediaUseCase:
                 logger.exception(
                     "[UploadBatch] Video %d/%d failed for %s", index, total, account_id
                 )
+
+            if not ok and bool(
+                getattr(self.browser_service, "last_publish_acknowledged", False)
+            ):
+                latest_account = self.account_repo.get_by_id(account_id) or account
+                if await self._verify_recent_public_post(
+                    latest_account,
+                    caption,
+                    publish_started_at,
+                ):
+                    ok = True
+                    error = ""
 
             self._record_upload_result(account_id, ok, error)
             if result_sink is not None:

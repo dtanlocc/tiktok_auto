@@ -124,6 +124,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         self._automation_gate: Optional[asyncio.Event] = None
         self._stream_suspended: bool = False
         self.last_publish_distribution_status: str = "UNKNOWN"
+        # True only after TikTok has accepted a publish action far enough to
+        # redirect, show an explicit success message, or accept ``Post now``.
+        # The upload use case uses this to decide whether a read-only public
+        # profile check is safe after Studio itself produces a false negative.
+        self.last_publish_acknowledged: bool = False
         # A successful For You readiness check issues one short-lived ticket.
         # Upload consumes it before navigating to Studio, preventing callers
         # from bypassing the mandatory home-load gate.
@@ -904,12 +909,13 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             '.tux-dialog__content-message:has-text("khang nghi")'
         )
 
-        # Cac dau hieu ĐA LOGIN BEN (chi hien khi da dang nhap, guest KHONG co):
-        # nav-profile / nav-upload / profile-icon / inbox/messages icon.
+        # Chỉ dùng marker dành riêng cho account đã đăng nhập. TikTok vẫn hiện
+        # nút/link Upload cho guest rồi redirect sang /login, nên nav-upload và
+        # link Studio tuyệt đối không được xem là bằng chứng đăng nhập.
         profile_link_locator = self._page.locator(
-            '[data-e2e="profile-icon"], [data-e2e="nav-profile"], [data-e2e="nav-upload"], '
+            '[data-e2e="profile-icon"], [data-e2e="nav-profile"], '
             '[data-e2e="messages-icon"], [data-e2e="inbox-icon"], '
-            'a[href*="/messages"], a[href*="/tiktokstudio/upload"]'
+            'a[href*="/messages"]'
         )
         login_locator = self._page.locator('[data-e2e="nav-login-button"], button:has-text("Log in"), button:has-text("Dang nhap")')
 
@@ -929,7 +935,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     continue
 
                 if await profile_link_locator.count() > 0:
-                    logger.info(f"[+] Xac minh THANH CONG sau {i+1} giay (Phat hien nav-profile/upload/messages).")
+                    logger.info(f"[+] Xac minh THANH CONG sau {i+1} giay (Phat hien profile/messages cua account).")
                     return True
 
                 # Read only hydration scripts instead of serializing the full DOM.
@@ -964,9 +970,10 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         URL/``interactive``/a generic ``main`` element are deliberately
         insufficient. Studio remains blocked until the load event and critical
         render requests are quiet, feed media is usable, visible images/fonts
-        are ready, loading overlays are gone, and the same feed fingerprint
-        remains stable for several consecutive observations. Continuous video
-        streaming and telemetry are not treated as unfinished page rendering.
+        are ready, and loading overlays are gone for several consecutive
+        observations. Feed media URLs and item order are intentionally allowed
+        to rotate because For You is a live feed. Continuous video streaming and
+        telemetry are not treated as unfinished page rendering.
         """
         async def log(message):
             if step_logger:
@@ -1005,14 +1012,12 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         page.on("requestfinished", on_request_done)
         page.on("requestfailed", on_request_done)
         stable = 0
-        last_fingerprint = None
         last_state: Dict[str, Any] = {}
         try:
             for _ in range(90):
                 await self._wait_automation_gate()
                 if await self.is_captcha_present():
                     stable = 0
-                    last_fingerprint = None
                     await asyncio.sleep(1)
                     continue
                 try:
@@ -1025,8 +1030,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                       rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
                   };
                   const loggedIn = Array.from(document.querySelectorAll(
-                    '[data-e2e="profile-icon"],[data-e2e="nav-profile"],[data-e2e="nav-upload"],'
-                    + '[data-e2e="messages-icon"],[data-e2e="inbox-icon"],a[href*="/messages"],a[href*="/tiktokstudio/upload"]'
+                    '[data-e2e="profile-icon"],[data-e2e="nav-profile"],'
+                    + '[data-e2e="messages-icon"],[data-e2e="inbox-icon"],a[href*="/messages"]'
                   )).some(visible) || Array.from(document.scripts).some(
                     script => /"isLogin"\s*:\s*true/.test(script.textContent || '')
                   );
@@ -1083,9 +1088,12 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         "/foryou" in (self._page.url or "").lower()
                         and _foryou_state_ready(state, critical_quiet)
                     )
-                    fingerprint = state.get("fingerprint")
-                    stable = stable + 1 if good and fingerprint == last_fingerprint else (1 if good else 0)
-                    last_fingerprint = fingerprint if good else None
+                    # The feed legitimately rotates videos, signed CDN URLs and
+                    # scroll height while remaining fully usable. Requiring an
+                    # identical content fingerprint made healthy signed-in feeds
+                    # time out forever. Five consecutive structural-ready states
+                    # still reject transient or partially rendered pages.
+                    stable = stable + 1 if good else 0
                     if stable >= 5:
                         self._foryou_ready_at = time.monotonic()
                         await log("✅ Trang For You đã tải hoàn toàn và ổn định; bắt đầu chuyển sang màn đăng bài.")
@@ -1093,7 +1101,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 except Exception as exc:
                     logger.debug("[UPLOAD] Quan sát For You chưa sẵn sàng: %s", exc)
                     stable = 0
-                    last_fingerprint = None
                 await asyncio.sleep(1)
             logger.warning(
                 "[UPLOAD] For You timeout, critical_inflight=%d, trạng thái cuối: %s",
@@ -2525,6 +2532,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if step_logger:
                 await step_logger(message)
 
+        self.last_publish_acknowledged = False
         await self._handle_upload_interruptions(step_logger=step_logger)
         button = await self._publish_button_in_viewport(
             scheduled=scheduled,
@@ -2543,6 +2551,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             try:
                 current_url = (self._page.url or "").lower()
                 if "/tiktokstudio/content" in current_url:
+                    self.last_publish_acknowledged = True
                     return True
                 # Turn on/Got it and CAPTCHA can appear after the primary Post
                 # click as well. Resolve them before interpreting any success
@@ -2559,6 +2568,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 if not scheduled:
                     post_now_result = await self._confirm_post_now_popup()
                     if post_now_result is True:
+                        self.last_publish_acknowledged = True
                         await log("Đã xác nhận Post now; đang chờ TikTok đăng bài...")
                         continue
                     if post_now_result is None:
@@ -2567,6 +2577,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         await asyncio.sleep(1)
                         continue
                 if await self._publish_success_visible():
+                    self.last_publish_acknowledged = True
                     return True
                 # A coachmark can be injected at the exact moment Post is
                 # clicked. Retry Post only after accepting such a popup; never
@@ -3157,6 +3168,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         reloads = 0
         while time.monotonic() < file_deadline:
             await self._handle_upload_interruptions(step_logger=step_logger)
+            current_url = (str(getattr(self._page, "url", "") or "")).lower()
+            if "/login" in current_url and "redirect_url" in current_url:
+                raise RuntimeError(
+                    "TikTok Studio yeu cau dang nhap lai; cookie hien tai khong co phien Studio hop le."
+                )
             if await self._video_upload_entry_ready():
                 file_ready = True
                 break

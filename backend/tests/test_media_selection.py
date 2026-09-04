@@ -1,11 +1,15 @@
 from pathlib import Path
 from types import SimpleNamespace
 import asyncio
+import time
 
 import pytest
 
 from app.use_cases.upload.media_selection import MAX_IMAGES, select_preferred_media
-from app.use_cases.upload.tiktok_upload_video import TikTokUploadMediaUseCase
+from app.use_cases.upload.tiktok_upload_video import (
+    TikTokUploadMediaUseCase,
+    _matches_recent_public_post,
+)
 
 
 def test_photos_are_preferred_over_video(tmp_path: Path):
@@ -286,3 +290,97 @@ def test_video_batch_logs_the_per_video_failure_reason(tmp_path: Path):
 
     assert result is False
     assert any("Caption editor detached" in message for message in logs)
+
+
+def test_public_post_match_requires_caption_and_new_creation_time():
+    videos = [
+        {
+            "title": "Karen argues with police and refuses to exit vehicle #karen",
+            "create_time": 1_788_506_730,
+        },
+        {
+            "title": "An unrelated new upload",
+            "create_time": 1_788_506_800,
+        },
+    ]
+
+    assert _matches_recent_public_post(
+        videos,
+        "Karen argues with police and refuses to exit vehicle",
+        1_788_506_600,
+    ) is True
+    assert _matches_recent_public_post(
+        videos,
+        "Karen argues with police and refuses to exit vehicle",
+        1_788_506_790,
+    ) is False
+
+
+def test_video_batch_recovers_studio_false_negative_from_public_profile(tmp_path: Path):
+    video = tmp_path / "Karen argues with police.mp4"
+    video.write_bytes(b"video")
+    account = SimpleNamespace(
+        id="account",
+        username="fru86sta2_vi9pl",
+        tiktok_sec_uid="sec-uid",
+        cookies=[],
+        health_status="UNKNOWN",
+        status="IDLE",
+        current_step="",
+        upload_success_count=0,
+        upload_failure_count=0,
+        last_upload_status="NEVER",
+        last_upload_error="",
+        last_upload_at="",
+    )
+
+    class Repo:
+        def get_by_id(self, _account_id):
+            return account
+
+        def save(self, _account):
+            return None
+
+    class Login:
+        async def login(self, *_args, **_kwargs):
+            return True
+
+    class Browser:
+        last_publish_acknowledged = True
+
+        async def prepare_foryou_home(self, **_kwargs):
+            return True
+
+        async def extract_cookies(self):
+            return []
+
+        async def publish_media(self, **_kwargs):
+            return False
+
+    class PublicClient:
+        async def fetch_videos(self, **_kwargs):
+            return ([{
+                "title": "Karen argues with police #karen",
+                "create_time": int(time.time()) + 1,
+            }], True)
+
+        async def close(self):
+            return None
+
+    use_case = TikTokUploadMediaUseCase(
+        Repo(),
+        Browser(),
+        Login(),
+        email_service=None,
+        public_video_client_factory=PublicClient,
+    )
+
+    result = asyncio.run(use_case.execute_video_batch(
+        "account",
+        video_paths=[str(video)],
+        captions=["Karen argues with police"],
+    ))
+
+    assert result is True
+    assert account.upload_success_count == 1
+    assert account.upload_failure_count == 0
