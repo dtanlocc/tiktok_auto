@@ -1,5 +1,5 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, BarChart3, Eye, Heart, LoaderCircle, Search, UserPlus, Users, Video, X } from 'lucide-react';
+import { AlertCircle, BarChart3, Download, ExternalLink, Eye, Gauge, Globe2, Heart, LoaderCircle, MessageCircle, Repeat2, Search, Share2, ShieldAlert, Star, UserPlus, Users, Video, X } from 'lucide-react';
 import { Account, TikTokVideoMetric } from '../types';
 
 interface Props {
@@ -22,6 +22,16 @@ interface AnalyticsResponse {
 
 const numbers = new Intl.NumberFormat('vi-VN');
 const metric = (value: number | null | undefined) => value === null || value === undefined ? '—' : numbers.format(value);
+const videoTime = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'UTC', day: '2-digit', month: 'long', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+});
+const formatVideoTime = (timestamp: number) => videoTime.format(new Date(timestamp * 1000)).replace(' at ', ', ');
+const regionNames: Record<string, string> = {
+  ID: 'Indonesia', US: 'United States', VN: 'Vietnam', TH: 'Thailand',
+  MY: 'Malaysia', PH: 'Philippines', SG: 'Singapore', GB: 'United Kingdom',
+};
+const regionLabel = (value: string) => regionNames[value.toUpperCase()] || value.toUpperCase() || '—';
 
 export const AccountAnalyticsModal: React.FC<Props> = ({ account, onClose, onSync }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -116,8 +126,27 @@ export const AccountAnalyticsModal: React.FC<Props> = ({ account, onClose, onSyn
           <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6" aria-label="Tổng hợp hiệu suất">{cards.map(({ label, value, icon: Icon }) => <article key={label} className="rounded-xl border border-line-soft bg-surface-2 p-3"><Icon className="h-4 w-4 text-brand" aria-hidden="true" /><p className="mt-3 text-[11px] font-semibold text-fg-muted">{label}</p><p className="mt-1 text-lg font-bold tabular-nums text-fg">{value}</p></article>)}</section>
 
           <section className="mt-5 overflow-hidden rounded-xl border border-line-soft">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft p-3"><div><h3 className="font-bold text-fg">Chi tiết video</h3><p className="mt-0.5 text-xs text-fg-muted">{videos.length} video đã lưu · đồng bộ nhanh chỉ cập nhật tổng quan profile; dữ liệu chi tiết cũ được giữ nguyên</p></div><label className="relative"><span className="sr-only">Tìm video</span><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" /><input value={query} onChange={(event) => setQuery(event.target.value)} className="field min-h-11 w-64 max-w-full pl-9" placeholder="Tìm caption hoặc video ID..." /></label></div>
-            {!videos.length ? <div className="p-10 text-center text-sm text-fg-muted">Chưa có dữ liệu chi tiết video. Tổng quan profile phía trên vẫn được đồng bộ nhanh.</div> : <div className="max-h-[46dvh] overflow-auto"><table className="w-full min-w-[860px] text-left text-xs"><thead className="sticky top-0 bg-surface-2 text-[11px] uppercase text-fg-subtle"><tr><th className="px-3 py-2">Video</th><th className="px-3 py-2 text-right">View</th><th className="px-3 py-2 text-right">Like</th><th className="px-3 py-2 text-right">Comment</th><th className="px-3 py-2 text-right">Share</th><th className="px-3 py-2">Đăng lúc</th></tr></thead><tbody className="divide-y divide-line-soft">{videos.map((video) => <tr key={video.video_id} style={{ contentVisibility: 'auto', containIntrinsicSize: '52px' }}><td className="max-w-md px-3 py-2"><p className="truncate font-semibold text-fg" title={video.title}>{video.title || 'Không có caption'}</p><p className="mt-0.5 font-mono text-[10px] text-fg-subtle">{video.video_id}</p></td><td className="px-3 py-2 text-right font-semibold tabular-nums text-fg">{metric(video.view_count)}</td><td className="px-3 py-2 text-right tabular-nums text-fg-muted">{metric(video.like_count)}</td><td className="px-3 py-2 text-right tabular-nums text-fg-muted">{metric(video.comment_count)}</td><td className="px-3 py-2 text-right tabular-nums text-fg-muted">{metric(video.share_count)}</td><td className="px-3 py-2 text-fg-muted">{video.create_time ? new Date(video.create_time * 1000).toLocaleDateString('vi-VN') : '—'}</td></tr>)}</tbody></table></div>}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft p-3"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-fg">Chi tiết video</h3>{account.username && <a href={`https://www.tiktok.com/@${account.username.replace(/^@/, '')}`} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-brand hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"><ExternalLink className="h-3.5 w-3.5" />Profile đã kiểm tra</a>}</div><p className="mt-0.5 text-xs text-fg-muted">{videos.length} video · lấy từ đúng URL công khai tiktok.com/@username, lỗi tạm thời không bị coi là die</p></div><label className="relative"><span className="sr-only">Tìm video</span><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle" /><input value={query} onChange={(event) => setQuery(event.target.value)} className="field min-h-11 w-64 max-w-full pl-9" placeholder="Tìm caption hoặc video ID..." /></label></div>
+            {!videos.length ? <div className="p-10 text-center text-sm text-fg-muted">Chưa lấy được chi tiết video. Hãy bấm Đồng bộ nhanh để thử HTTP và trình duyệt ẩn danh.</div> : <div className="max-h-[54dvh] overflow-auto p-3"><div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{videos.map((video) => {
+              const shadow = (video.shadow_ban || 'UNKNOWN').toUpperCase();
+              const shadowClass = shadow === 'YES' ? 'border-rose-400/30 bg-rose-400/10 text-rose-200' : shadow === 'NO' ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200' : 'border-amber-400/30 bg-amber-400/10 text-amber-200';
+              const shadowLabel = shadow === 'YES' ? 'Yes' : shadow === 'NO' ? 'No' : 'Unknown';
+              const metrics = [
+                { label: 'Lượt xem', value: video.view_count, icon: Eye },
+                { label: 'Lượt thích', value: video.like_count, icon: Heart },
+                { label: 'Bình luận', value: video.comment_count, icon: MessageCircle },
+                { label: 'Yêu thích', value: video.favorite_count, icon: Star },
+                { label: 'Chia sẻ', value: video.share_count, icon: Share2 },
+                { label: 'Đăng lại', value: video.repost_count, icon: Repeat2 },
+                { label: 'Tải xuống', value: video.download_count, icon: Download },
+              ];
+              return <article key={video.video_id} style={{ contentVisibility: 'auto', containIntrinsicSize: '240px' }} className="rounded-xl border border-line-soft bg-surface-2 p-3 shadow-sm">
+                <div className="flex min-w-0 gap-3">{video.cover_url ? <img src={video.cover_url} alt="" loading="lazy" className="h-24 w-16 shrink-0 rounded-lg border border-line object-cover" /> : <div className="grid h-24 w-16 shrink-0 place-items-center rounded-lg border border-line bg-surface"><Video className="h-5 w-5 text-fg-subtle" /></div>}<div className="min-w-0 flex-1"><a href={video.share_url || `https://www.tiktok.com/@${account.username.replace(/^@/, '')}/video/${video.video_id}`} target="_blank" rel="noreferrer" className="line-clamp-2 font-semibold leading-5 text-fg hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand" title={video.title || video.video_id}>{video.title || 'Không có caption'} <ExternalLink className="inline h-3.5 w-3.5" /></a><p className="mt-1 text-xs text-fg-muted">{video.create_time ? formatVideoTime(video.create_time) : 'Chưa rõ thời gian'}{video.duration_seconds !== null && video.duration_seconds !== undefined ? ` · ${video.duration_seconds}s` : ''}</p><p className="mt-1 truncate font-mono text-[10px] text-fg-subtle" title={video.video_id}>{video.video_id}</p></div></div>
+                <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"><div className="rounded-lg border border-line-soft bg-surface px-2.5 py-2"><dt className="flex items-center gap-1 text-fg-subtle"><Gauge className="h-3.5 w-3.5" />Max Quality</dt><dd className="mt-1 font-bold text-fg">{video.max_quality || '—'}</dd></div><div className="rounded-lg border border-line-soft bg-surface px-2.5 py-2"><dt className="flex items-center gap-1 text-fg-subtle"><Video className="h-3.5 w-3.5" />Source</dt><dd className="mt-1 font-bold text-fg">{video.detail_source || '—'}</dd></div><div className="rounded-lg border border-line-soft bg-surface px-2.5 py-2"><dt className="flex items-center gap-1 text-fg-subtle"><Globe2 className="h-3.5 w-3.5" />Region</dt><dd className="mt-1 font-bold text-fg">{regionLabel(video.region)}</dd></div><div className={`rounded-lg border px-2.5 py-2 ${shadowClass}`} title={video.shadow_ban_reason || undefined}><dt className="flex items-center gap-1 opacity-80"><ShieldAlert className="h-3.5 w-3.5" />Shadow ban</dt><dd className="mt-1 font-bold">{shadowLabel}</dd></div></dl>
+                {video.shadow_ban_reason && (shadow !== 'NO' || video.is_reviewing || video.is_private || video.is_taken_down) && <p className="mt-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-2.5 py-2 text-[11px] leading-4 text-amber-100">{video.shadow_ban_reason}</p>}
+                <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-line-soft pt-3">{metrics.map(({ label, value, icon: Icon }) => <li key={label} aria-label={`${label}: ${metric(value)}`} title={label} className="inline-flex items-center gap-1.5 text-xs tabular-nums text-fg-muted"><Icon className="h-3.5 w-3.5 text-fg-subtle" aria-hidden="true" /><span>{metric(value)}</span></li>)}</ul>
+              </article>;
+            })}</div></div>}
           </section>
         </>}
       </div>

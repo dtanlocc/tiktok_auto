@@ -42,7 +42,10 @@ _FAILURE_LOG_INTERVAL = 15
 # ping nao trong _VIEW_TTL giay gan day -> coi nhu KHONG ai xem -> streamer BO QUA
 # viec chup/encode/broadcast hoan toan -> CPU danh het cho cac browser dang chay.
 _last_view_ping: float = 0.0
-_VIEW_TTL: float = 6.0
+# Frontend pings every 3 s. Multiple JPEG decodes can briefly occupy the WebView
+# main thread, so allow several missed ticks instead of stopping every streamer
+# and making a tab remount appear to be the only way to recover it.
+_VIEW_TTL: float = 15.0
 
 
 def note_screen_view_ping() -> None:

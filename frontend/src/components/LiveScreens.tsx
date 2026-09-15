@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, Eye, Maximize2, MonitorPlay, Pause, Radio, X } from 'lucide-react';
 import { Account } from '../types';
+import { isTauriRuntime, listenBackendMessages } from '../services/secureTransport';
 
 interface LiveScreensProps { accounts: Account[]; }
 interface FrameData { username: string; jpeg_b64: string; updatedAt: number; }
@@ -26,37 +27,72 @@ function identity(account: Account | undefined, fallbackUsername: string): strin
 const SmoothFrameImage = memo<SmoothFrameImageProps>(({ jpegBase64, alt, className }) => {
   const nextSource = `data:image/jpeg;base64,${jpegBase64}`;
   const [displayedSource, setDisplayedSource] = useState(nextSource);
+  const displayedSourceRef = useRef(nextSource);
+  const latestSourceRef = useRef(nextSource);
+  const decodeInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
+  const scheduledPumpRef = useRef<number | null>(null);
+  const pumpRef = useRef<() => void>(() => {});
 
-  useEffect(() => {
-    if (nextSource === displayedSource) return;
-    let cancelled = false;
-    let committed = false;
-    let animationFrame: number | null = null;
+  // Frames can arrive faster than WebView can decode them when many accounts
+  // are running. Keep exactly one decode in flight and always pick the newest
+  // waiting frame next. Cancelling the current decode on every incoming frame
+  // causes starvation: no frame ever commits until this component is remounted.
+  latestSourceRef.current = nextSource;
+  pumpRef.current = () => {
+    if (!mountedRef.current || decodeInFlightRef.current) return;
+    const candidate = latestSourceRef.current;
+    if (candidate === displayedSourceRef.current) return;
+
+    decodeInFlightRef.current = true;
     const preloaded = new Image();
     preloaded.decoding = 'async';
+    let settled = false;
 
-    const commitDecodedFrame = () => {
-      if (cancelled || committed) return;
-      committed = true;
-      animationFrame = window.requestAnimationFrame(() => {
-        if (!cancelled) setDisplayedSource(nextSource);
-      });
-    };
-
-    // Keep the old decoded frame visible until the next JPEG is fully ready.
-    // This avoids the black/blank flash caused by replacing <img src> directly.
-    preloaded.src = nextSource;
-    preloaded.decode().then(commitDecodedFrame).catch(() => {
-      if (preloaded.complete && preloaded.naturalWidth > 0) commitDecodedFrame();
-      else preloaded.onload = commitDecodedFrame;
-    });
-
-    return () => {
-      cancelled = true;
+    const finish = (decoded: boolean) => {
+      if (settled) return;
+      settled = true;
       preloaded.onload = null;
-      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
+      preloaded.onerror = null;
+      decodeInFlightRef.current = false;
+      if (!mountedRef.current) return;
+
+      if (decoded) {
+        displayedSourceRef.current = candidate;
+        setDisplayedSource(candidate);
+      }
+      if (latestSourceRef.current !== candidate && scheduledPumpRef.current === null) {
+        scheduledPumpRef.current = window.requestAnimationFrame(() => {
+          scheduledPumpRef.current = null;
+          pumpRef.current();
+        });
+      }
     };
-  }, [displayedSource, nextSource]);
+
+    preloaded.onload = () => finish(true);
+    preloaded.onerror = () => finish(false);
+    preloaded.src = candidate;
+    if (typeof preloaded.decode === 'function') {
+      void preloaded.decode().then(() => finish(true)).catch(() => {
+        if (preloaded.complete) finish(preloaded.naturalWidth > 0);
+      });
+    }
+  };
+
+  useEffect(() => {
+    pumpRef.current();
+  }, [nextSource]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (scheduledPumpRef.current !== null) {
+        window.cancelAnimationFrame(scheduledPumpRef.current);
+        scheduledPumpRef.current = null;
+      }
+    };
+  }, []);
 
   return <img src={displayedSource} alt={alt} className={className} draggable={false} decoding="async" />;
 });
@@ -98,15 +134,34 @@ export const LiveScreens: React.FC<LiveScreensProps> = ({ accounts }) => {
   const pendingFramesRef = useRef<Map<string, FrameData | null>>(new Map());
 
   useEffect(() => {
-    const ping = () => { fetch(`${API_URL}/screen-view-ping`, { method: 'POST' }).catch(() => {}); };
+    let disposed = false;
+    let pingInFlight = false;
+    const ping = () => {
+      if (disposed || pingInFlight) return;
+      pingInFlight = true;
+      void fetch(`${API_URL}/screen-view-ping`, { method: 'POST' })
+        .catch(() => {})
+        .finally(() => { pingInFlight = false; });
+    };
+    const pingWhenVisible = () => { if (document.visibilityState === 'visible') ping(); };
     ping();
     const timer = window.setInterval(ping, 3000);
-    return () => window.clearInterval(timer);
+    window.addEventListener('focus', ping);
+    window.addEventListener('pageshow', ping);
+    document.addEventListener('visibilitychange', pingWhenVisible);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', ping);
+      window.removeEventListener('pageshow', ping);
+      document.removeEventListener('visibilitychange', pingWhenVisible);
+    };
   }, []);
 
   useEffect(() => {
     let disposed = false;
     let socket: WebSocket | null = null;
+    let stopNativeListener: (() => void) | null = null;
     const scheduleFrameFlush = () => {
       if (frameFlushRef.current !== null) return;
       frameFlushRef.current = window.requestAnimationFrame(() => {
@@ -121,30 +176,42 @@ export const LiveScreens: React.FC<LiveScreensProps> = ({ accounts }) => {
         });
       });
     };
+    const handleMessage = (event: MessageEvent<string>) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.event === 'BROWSER_FRAME') {
+          const { account_id, username, jpeg_b64 } = message.data;
+          pendingFramesRef.current.set(account_id, { username, jpeg_b64, updatedAt: Date.now() });
+          scheduleFrameFlush();
+        } else if (message.event === 'BROWSER_FRAME_END') {
+          const { account_id } = message.data;
+          pendingFramesRef.current.set(account_id, null);
+          scheduleFrameFlush();
+          setZoomId((current) => (current === account_id ? null : current));
+        }
+      } catch { /* A later valid frame restores the stream. */ }
+    };
     const connect = () => {
+      if (isTauriRuntime()) {
+        void listenBackendMessages('screens', handleMessage).then((unlisten) => {
+          if (disposed) unlisten();
+          else {
+            stopNativeListener = unlisten;
+            setWsConnected(true);
+          }
+        });
+        return;
+      }
       socket = new WebSocket(WS_URL);
       socket.onopen = () => setWsConnected(true);
-      socket.onmessage = (event: MessageEvent) => {
-        try {
-          const message = JSON.parse(event.data);
-          if (message.event === 'BROWSER_FRAME') {
-            const { account_id, username, jpeg_b64 } = message.data;
-            pendingFramesRef.current.set(account_id, { username, jpeg_b64, updatedAt: Date.now() });
-            scheduleFrameFlush();
-          } else if (message.event === 'BROWSER_FRAME_END') {
-            const { account_id } = message.data;
-            pendingFramesRef.current.set(account_id, null);
-            scheduleFrameFlush();
-            setZoomId((current) => (current === account_id ? null : current));
-          }
-        } catch { /* A later valid frame restores the stream. */ }
-      };
+      socket.onmessage = handleMessage;
       socket.onclose = () => { setWsConnected(false); if (!disposed) reconnectTimerRef.current = window.setTimeout(connect, 2000); };
     };
     connect();
     return () => {
       disposed = true;
       socket?.close();
+      stopNativeListener?.();
       if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
       if (frameFlushRef.current !== null) window.cancelAnimationFrame(frameFlushRef.current);
     };

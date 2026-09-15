@@ -8,6 +8,8 @@ venv/
 ENV/
 env/
 .env
+.env.*
+!.env.example
 .venv
 
 backend/extensions/
@@ -16,6 +18,10 @@ backend/setup_master_profile.py
 # Databases (SQLite)
 *.db
 *.sqlite3
+*.db-wal
+*.db-shm
+cookies*.txt
+test_cookies*.txt
 
 # OS generated files
 .DS_Store
@@ -25,8 +31,24 @@ Thumbs.db
 
 # Invisible Playwright cache
 .cache/
+.codex-staging/
+.runtime/
+.test-tmp/
+.tmp/
+.pytest_cache/
+build/
+backend/.pytest*/
+backend/.test*/
+backend/nuitka-crash-report.xml
+backend/extensions.rar
 
 node_modules/
+frontend/src-tauri/target/
+release/
+control_plane/artifacts/
+control_plane/.secrets/
+deploy/control-plane/operator/
+*.map
 frontend/package.json
 frontend/package-lock.json
 

@@ -14,23 +14,47 @@ from app.infrastructure.automation.playwright_adapter import InvisiblePlaywright
 from app.infrastructure.websocket.socket_manager import ws_manager
 from app.use_cases.auth.tiktok_login import TikTokLoginUseCase
 from app.domain.account_rules import is_sold_account
+from app.security.runtime import DevelopmentEntitlementGate, EntitlementGate, feature_for_task
 import hashlib
 
 logger = logging.getLogger("TaskDispatcher")
 
-_UPLOAD_TASK_TYPES = frozenset({"UPLOAD_MEDIA", "UPLOAD_VIDEO", "UPLOAD_MEDIA_BATCH"})
+class _ResizableConcurrencyGate:
+    """Async gate whose limit changes without replacing held permits."""
 
+    def __init__(self, limit: int):
+        self._limit = max(1, int(limit))
+        self._in_use = 0
+        self._changed = asyncio.Event()
 
-def _upload_route_concurrency_override(task_type: str, use_proxy: bool) -> Optional[int]:
-    """Serialize publishing only when multiple sessions share one proxy.
+    @property
+    def limit(self) -> int:
+        return self._limit
 
-    In direct/VPN mode the UI concurrency value is the user's explicit total
-    concurrency choice, so imposing the old override of one made a displayed
-    value of four misleading: dispatcher coroutines were active while only one
-    browser could publish. Different direct sessions may now use every machine
-    slot selected by the user.
-    """
-    return 1 if use_proxy and task_type in _UPLOAD_TASK_TYPES else None
+    @property
+    def _value(self) -> int:
+        # Compatibility with existing Semaphore diagnostics.
+        return max(0, self._limit - self._in_use)
+
+    def locked(self) -> bool:
+        return self._in_use >= self._limit
+
+    def set_limit(self, limit: int) -> None:
+        self._limit = max(1, int(limit))
+        self._changed.set()
+
+    async def acquire(self) -> bool:
+        while self._in_use >= self._limit:
+            self._changed.clear()
+            await self._changed.wait()
+        self._in_use += 1
+        return True
+
+    def release(self) -> None:
+        if self._in_use <= 0:
+            raise ValueError("Concurrency gate released too many times")
+        self._in_use -= 1
+        self._changed.set()
 
 
 class SoldAccountArchived(RuntimeError):
@@ -56,29 +80,32 @@ def _uuid_to_seed(uuid_str: str) -> int:
 
 class ConcurrentTaskDispatcher:
     """Hệ thống điều phối, xếp hàng và khống chế giới hạn số luồng chạy song song"""
-    def __init__(self, max_tabs: int = settings.MAX_CONCURRENT_TABS):
+    def __init__(
+        self,
+        max_tabs: int = settings.MAX_CONCURRENT_TABS,
+        entitlement_gate: EntitlementGate | None = None,
+    ):
         self.queue: asyncio.Queue = asyncio.Queue()
-        self.max_tabs = max_tabs
-        self.semaphore = asyncio.Semaphore(max_tabs)
+        self.max_tabs = max(1, int(max_tabs))
+        self.entitlement_gate = entitlement_gate or DevelopmentEntitlementGate()
         self.active_tasks: Dict[str, asyncio.Task] = {}
         # account_id -> adapter/browser DANG CHAY. Registry nay cap page hien tai
         # cho streamer mot chieu; khong tao session/profile thu hai.
         self.active_browsers: Dict[str, InvisiblePlaywrightAdapter] = {}
 
         # =================================================================
-        # GIOI HAN DONG THOI THEO TUNG PROXY (moi proxy toi da N luong cung luc)
+        # TONG SO LUONG + KHOA RIENG TUNG PROXY
         # =================================================================
-        # semaphore TONG (self.semaphore) chi khong che tong so luong tren MAY,
-        # KHONG biet 2 luong co dung chung 1 proxy hay khong. proxy_max_concurrent
-        # gioi han so phien chay dong thoi tren MOI proxy (host:port) - duoc thuc
-        # thi qua bo phan phoi proxy dong ben duoi (_acquire_balanced_proxy).
-        self.proxy_max_concurrent: int = max(1, getattr(settings, "PROXY_MAX_CONCURRENT", 2))
+        # Gia tri frontend la tong so task. Gate resize tai cho de dat 3 thi
+        # admission dung 3, khong bi tran co dinh 4 ghi de.
+        self.proxy_max_concurrent: int = min(
+            self.max_tabs,
+            max(1, int(getattr(settings, "PROXY_MAX_CONCURRENT", 1))),
+        )
+        self.semaphore = _ResizableConcurrencyGate(self.proxy_max_concurrent)
 
-        # PHAN PHOI PROXY DONG (khong gan proxy truoc): khi 1 account toi luot chay,
-        # dispatcher chon proxy IT TAI NHAT trong kho (con slot duoi proxy_max_concurrent)
-        # -> tai duoc phan DEU ra cac proxy, khong bi don cuc vao 1 proxy. _proxy_running
-        # dem so phien dang chay tren tung proxy (host:port); _proxy_cond de cho/danh
-        # thuc khi co slot proxy tro trong.
+        # Account luon dung proxy_id da gan. _proxy_running khoa moi host:port o 1
+        # task; _proxy_cond danh thuc account ke tiep dung cung route khi slot tra.
         self._proxy_running: Dict[str, int] = {}
         self._proxy_cond: asyncio.Condition = asyncio.Condition()
         # Cache danh sach proxy (kho proxy hiem khi doi) -> khong mo Session DB moi
@@ -153,6 +180,13 @@ class ConcurrentTaskDispatcher:
         # lo hong TOCTOU cua active_tasks (chi dang ky sau khi da gianh slot tong).
         self._pending_accounts: set = set()
 
+        # Generation fence for emergency stop. The queue loop can already have
+        # removed one item from asyncio.Queue while it waits for a semaphore;
+        # that item is in neither ``queue`` nor ``active_tasks`` and therefore
+        # cannot be found by a drain/cancel pass. Incrementing this value makes
+        # that in-flight admission discard itself before it creates a worker.
+        self._emergency_stop_generation: int = 0
+
     # Khong thay semaphore luc dang chay. Voi MAX_CONCURRENT_TABS=0, semaphore tong
     # duoc tat han; gioi han dong do UI dieu khien theo proxy/che do mang truc tiep.
 
@@ -182,14 +216,16 @@ class ConcurrentTaskDispatcher:
         return recovered
 
     def set_proxy_concurrency_limit(self, limit: int) -> None:
-        """Cap nhat dong so luong chay DONG THOI TREN MOI PROXY tu Web UI. Vi viec
-        chon proxy doc self.proxy_max_concurrent moi lan nen thay doi co hieu luc
-        NGAY cho cac lan gan proxy tiep theo. Danh thuc cac account dang cho slot
-        de chung danh gia lai voi gioi han moi."""
+        """Cap nhat an toan TONG so task song song tu Web UI."""
         if limit <= 0:
             return
-        self.proxy_max_concurrent = limit
-        logger.info(f"[+] Đã cập nhật giới hạn luồng chạy đồng thời / 1 proxy thành: {limit}")
+        effective_limit = min(self.max_tabs, int(limit))
+        self.proxy_max_concurrent = effective_limit
+        self.semaphore.set_limit(effective_limit)
+        logger.info(
+            "[+] Da cap nhat tong so luong chay dong thoi thanh: %s",
+            effective_limit,
+        )
 
         async def _wake():
             async with self._proxy_cond:
@@ -221,50 +257,50 @@ class ConcurrentTaskDispatcher:
             # get_all() tra [] THANH CONG - khac voi truong hop nay.)
             raise RuntimeError(f"Khong doc duoc kho proxy (cache lanh): {str(e)}")
 
-    async def _acquire_balanced_proxy(
+    async def _acquire_assigned_proxy(
         self,
         account_id: str,
+        proxy_id: Optional[str],
         session: Session,
-        max_concurrent_override: Optional[int] = None,
     ):
-        """Chon proxy IT TAI NHAT con slot (duoi proxy_max_concurrent) va tang bo
-        dem. CHO neu tat ca proxy da day. Tra ve (proxy_entity, proxy_key='host:port')
-        hoac (None, None) neu kho KHONG co proxy nao (-> chay truc tiep khong proxy)."""
+        """Giu dung proxy da gan; account cung proxy phai cho nhau."""
         proxies = self._load_all_proxies()
         if not proxies:
             return None, None
+
+        if not proxy_id:
+            raise RuntimeError(
+                "Tai khoan chua duoc gan proxy. Hay dung 'Tu dong phan bo Proxy' truoc khi chay."
+            )
+
+        assigned_proxy = next(
+            (proxy for proxy in proxies if str(proxy.id) == str(proxy_id)),
+            None,
+        )
+        if assigned_proxy is None:
+            raise RuntimeError(
+                "Proxy da gan cho tai khoan khong con ton tai trong kho Proxy."
+            )
+
+        proxy_key = f"{assigned_proxy.host}:{assigned_proxy.port}"
         waited_logged = False
         async with self._proxy_cond:
-            while True:
-                effective_limit = self.proxy_max_concurrent
-                if max_concurrent_override is not None:
-                    effective_limit = min(
-                        effective_limit, max(1, max_concurrent_override)
-                    )
-                best = best_key = best_run = None
-                for p in proxies:
-                    key = f"{p.host}:{p.port}"
-                    run = self._proxy_running.get(key, 0)
-                    if run < effective_limit and (best is None or run < best_run):
-                        best, best_key, best_run = p, key, run
-                if best is not None:
-                    self._proxy_running[best_key] = self._proxy_running.get(best_key, 0) + 1
-                    return best, best_key
-                # Tat ca proxy da day -> cho slot tro trong.
+            while self._proxy_running.get(proxy_key, 0) >= 1:
                 if not waited_logged:
                     waited_logged = True
                     await self._update_account_status(
                         account_id, "QUEUED",
-                        step_desc=f"⏳ Mọi proxy đang đủ {effective_limit} luồng phù hợp, chờ slot trống...",
+                        step_desc="Đang chờ account trước trên cùng proxy hoàn tất...",
                         session=session,
                     )
                 await self._proxy_cond.wait()
+            self._proxy_running[proxy_key] = 1
+            return assigned_proxy, proxy_key
 
     async def _acquire_direct_slot(
         self,
         account_id: str,
         session: Session,
-        max_concurrent_override: Optional[int] = None,
     ) -> bool:
         """CHE DO KHONG PROXY (USE_PROXY=False): gianh 1 slot trong so luong toi da
         do NGUOI DUNG dat tren UI (o 'số luồng', chinh la self.proxy_max_concurrent).
@@ -274,10 +310,6 @@ class ConcurrentTaskDispatcher:
         async with self._proxy_cond:
             while True:
                 effective_limit = self.proxy_max_concurrent
-                if max_concurrent_override is not None:
-                    effective_limit = min(
-                        effective_limit, max(1, max_concurrent_override)
-                    )
                 if self._direct_running < effective_limit:
                     self._direct_running += 1
                     return True
@@ -374,6 +406,10 @@ class ConcurrentTaskDispatcher:
         thai is_running=True sau khi goi ham nay, tuc la van san sang nhan
         va xu ly task MOI duoc submit sau do (khac voi stop() dung de tat
         han dispatcher luc app shutdown)."""
+        # Fence off a payload which the dispatcher may already have dequeued
+        # but has not yet registered in active_tasks.
+        self._emergency_stop_generation += 1
+
         # Dam bao khong co task nao dang "ket" o trang thai cho pause khi bi huy
         self.global_pause_event.set()
         self.is_globally_paused = False
@@ -382,10 +418,12 @@ class ConcurrentTaskDispatcher:
         self.paused_account_ids.clear()
 
         cancelled_count = 0
+        cancelled_tasks: list[asyncio.Task] = []
         for account_id, task in list(self.active_tasks.items()):
             if not task.done():
                 task.cancel()
                 cancelled_count += 1
+                cancelled_tasks.append(task)
 
         # Xoa sach hang doi cac task CHUA duoc lay ra xu ly
         drained_count = 0
@@ -401,6 +439,14 @@ class ConcurrentTaskDispatcher:
         # nhung task da bi drain khoi hang doi thi khong bao gio toi finally ->
         # clear het de khong ket "dang ban" gia.
         self._pending_accounts.clear()
+
+        # Let cancelled workers release their semaphore permits, then give the
+        # queue loop one turn to observe the generation fence and discard the
+        # single payload which may have been waiting between queue.get() and
+        # active_tasks registration.
+        if cancelled_tasks:
+            await asyncio.gather(*cancelled_tasks, return_exceptions=True)
+        await asyncio.sleep(0)
 
         logger.info(
             f"[!] [EMERGENCY STOP] Da huy {cancelled_count} task dang chay "
@@ -461,7 +507,8 @@ class ConcurrentTaskDispatcher:
             "paused_account_ids": list(self.paused_account_ids),
             "active_count": len(self.active_tasks),
             "queued_count": self.queue.qsize(),
-            "proxy_max_concurrent": self.proxy_max_concurrent,   # so luong toi da / 1 proxy
+            "proxy_max_concurrent": self.proxy_max_concurrent,   # ten API cu; nay la tong so luong
+            "concurrency_limit": self.proxy_max_concurrent,
             "machine_max_tabs": self.max_tabs,                   # tran tong toan may
         }
 
@@ -476,6 +523,11 @@ class ConcurrentTaskDispatcher:
         extra_config: cấu hình bổ sung tuỳ loại tác vụ - hiện dùng cho
         INTERACT_VIDEOS (mode, hashtag, duration_minutes, xác suất tym/cmt,
         danh sách câu bình luận...)."""
+        self.entitlement_gate.require(
+            feature_for_task(task_type),
+            account_count=1,
+            tab_count=self.proxy_max_concurrent,
+        )
         # CHONG TRUNG: neu account nay dang xep hang / dang chay thi BO QUA (khong
         # mo 2 browser cho cung 1 account). Xoa khoi _pending_accounts o finally worker.
         with Session(engine) as guard_session:
@@ -534,6 +586,7 @@ class ConcurrentTaskDispatcher:
     async def _process_queue_loop(self) -> None:
         while self.is_running:
             try:
+                admission_generation = self._emergency_stop_generation
                 task_payload = await self.queue.get()
                 account_id = task_payload["account_id"]
                 task_type = task_payload["task_type"]
@@ -550,6 +603,14 @@ class ConcurrentTaskDispatcher:
                     self.global_task_counter += 1
 
                 await self.semaphore.acquire()
+                if admission_generation != self._emergency_stop_generation:
+                    # Emergency stop happened after queue.get() but before a
+                    # worker could be registered. Do not let this hidden item
+                    # escape the stop operation and unexpectedly open a browser.
+                    self.semaphore.release()
+                    self._pending_accounts.discard(account_id)
+                    self.queue.task_done()
+                    continue
                 # Giua acquire() va create_task() KHONG duoc co lenh nao co the raise.
                 worker_task = asyncio.create_task(
                     self._execute_worker_with_semaphore(account_id, task_type, assigned_avatar, extra_config)
@@ -598,7 +659,19 @@ class ConcurrentTaskDispatcher:
     async def _execute_worker_with_semaphore(
         self, account_id: str, task_type: str, avatar_path: Optional[str], extra_config: Optional[Dict[str, Any]] = None
     ) -> None:
+        # A batch created while globally/account-paused must not spend a proxy
+        # slot or launch Firefox before the user resumes it. Later step_logger
+        # checkpoints still pause work safely between operations.
+        await self._wait_if_paused(account_id)
         logger.info(f"[*] Khởi chạy trình duyệt cho tài khoản: {account_id} | Tác vụ: {task_type}")
+        # A queued task can reach admission after its lease expires. Re-check
+        # before allocating a browser; once admitted, the task reaches its safe
+        # completion/cleanup boundary instead of being killed mid-operation.
+        self.entitlement_gate.require(
+            feature_for_task(task_type),
+            account_count=1,
+            tab_count=self.proxy_max_concurrent,
+        )
         
         with Session(engine) as session:
             account_repo = SQLiteAccountRepository(session)
@@ -653,35 +726,22 @@ class ConcurrentTaskDispatcher:
                     return
 
                 # =========================================================
-                # GAN PROXY DONG luc chay (KHONG dung proxy gan san truoc): chon
-                # proxy IT TAI NHAT trong kho, ton trong gioi han self.proxy_max_concurrent
-                # luong / proxy. -> tu dong phan DEU cac account dang chay ra cac
-                # proxy, khong bi don cuc vao 1 proxy. CHO neu moi proxy da day.
+                # Dung dung proxy da gan cho account. Neu account khac dang giu
+                # cung host:port thi cho route do, khong nhay sang proxy dang ranh.
                 # =========================================================
                 # USE_PROXY=False -> KHONG gan proxy, chay TRUC TIEP qua mang that
                 # (dung khi bat VPN toan may). Bat lai bang cach set USE_PROXY=True.
                 proxy_config = None
                 proxy_entity, proxy_key = None, None
-                # Proxy mode keeps one publisher per proxy IP while allowing
-                # different proxies in parallel. Direct/VPN mode obeys the UI
-                # total-concurrency value instead of silently forcing one.
                 use_proxy = bool(getattr(settings, "USE_PROXY", True))
-                route_override = _upload_route_concurrency_override(
-                    task_type, use_proxy
-                )
                 if use_proxy:
-                    proxy_entity, proxy_key = await self._acquire_balanced_proxy(
+                    proxy_entity, proxy_key = await self._acquire_assigned_proxy(
                         account_id,
+                        account.proxy_id if account else None,
                         session,
-                        max_concurrent_override=route_override,
                     )
                 else:
-                    # KHONG proxy -> van phai TON TRONG o "số luồng" tren UI.
-                    await self._acquire_direct_slot(
-                        account_id,
-                        session,
-                        max_concurrent_override=route_override,
-                    )
+                    await self._acquire_direct_slot(account_id, session)
                     direct_slot_held = True
                 proxy_acquired = proxy_key is not None
                 if proxy_entity is not None:
@@ -690,15 +750,6 @@ class ConcurrentTaskDispatcher:
                         "username": proxy_entity.username,
                         "password": proxy_entity.password,
                     }
-                    # Ghi lai proxy THUC SU dung lan nay vao account (de UI hien dung
-                    # + biet no dang chay qua proxy nao). Chi luu + bao neu khac cu.
-                    if account and account.proxy_id != proxy_entity.id:
-                        account.proxy_id = proxy_entity.id
-                        account_repo.save(account)
-                        await ws_manager.broadcast({
-                            "event": "ACCOUNT_PROXY_CHANGED",
-                            "data": {"id": account_id, "proxy_id": proxy_entity.id},
-                        })
 
                 # =========================================================
                 # GIÃN CÁCH THEO PROXY: không mở 2 phiên liên tiếp trên CÙNG 1
@@ -878,8 +929,15 @@ class ConcurrentTaskDispatcher:
                                 timeout=upload_timeout,
                             )
                     except asyncio.TimeoutError as exc:
+                        timed_out_account = account_repo.get_by_id(account_id)
+                        last_step = (
+                            timed_out_account.current_step
+                            if timed_out_account and timed_out_account.current_step
+                            else "không xác định"
+                        )
                         raise RuntimeError(
-                            f"Upload vuot qua {upload_timeout}s; da dong rieng browser bi treo de tra slot."
+                            f"Upload timeout sau {upload_timeout}s tại bước: "
+                            f"{last_step}. Đã đóng riêng browser bị treo để trả slot."
                         ) from exc
 
                 if success:
@@ -892,7 +950,11 @@ class ConcurrentTaskDispatcher:
                     # con la "RUNNING"/"QUEUED" do chinh lan chay nay set luc dau ->
                     # account se ket cung o RUNNING mai. 1 tac vu THANH CONG khong bao
                     # gio duoc ket thuc o trang thai dang chay -> ep ve SUCCESS.
-                    if final_status in ("RUNNING", "QUEUED", "IDLE"):
+                    # A successful task must not inherit ERROR from an older
+                    # run. Upload batches now set SUCCESS themselves, but keep
+                    # this normalization as a defensive boundary for every
+                    # successful use case.
+                    if final_status in ("RUNNING", "QUEUED", "IDLE", "ERROR"):
                         final_status = "SUCCESS"
 
                     # ĐỒNG BỘ SỨC KHỎE NICK: Bắt buộc truyền thêm health_status="ALIVE" khi thành công
@@ -1024,7 +1086,7 @@ class ConcurrentTaskDispatcher:
                     status_val = "ERROR"
                     short_error = "Lỗi kẹt"
                     if "timeout" in str(e).lower():
-                        short_error = "Lỗi: Timeout"
+                        short_error = str(e)[:500]
                     elif "proxy" in str(e).lower() or "connection" in str(e).lower():
                         short_error = "Lỗi: Proxy kẹt"
                     
@@ -1070,6 +1132,12 @@ class ConcurrentTaskDispatcher:
                 # de "cho pause" nua.
                 self.account_pause_events.pop(account_id, None)
                 self.paused_account_ids.discard(account_id)
+                try:
+                    await log_step(
+                        "Đã đóng trình duyệt; luồng và proxy của account đã được giải phóng."
+                    )
+                except Exception:
+                    pass
 
     # BƯỚC A: NÂNG CẤP HÀM UPDATE STATUS ĐỂ CHẤP NHẬN CẬP NHẬT SỨC KHỎE
     async def _update_account_status(

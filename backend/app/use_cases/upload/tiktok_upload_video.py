@@ -8,11 +8,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 from app.core.exceptions import StudioReauthenticationRequired
+from app.core.tiktok_cookies import (
+    TIKTOK_AUTH_COOKIE_NAMES as _TIKTOK_AUTH_COOKIE_NAMES,
+    has_tiktok_auth_cookies as _has_tiktok_auth_cookies,
+)
 from app.use_cases.upload.media_selection import select_preferred_media
 
 
 logger = logging.getLogger("UploadMediaUseCase")
-
 
 def _normalize_public_caption(value: Any) -> str:
     return " ".join(str(value or "").split()).casefold()
@@ -64,6 +67,121 @@ class TikTokUploadMediaUseCase:
     async def _log(self, message: str) -> None:
         if self.step_logger:
             await self.step_logger(message)
+
+    async def _persist_authenticated_cookie_snapshot(self, account_id: str, account):
+        """Replace stored cookies only with a snapshot that still has auth."""
+        try:
+            fresh = await self.browser_service.extract_cookies()
+        except Exception as exc:
+            logger.warning("[Upload] Khong doc duoc cookie moi %s: %s", account_id, exc)
+            return account
+
+        if not _has_tiktok_auth_cookies(fresh):
+            logger.warning(
+                "[Upload] Bo qua snapshot cookie thieu auth cua %s; giu cookie cu.",
+                account_id,
+            )
+            return account
+
+        latest = self.account_repo.get_by_id(account_id) or account
+        latest.cookies = fresh
+        latest.health_status = "ALIVE"
+        self.account_repo.save(latest)
+        return latest
+
+    async def _persist_cookies_after_login_if_needed(self, account_id: str, account):
+        # Reusing a valid cookie must not rewrite the DB with Studio's temporary
+        # cookie jar. Credential/OTP login is the path that creates new auth.
+        if getattr(self.login_strategy, "last_login_method", None) != "CREDENTIAL":
+            return account
+        return await self._persist_authenticated_cookie_snapshot(account_id, account)
+
+    async def _checkpoint_cookies_before_browser_close(self, account_id: str, account):
+        """Persist the live, verified session after a successful publish.
+
+        TikTok can refresh the auth cookie while Studio is open. Keeping only
+        the pre-upload cookie loses that refreshed session when the temporary
+        browser profile is deleted. Return to For You first so a Studio-only or
+        logged-out cookie jar can never replace the last known usable jar.
+        """
+        try:
+            await self._log(
+                "Bài đăng đã xong; đang xác nhận lại phiên For You và lưu cookie trước khi đóng browser..."
+            )
+            home_ready = await self.browser_service.prepare_foryou_home(
+                step_logger=None
+            )
+            if not home_ready:
+                logger.warning(
+                    "[Upload] Khong checkpoint cookie %s: For You khong xac nhan dang nhap; giu cookie cu.",
+                    account_id,
+                )
+                return account
+
+            identity_validator = getattr(
+                self.browser_service, "validate_authenticated_identity", None
+            )
+            if identity_validator is not None and not await identity_validator(
+                account.username
+            ):
+                logger.warning(
+                    "[Upload] Khong checkpoint cookie %s: identity sau publish khong khop @%s.",
+                    account_id,
+                    account.username,
+                )
+                await self._log(
+                    "⚠️ Không lưu đè cookie sau đăng vì chưa xác minh đúng username."
+                )
+                return account
+
+            previous = account.cookies if account else []
+            previous_auth = {
+                (cookie.get("name"), cookie.get("domain"), cookie.get("value"))
+                for cookie in previous or []
+                if isinstance(cookie, dict)
+                and cookie.get("name") in _TIKTOK_AUTH_COOKIE_NAMES
+                and cookie.get("value")
+            }
+            fresh = await self.browser_service.extract_cookies()
+            if not _has_tiktok_auth_cookies(fresh):
+                logger.warning(
+                    "[Upload] Snapshot sau publish cua %s thieu sessionid; giu cookie cu.",
+                    account_id,
+                )
+                await self._log(
+                    "⚠️ Phiên For You vẫn mở nhưng snapshot thiếu sessionid; đã giữ nguyên cookie cũ."
+                )
+                return account
+
+            updated = self.account_repo.get_by_id(account_id) or account
+            updated.cookies = fresh
+            updated.health_status = "ALIVE"
+            self.account_repo.save(updated)
+            updated_auth = {
+                (cookie.get("name"), cookie.get("domain"), cookie.get("value"))
+                for cookie in (updated.cookies if updated else []) or []
+                if isinstance(cookie, dict)
+                and cookie.get("name") in _TIKTOK_AUTH_COOKIE_NAMES
+                and cookie.get("value")
+            }
+            logger.info(
+                "[Upload] Da checkpoint cookie sau publish cho %s (auth_refreshed=%s).",
+                account_id,
+                previous_auth != updated_auth,
+            )
+            await self._log(
+                "✅ Đã xác nhận For You còn đăng nhập và lưu cookie phiên mới trước khi đóng browser."
+            )
+            return updated
+        except Exception as exc:
+            # Cookie checkpoint is defensive persistence after the post was
+            # already verified. Never turn a successful post into a failure.
+            logger.warning(
+                "[Upload] Khong checkpoint duoc cookie sau publish %s: %s; giu cookie cu.",
+                account_id,
+                exc,
+            )
+            return account
 
     async def _verify_recent_public_post(
         self,
@@ -160,20 +278,7 @@ class TikTokUploadMediaUseCase:
                 "Đăng nhập OTP xong nhưng trang For You chưa sẵn sàng để thử lại Studio."
             )
 
-        try:
-            fresh = await self.browser_service.extract_cookies()
-            if fresh:
-                latest = self.account_repo.get_by_id(account_id) or account
-                latest.cookies = fresh
-                latest.health_status = "ALIVE"
-                self.account_repo.save(latest)
-                account = latest
-        except Exception as exc:
-            logger.warning(
-                "[UploadBatch] Khong luu duoc cookie sau Studio re-auth %s: %s",
-                account_id,
-                exc,
-            )
+        account = await self._persist_authenticated_cookie_snapshot(account_id, account)
         await self._log(
             "Đăng nhập OTP lại thành công; đang thử lại TikTok Studio một lần..."
         )
@@ -288,15 +393,9 @@ class TikTokUploadMediaUseCase:
                     "Trang For You chưa tải xong hoặc chưa xác nhận được phiên đăng nhập."
                 )
 
-            try:
-                fresh = await self.browser_service.extract_cookies()
-                if fresh:
-                    account = self.account_repo.get_by_id(account_id)
-                    account.cookies = fresh
-                    account.health_status = "ALIVE"
-                    self.account_repo.save(account)
-            except Exception as exc:
-                logger.warning("[UploadBatch] Không lưu được cookie %s: %s", account_id, exc)
+            account = await self._persist_cookies_after_login_if_needed(
+                account_id, account
+            )
         except Exception as exc:
             for path in resolved_paths:
                 self._record_upload_result(account_id, False, str(exc))
@@ -311,6 +410,7 @@ class TikTokUploadMediaUseCase:
         total = len(resolved_paths)
         successes = 0
         failures: list[str] = []
+        failure_codes: list[str] = []
         for index, (path, caption) in enumerate(
             zip(resolved_paths, resolved_captions), start=1
         ):
@@ -319,6 +419,7 @@ class TikTokUploadMediaUseCase:
                 "trong cùng phiên trình duyệt..."
             )
             error = ""
+            failure_code = ""
             publish_started_at = int(time.time())
             try:
                 for publish_attempt in range(2):
@@ -340,15 +441,39 @@ class TikTokUploadMediaUseCase:
                             account,
                         )
                 if not ok:
-                    error = "TikTok không xác nhận bài đăng trong Studio Posts."
+                    failure_code = str(getattr(
+                        self.browser_service, "last_publish_failure_code", ""
+                    ) or "")
+                    failure_detail = str(getattr(
+                        self.browser_service, "last_publish_failure_detail", ""
+                    ) or "")
+                    if failure_code == "VIDEO_DUPLICATE":
+                        error = (
+                            "VIDEO_TRUNG: TikTok báo video đã tồn tại; "
+                            "Post now không xuất hiện."
+                        )
+                    elif failure_code == "VIDEO_SWALLOWED":
+                        error = (
+                            "VIDEO_BI_NUOT: Đã bấm Post now nhưng video không "
+                            "xuất hiện trong Studio Posts."
+                        )
+                    else:
+                        error = "TikTok không xác nhận bài đăng trong Studio Posts."
+                    if failure_detail:
+                        error = f"{error} {failure_detail}"
             except Exception as exc:
                 ok = False
                 error = str(exc)
+                failure_code = str(getattr(
+                    self.browser_service, "last_publish_failure_code", ""
+                ) or "")
                 logger.exception(
                     "[UploadBatch] Video %d/%d failed for %s", index, total, account_id
                 )
 
-            if not ok and bool(
+            if not ok and failure_code not in {
+                "VIDEO_DUPLICATE", "VIDEO_SWALLOWED"
+            } and bool(
                 getattr(self.browser_service, "last_publish_acknowledged", False)
             ):
                 latest_account = self.account_repo.get_by_id(account_id) or account
@@ -359,6 +484,7 @@ class TikTokUploadMediaUseCase:
                 ):
                     ok = True
                     error = ""
+                    failure_code = ""
 
             self._record_upload_result(account_id, ok, error)
             if result_sink is not None:
@@ -366,6 +492,7 @@ class TikTokUploadMediaUseCase:
                     "video_path": path,
                     "success": bool(ok),
                     "error": error,
+                    "code": failure_code,
                 })
             if ok:
                 successes += 1
@@ -375,24 +502,60 @@ class TikTokUploadMediaUseCase:
             else:
                 failure_reason = error or "không xác nhận được"
                 failures.append(f"{Path(path).name}: {failure_reason}")
-                await self._log(
-                    f"[{index}/{total}] ❌ {Path(path).name}: {failure_reason}"
-                )
+                if failure_code:
+                    failure_codes.append(failure_code)
+                if failure_code == "VIDEO_DUPLICATE":
+                    await self._log(
+                        f"[{index}/{total}] ⚠️ VIDEO_TRUNG · {Path(path).name}: "
+                        "đang yêu cầu hàng đợi tìm video khác."
+                    )
+                elif failure_code == "VIDEO_SWALLOWED":
+                    await self._log(
+                        f"[{index}/{total}] ❌ VIDEO_BI_NUOT · {Path(path).name}: "
+                        "không xuất hiện trong Studio Posts."
+                    )
+                else:
+                    await self._log(
+                        f"[{index}/{total}] ❌ {Path(path).name}: {failure_reason}"
+                    )
                 if index < total:
                     await self._log(
                         f"[{index}/{total}] Video lỗi; tiếp tục video kế tiếp trong cùng phiên..."
                     )
 
+        if successes:
+            latest_account = self.account_repo.get_by_id(account_id) or account
+            account = await self._checkpoint_cookies_before_browser_close(
+                account_id, latest_account
+            )
+
         account = self.account_repo.get_by_id(account_id)
         if account:
             if failures:
+                account.status = "ERROR"
                 account.last_upload_status = "FAILED"
                 account.last_upload_error = "; ".join(failures)[:500]
-                account.current_step = (
-                    f"⚠ Đã đăng {successes}/{total} video trong cùng phiên; "
-                    f"lỗi {len(failures)} video"
-                )
+                if "VIDEO_SWALLOWED" in failure_codes:
+                    account.current_step = (
+                        f"❌ VIDEO_BI_NUOT · Đã đăng {successes}/{total}; "
+                        "video không xuất hiện trong Studio Posts"
+                    )
+                elif "VIDEO_DUPLICATE" in failure_codes:
+                    account.current_step = (
+                        f"⚠️ VIDEO_TRUNG · Đã đăng {successes}/{total}; "
+                        "TikTok không hiện Post now"
+                    )
+                else:
+                    account.current_step = (
+                        f"⚠ Đã đăng {successes}/{total} video trong cùng phiên; "
+                        f"lỗi {len(failures)} video"
+                    )
             else:
+                # Do not leave a previous task's ERROR/QUEUED state attached to
+                # a batch which Studio Posts has just verified successfully.
+                # The dispatcher reloads this field to choose the final UI
+                # state, and the use case is also invoked directly by tools.
+                account.status = "SUCCESS"
                 account.last_upload_status = "SUCCESS"
                 account.last_upload_error = ""
                 account.current_step = f"✅ Đã đăng {successes}/{total} video trong cùng phiên"
@@ -441,24 +604,29 @@ class TikTokUploadMediaUseCase:
         if not home_ready:
             raise Exception("Trang For You chưa tải xong hoặc chưa xác nhận được phiên đăng nhập.")
 
-        try:
-            fresh = await self.browser_service.extract_cookies()
-            if fresh:
-                account = self.account_repo.get_by_id(account_id)
-                account.cookies = fresh
-                account.health_status = "ALIVE"
-                self.account_repo.save(account)
-        except Exception as exc:
-            logger.warning("[Upload] Không lưu được cookie %s: %s", account_id, exc)
+        account = await self._persist_cookies_after_login_if_needed(account_id, account)
 
-        ok = await self.browser_service.publish_media(
-            image_paths=list(media.image_paths) or None,
-            video_path=media.video_path,
-            caption=caption,
-            schedule_at=schedule_at,
-            step_logger=self.step_logger,
-        )
+        for publish_attempt in range(2):
+            try:
+                ok = await self.browser_service.publish_media(
+                    image_paths=list(media.image_paths) or None,
+                    video_path=media.video_path,
+                    caption=caption,
+                    schedule_at=schedule_at,
+                    step_logger=self.step_logger,
+                )
+                break
+            except StudioReauthenticationRequired:
+                if publish_attempt > 0:
+                    raise
+                account = await self._reauthenticate_for_studio(
+                    account_id,
+                    account,
+                )
         if ok:
+            account = await self._checkpoint_cookies_before_browser_close(
+                account_id, account
+            )
             account = self.account_repo.get_by_id(account_id)
             account.status = "SUCCESS"
             distribution = getattr(
@@ -476,6 +644,17 @@ class TikTokUploadMediaUseCase:
                 account.current_step = f"✅ Đã đăng {len(media.image_paths)} ảnh"
             else:
                 account.current_step = "✅ Đã đăng video"
+            self.account_repo.save(account)
+        else:
+            failure_code = str(getattr(
+                self.browser_service, "last_publish_failure_code", ""
+            ) or "")
+            if failure_code == "VIDEO_DUPLICATE":
+                account.current_step = "⚠️ VIDEO_TRUNG · TikTok không hiện Post now"
+            elif failure_code == "VIDEO_SWALLOWED":
+                account.current_step = (
+                    "❌ VIDEO_BI_NUOT · Không xuất hiện trong Studio Posts"
+                )
             self.account_repo.save(account)
         return ok
 

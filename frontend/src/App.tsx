@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { Account, AppTab } from './types';
+import { isTauriRuntime, listenBackendMessages } from './services/secureTransport';
 
 // Nhập khẩu các thành phần đã mô-đun hóa
 import { NavSidebar } from './components/NavSidebar';
@@ -31,7 +32,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('accounts');
   
   // Bộ điều khiển trung tâm (Control Panel)
-  // concurrency = SỐ LUỒNG TỐI ĐA / 1 PROXY (thay cho "số luồng tổng" trước đây).
+  // concurrency = TỔNG số luồng; proxy mode khóa tối đa 1 account/host:port.
   const [concurrency, setConcurrency] = useState<number>(8);
   const [avatarFolder, setAvatarFolder] = useState<string>('');
 
@@ -176,12 +177,17 @@ export default function App() {
           const total = Number(message.data?.total) || 0;
           const updated = Number(message.data?.updated) || 0;
           const cached = Number(message.data?.cached) || 0;
+          const videoCached = Number(message.data?.video_cached) || 0;
           const failed = Number(message.data?.failed) || 0;
           const skipped_sold = Number(message.data?.skipped_sold) || 0;
+          const httpRequests = Number(message.data?.video_http_requests) || 0;
+          const httpRetries = Number(message.data?.video_http_retries) || 0;
+          const browserFallbacks = (Number(message.data?.browser_profile_fallbacks) || 0)
+            + (Number(message.data?.video_browser_fallbacks) || 0);
           useAppStore.getState().addLog({
             time: new Date().toLocaleTimeString(),
             username: 'System',
-            message: `Đồng bộ nhanh xong ${completed}/${total}: cập nhật ${updated}, cache ${cached}, lỗi ${failed}, bỏ qua ĐÃ BÁN ${skipped_sold}.`,
+            message: `Đồng bộ nhanh xong ${completed}/${total}: cập nhật ${updated}, cache profile ${cached}, cache video ${videoCached}, HTTP ${httpRequests} (retry ${httpRetries}), browser fallback ${browserFallbacks}, lỗi ${failed}.`,
           });
           pushTaskCompletionNotice({
             tone: failed > 0 ? (failed >= completed && completed > 0 ? 'error' : 'warning') : 'success',
@@ -191,6 +197,9 @@ export default function App() {
               { label: 'Đã xử lý', value: completed },
               { label: 'Cập nhật', value: updated },
               { label: 'Dùng cache', value: cached },
+              { label: 'Cache video', value: videoCached },
+              { label: 'HTTP video', value: httpRequests },
+              { label: 'Browser fallback', value: browserFallbacks },
               { label: 'Lỗi', value: failed },
               { label: 'Bỏ qua đã bán', value: skipped_sold },
             ],
@@ -203,8 +212,21 @@ export default function App() {
 
     let disposed = false;
     let activeWs: WebSocket | null = null;
+    let stopNativeListener: (() => void) | null = null;
     let reconnectTimer: number | null = null;
     const connect = () => {
+      if (isTauriRuntime()) {
+        void listenBackendMessages('events', handleWsEvents).then((unlisten) => {
+          if (disposed) {
+            unlisten();
+            return;
+          }
+          stopNativeListener = unlisten;
+          useAppStore.getState().setWsConnected(true);
+          loadData();
+        });
+        return;
+      }
       activeWs = new WebSocket('ws://127.0.0.1:9000/ws');
       activeWs.onopen = () => {
         useAppStore.getState().setWsConnected(true);
@@ -228,6 +250,7 @@ export default function App() {
     return () => {
       disposed = true;
       activeWs?.close();
+      stopNativeListener?.();
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       document.removeEventListener('click', closeMenu);
     };
@@ -249,16 +272,22 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Lưu ngay giá trị "số luồng tối đa / 1 proxy" xuống backend khi user chỉnh.
+  // Lưu ngay tổng số luồng tối đa xuống backend khi user chỉnh.
   const handleSetProxyConcurrency = async (val: number) => {
     setConcurrency(val); // cập nhật UI ngay
     if (!val || val < 1) return;
     try {
-      await fetch('http://127.0.0.1:9000/api/v1/tasks/proxy-concurrency', {
+      const response = await fetch('http://127.0.0.1:9000/api/v1/tasks/proxy-concurrency', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: val }),
       });
+      if (response.ok) {
+        const data = await response.json();
+        if (typeof data?.concurrency_limit === 'number') {
+          setConcurrency(data.concurrency_limit);
+        }
+      }
     } catch {
       // im lặng - sẽ được áp dụng lại khi bấm chạy tác vụ
     }
@@ -774,7 +803,7 @@ export default function App() {
     const response = await fetch('http://127.0.0.1:9000/api/v1/tasks/sync-analytics', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_ids: operationalIds, concurrency_limit: Math.min(16, Math.max(8, concurrency * 2)) }),
+      body: JSON.stringify({ account_ids: operationalIds, concurrency_limit: Math.min(4, Math.max(2, concurrency)) }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || 'Không thể bắt đầu đồng bộ hiệu suất.');
@@ -936,7 +965,7 @@ export default function App() {
                       <Copy className="w-3.5 h-3.5" /> Copy acc{selectedAccountIds.length > 0 ? ` (${selectedAccountIds.length})` : ''}
                     </button>
                     {selectedAccountIds.length > 0 && (
-                      <button onClick={() => { void handleSyncAnalytics().catch((reason) => alert(reason instanceof Error ? reason.message : 'Không thể đồng bộ hiệu suất TikTok.')); }} disabled={!selectedAnalyticsCount} className="btn btn-sm bg-sky-500/10 text-sky-300 border border-sky-500/25 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-40" title="Profile dùng HTTP công khai; chi tiết video dùng một browser ẩn dùng chung khi cần; không OAuth, tự bỏ qua ĐÃ BÁN">
+                      <button onClick={() => { void handleSyncAnalytics().catch((reason) => alert(reason instanceof Error ? reason.message : 'Không thể đồng bộ hiệu suất TikTok.')); }} disabled={!selectedAnalyticsCount} className="btn btn-sm bg-sky-500/10 text-sky-300 border border-sky-500/25 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-40" title="Profile và URL video đã biết dùng HTTP giới hạn; chỉ dữ liệu lỗi mới qua tối đa 2 browser ẩn; không OAuth, tự bỏ qua ĐÃ BÁN">
                         <BarChart3 className="w-3.5 h-3.5" /> Đồng bộ nhanh ({selectedAnalyticsCount})
                       </button>
                     )}

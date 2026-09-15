@@ -16,6 +16,7 @@ from typing import Dict, Optional
 
 from sqlmodel import Session
 
+from app.core.tiktok_cookies import has_tiktok_auth_cookies
 from app.infrastructure.database.connection import engine
 from app.infrastructure.database.sqlite_repository import (
     SQLiteAccountRepository,
@@ -149,11 +150,30 @@ class DebugLoginService:
                     # Luu lai cookie moi nhat de lan sau dung lai.
                     try:
                         fresh_cookies = await browser.extract_cookies()
-                        if fresh_cookies:
+                        if has_tiktok_auth_cookies(fresh_cookies):
                             account = account_repo.get_by_id(account_id)
                             account.cookies = fresh_cookies
                             account.health_status = "ALIVE"
                             account_repo.save(account)
+                            await slog(
+                                f"✅ DEBUG: Đã lưu {len(fresh_cookies)} cookie có phiên auth vào database."
+                            )
+                        else:
+                            safe_names = sorted(
+                                {
+                                    str(cookie.get("name") or "")
+                                    for cookie in fresh_cookies or []
+                                    if isinstance(cookie, dict) and cookie.get("name")
+                                }
+                            )
+                            logger.warning(
+                                "[DEBUG] Bo qua cookie thieu sessionid cua %s; giu cookie cu.",
+                                account_id,
+                            )
+                            await slog(
+                                "⚠️ DEBUG: Browser đang báo login nhưng snapshot không có "
+                                f"sessionid; không lưu đè. Tên cookie: {', '.join(safe_names)}"
+                            )
                     except Exception as e_ck:
                         logger.warning(f"[DEBUG] Khong luu duoc cookie {account_id}: {e_ck}")
 

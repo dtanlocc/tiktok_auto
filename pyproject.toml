@@ -17,6 +17,8 @@ dependencies = [
     "pillow>=12.3.0",
     "pywin32>=312",
     "apscheduler>=3.11.3",
+    "cryptography>=50.0.1",
+    "psycopg[binary]>=3.2",
 ]
 
 # Chuẩn mới của uv thay thế cho tool.uv.dev-dependencies
@@ -27,4 +29,5 @@ invisible-playwright = { path = "tools/invisible_playwright", editable = true }
 dev = [
     "pytest>=8.0.0",
     "black>=24.0.0",
+    "nuitka>=4.2",
 ]

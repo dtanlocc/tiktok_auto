@@ -43,6 +43,10 @@ class IBrowserService(Protocol):
         """Xác minh thực tế xem phiên trình duyệt hiện tại đã đăng nhập thành công hay chưa"""
         ...
 
+    async def validate_authenticated_identity(self, expected_username: str) -> bool:
+        """Confirm the live signed-in TikTok identity matches the account."""
+        ...
+
     async def prepare_foryou_home(self, step_logger: Optional[Any] = None) -> bool:
         """Open /foryou and wait for network-idle plus stable, usable feed media."""
         ...

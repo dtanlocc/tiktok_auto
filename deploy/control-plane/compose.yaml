@@ -1,0 +1,116 @@
+name: tiktok-auto-control-plane
+
+services:
+  database:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [control-private]
+
+  control-plane:
+    build:
+      context: ../..
+      dockerfile: control_plane/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    environment:
+      TKAUTO_CONTROL_ENVIRONMENT: production
+      TKAUTO_CONTROL_DATABASE_URL_FILE: /run/secrets/database_url
+      TKAUTO_CONTROL_ADMIN_TOKEN_FILE: /run/secrets/admin_token
+      TKAUTO_CONTROL_LICENSE_KEY_PEPPER_FILE: /run/secrets/license_key_pepper
+      TKAUTO_CONTROL_LEASE_SIGNING_KEY_ID: ${LEASE_KEY_ID}
+      TKAUTO_CONTROL_LEASE_SIGNING_PRIVATE_KEY_PATH: /run/secrets/lease_private_key
+      TKAUTO_CONTROL_RELEASE_SIGNING_KEY_ID: ${RELEASE_KEY_ID}
+      TKAUTO_CONTROL_RELEASE_SIGNING_PRIVATE_KEY_PATH: /run/secrets/release_private_key
+      TKAUTO_CONTROL_ARTIFACT_STORAGE_ROOT: /srv/artifacts
+      TKAUTO_CONTROL_PUBLIC_BASE_URL: https://${LICENSE_DOMAIN}
+      TKAUTO_CONTROL_TRUSTED_HOSTS: ${LICENSE_DOMAIN}
+      TKAUTO_CONTROL_DOWNLOAD_GRANT_SECRET_FILE: /run/secrets/download_grant_secret
+      TKAUTO_CONTROL_MINIMUM_CLIENT_VERSION: ${MINIMUM_CLIENT_VERSION}
+      TKAUTO_CONTROL_MINIMUM_BACKEND_VERSION: ${MINIMUM_BACKEND_VERSION}
+      TKAUTO_CONTROL_LEASE_TTL_SECONDS: 3600
+      TKAUTO_CONTROL_DOWNLOAD_GRANT_TTL_SECONDS: 300
+      TKAUTO_CONTROL_MAX_CLOCK_SKEW_SECONDS: 300
+    secrets:
+      - database_url
+      - admin_token
+      - license_key_pepper
+      - download_grant_secret
+      - lease_private_key
+      - release_private_key
+    volumes:
+      - ./operator/artifacts:/srv/artifacts:ro
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    networks: [control-private]
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      LICENSE_DOMAIN: ${LICENSE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add:
+      - NET_BIND_SERVICE
+    networks: [control-private]
+
+networks:
+  control-private:
+    internal: false
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+
+secrets:
+  postgres_password:
+    file: ./operator/secrets/postgres-password
+  database_url:
+    file: ./operator/secrets/database-url
+  admin_token:
+    file: ./operator/secrets/admin-token
+  license_key_pepper:
+    file: ./operator/secrets/license-key-pepper
+  download_grant_secret:
+    file: ./operator/secrets/download-grant-secret
+  lease_private_key:
+    file: ./operator/keys/lease-private.pem
+  release_private_key:
+    file: ./operator/keys/release-private.pem

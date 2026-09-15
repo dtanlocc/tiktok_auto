@@ -1,0 +1,12 @@
+**
+!control_plane/
+!control_plane/**
+!backend/
+!backend/app/
+!backend/app/security/
+!backend/app/security/**
+
+control_plane/.env
+control_plane/tests/
+**/__pycache__/
+**/*.pyc

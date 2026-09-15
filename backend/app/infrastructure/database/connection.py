@@ -198,6 +198,43 @@ def init_db() -> None:
             if added_performance:
                 session.commit()
                 print(f"[+] Added account performance columns: {', '.join(added_performance)}")
+
+            # Rich public-video diagnostics collected from each exact
+            # tiktok.com/@username/video/{id} page. Nullable counters keep
+            # "TikTok did not expose this" distinct from a genuine zero.
+            video_result = session.execute(
+                text("PRAGMA table_info(tiktok_video_metrics)")
+            ).fetchall()
+            video_columns = [row[1] for row in video_result]
+            video_detail_columns = {
+                "favorite_count": "INTEGER",
+                "repost_count": "INTEGER",
+                "download_count": "INTEGER",
+                "duration_seconds": "INTEGER",
+                "max_quality": "VARCHAR NOT NULL DEFAULT ''",
+                "detail_source": "VARCHAR NOT NULL DEFAULT ''",
+                "region": "VARCHAR NOT NULL DEFAULT ''",
+                "shadow_ban": "VARCHAR NOT NULL DEFAULT 'UNKNOWN'",
+                "shadow_ban_reason": "VARCHAR NOT NULL DEFAULT ''",
+                "index_enabled": "BOOLEAN",
+                "is_reviewing": "BOOLEAN NOT NULL DEFAULT 0",
+                "is_private": "BOOLEAN NOT NULL DEFAULT 0",
+                "is_taken_down": "BOOLEAN NOT NULL DEFAULT 0",
+            }
+            added_video_details = []
+            for column_name, column_sql in video_detail_columns.items():
+                if column_name in video_columns:
+                    continue
+                session.execute(text(
+                    f"ALTER TABLE tiktok_video_metrics ADD COLUMN {column_name} {column_sql}"
+                ))
+                added_video_details.append(column_name)
+            if added_video_details:
+                session.commit()
+                print(
+                    "[+] Added TikTok video detail columns: "
+                    + ", ".join(added_video_details)
+                )
                 
     except Exception as migration_err:
         print(f"[-] Automatic database migration warning: {str(migration_err)}")

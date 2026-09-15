@@ -10,6 +10,7 @@ from app.use_cases.auth.login_strategies import (
     CookieThenCredentialLoginStrategy,
 )
 from app.core.exceptions import AccountBannedException
+from app.core.tiktok_cookies import has_tiktok_auth_cookies
 from app.infrastructure.websocket.socket_manager import ws_manager
 
 # Định nghĩa biến logger toàn cục của mô-đun
@@ -60,7 +61,13 @@ class TikTokLoginUseCase:
             
             if success:
                 new_cookies = await self.browser_service.extract_cookies()
-                account.cookies = new_cookies
+                if has_tiktok_auth_cookies(new_cookies):
+                    account.cookies = new_cookies
+                else:
+                    logger.warning(
+                        "[Login] Bo qua snapshot cookie thieu sessionid cua %s; giu cookie cu.",
+                        account_id,
+                    )
 
                 # Synchronize the TikTok username without touching avatar or
                 # bio. The legacy rules live in update_profile(): userxxxx is

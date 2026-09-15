@@ -9,8 +9,91 @@ from typing import List, Dict, Any, Optional
 from app.domain.ports.browser import IBrowserService
 from app.domain.ports.email import IEmailService
 from app.domain.entities.account import TikTokAccount
-from app.core.exceptions import AccountBannedException
+from app.core.exceptions import AccountBannedException, AuthenticationPageNotReady
 logger = logging.getLogger("LoginStrategies")
+
+
+async def _open_email_login_form(
+    browser: IBrowserService,
+    step_logger: Optional[Any] = None,
+):
+    """Open TikTok's email form across both current login UI variants."""
+    page = browser._page
+    email_selector = (
+        'input[placeholder*="Email"], input[name="username"], '
+        'input[autocomplete="username"], .eapcad11'
+    )
+
+    async def visible_email_input(timeout: int):
+        candidate = page.locator(email_selector)
+        try:
+            await candidate.first.wait_for(state="visible", timeout=timeout)
+            return candidate
+        except Exception:
+            return None
+
+    existing = await visible_email_input(1500)
+    if existing is not None:
+        return page, existing
+
+    try:
+        if step_logger:
+            await step_logger("Dang tim va nhap vao nut Log in ngoai trang chu...")
+        login_home_btn = page.locator(
+            'div.TUXButton-content:has-text("Log in"), '
+            'div.TUXButton-label:has-text("Log in"), '
+            '[data-e2e="nav-login-button"]:visible, '
+            'button:has-text("Log in"):visible'
+        )
+        await login_home_btn.first.wait_for(state="visible", timeout=8000)
+        await login_home_btn.first.click()
+        await asyncio.sleep(1.5)
+
+        direct = await visible_email_input(2000)
+        if direct is not None:
+            return page, direct
+
+        if step_logger:
+            await step_logger("Dang chon phuong thuc 'Use phone or email'...")
+        channel_btn = page.locator('[data-e2e="channel-item"]').filter(
+            has_text="Use phone"
+        )
+        await channel_btn.first.wait_for(state="visible", timeout=10000)
+        await channel_btn.first.click()
+        await asyncio.sleep(1.5)
+
+        direct = await visible_email_input(2000)
+        if direct is not None:
+            return page, direct
+
+        if step_logger:
+            await step_logger("Dang chuyen sang tab 'Use email or username'...")
+        tab_btn = page.locator(
+            'a[href*="/login/phone-or-email/email"], '
+            'a:has-text("Use email or username"), .elfe54h0, '
+            'span:has-text("Username or email")'
+        )
+        await tab_btn.first.wait_for(state="visible", timeout=10000)
+        await tab_btn.first.click()
+        await asyncio.sleep(1.5)
+
+        email_input = await visible_email_input(10000)
+        if email_input is not None:
+            return page, email_input
+    except Exception as exc:
+        logger.info("[Login] Home login UI unavailable; using direct email form: %s", exc)
+
+    if step_logger:
+        await step_logger(
+            "Khong thay nut Log in tren For You; dang mo truc tiep trang dang nhap Email..."
+        )
+    await browser.navigate_to(
+        "https://www.tiktok.com/login/phone-or-email/email?lang=en&enter_method=direct"
+    )
+    page = browser._page
+    email_input = page.locator(email_selector)
+    await email_input.first.wait_for(state="visible", timeout=20000)
+    return page, email_input
 
 class ITikTokLoginStrategy(ABC):
     """Lop co so truu tuong cho moi chien luoc dang nhap TikTok"""
@@ -52,10 +135,41 @@ class CookieLoginStrategy(ITikTokLoginStrategy):
             await step_logger("Dang don sach cache & nap mang Cookies JSON vao trinh duyet...")
         await browser.inject_cookies(account.cookies)
 
-        await browser.navigate_to("https://www.tiktok.com/foryou?lang=en")
+        is_logged_in = False
+        for attempt in range(2):
+            await browser.navigate_to("https://www.tiktok.com/foryou?lang=en")
+            if step_logger:
+                await step_logger(
+                    "Đã nạp Cookies; đang chờ trang For You tải đầy đủ và ổn định "
+                    "trước khi xác minh đăng nhập..."
+                )
+            try:
+                is_logged_in = await browser.check_login_status()
+                break
+            except AuthenticationPageNotReady:
+                if attempt == 0:
+                    if step_logger:
+                        await step_logger(
+                            "Trang For You chưa tải ổn định; đang mở lại một lần, "
+                            "chưa xóa Cookies và chưa chuyển OTP..."
+                        )
+                    continue
+                raise
+        if not is_logged_in:
+            return False
 
-        is_logged_in = await browser.check_login_status()
-        return is_logged_in
+        identity_validator = getattr(
+            browser, "validate_authenticated_identity", None
+        )
+        if identity_validator is not None:
+            identity_matches = await identity_validator(account.username)
+            if not identity_matches:
+                if step_logger:
+                    await step_logger(
+                        "[!] Cookies không xác minh được đúng username; chuyển sang OTP."
+                    )
+                return False
+        return True
 
 
 class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
@@ -71,9 +185,19 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
         email_service: Optional[IEmailService] = None,
         custom_avatar_path: Optional[str] = None
     ) -> bool:
-        if not account.username or not account.password:
+        login_identifier = account.email or account.username
+        missing_fields = []
+        if not login_identifier:
+            missing_fields.append("Email/Username")
+        if not account.password:
+            missing_fields.append("Password")
+        if missing_fields:
             if step_logger:
-                await step_logger("[-] Tai khoan thieu Username hoac Password de dang nhap Form.")
+                await step_logger(
+                    "[-] Không thể fallback OTP: tài khoản thiếu "
+                    + " và ".join(missing_fields)
+                    + "."
+                )
             return False
 
         # Buoc 1: Di toi trang chu cua TikTok
@@ -92,43 +216,26 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
         otp_requested_at: Optional[datetime] = None
 
         try:
-            # Buoc 2: Bam vao nut Log in ngoai trang chu cua TikTok
-            if step_logger:
-                await step_logger("Dang tim va nhap vao nut Log in ngoai trang chu...")
-            login_home_btn = page.locator('div.TUXButton-content:has-text("Log in"), div.TUXButton-label:has-text("Log in")')
-            await login_home_btn.first.wait_for(state="visible", timeout=15000)
-            await login_home_btn.first.click()
-            # Cho popup dang nhap hien (state-based) thay vi sleep(15) cung.
-            await asyncio.sleep(1.5)
-
-            # Buoc 3: Nhap vao nut "Use phone or email" tren cua so popup
-            if step_logger:
-                await step_logger("Dang chon phuong thuc 'Use phone or email'...")
-            channel_btn = page.locator('[data-e2e="channel-item"]').filter(has_text="Use phone")
-            await channel_btn.first.wait_for(state="visible", timeout=20000)
-            await channel_btn.first.click()
-            await asyncio.sleep(1.5)
-
-            # Buoc 4: Nhap vao nut chuyen tab "Use email or username"
-            if step_logger:
-                await step_logger("Dang chuyen sang tab 'Use email or username'...")
-            tab_btn = page.locator('a[href*="/login/phone-or-email/email"], a:has-text("Use email or username"), .elfe54h0, span:has-text("Username or email")')
-            await tab_btn.first.wait_for(state="visible", timeout=15000)
-            await tab_btn.first.click()
-            await asyncio.sleep(1.5)
+            # Buoc 2-4: TikTok co luc hien modal tren For You, co luc bo han
+            # nut Log in khoi DOM. Ho tro ca hai va fallback sang URL email truc tiep.
+            page, email_input = await _open_email_login_form(
+                browser, step_logger=step_logger
+            )
 
             # Buoc 5: Dien EMAIL tu tu tung phim mot (delay 120ms).
             # Dung account.email de dang nhap (thay vi username) - on dinh hon.
             # Fallback ve username neu account thieu email.
-            login_identifier = account.email or account.username
             if step_logger:
                 await step_logger(f"Dang tu dong go Email dang nhap: {login_identifier}...")
-            email_input = page.locator('input[placeholder*="Email"], input[name="username"], .eapcad11')
             await email_input.first.wait_for(state="visible", timeout=10000)
             await email_input.first.click()
             await asyncio.sleep(1.2)
 
-            await email_input.first.press_sequentially(login_identifier, delay=random.randint(100, 200))
+            # TikTok's current React form occasionally drops characters while
+            # the For You feed re-renders behind the modal. ``fill`` emits the
+            # input/change events atomically and, unlike a partially delivered
+            # key sequence, reliably enables the submit button.
+            await email_input.first.fill(login_identifier)
             await asyncio.sleep(1.5)
 
             # Buoc 6: Dien Password tu tu tung phim mot (delay 140ms)
@@ -139,7 +246,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             await pass_input.first.click()
             await asyncio.sleep(1.0)
 
-            await pass_input.first.press_sequentially(account.password, delay=random.randint(100, 200))
+            await pass_input.first.fill(account.password)
             await asyncio.sleep(2.0)
 
             # =================================================================
@@ -302,6 +409,15 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 pass
 
             is_logged_in = await browser.check_login_status()
+            identity_validator = getattr(
+                browser, "validate_authenticated_identity", None
+            )
+            if is_logged_in and identity_validator is not None:
+                is_logged_in = await identity_validator(account.username)
+                if not is_logged_in and step_logger:
+                    await step_logger(
+                        "[!] Phiên đăng nhập không khớp username cần chạy."
+                    )
             return is_logged_in
 
         except AccountBannedException as e_ban:
@@ -323,6 +439,9 @@ class CookieThenCredentialLoginStrategy(ITikTokLoginStrategy):
       4. Neu Cookie phat hien tai khoan BANNED -> NEM luon (khong fallback vo ich).
     Dung cho luong doi Profile/Avatar de tranh login OTP khong can thiet.
     """
+    def __init__(self) -> None:
+        self.last_login_method: Optional[str] = None
+
     async def login(
         self,
         browser: IBrowserService,
@@ -331,6 +450,7 @@ class CookieThenCredentialLoginStrategy(ITikTokLoginStrategy):
         email_service: Optional[IEmailService] = None,
         custom_avatar_path: Optional[str] = None
     ) -> bool:
+        self.last_login_method = None
         # 1. Uu tien Cookie neu co
         if account.cookies:
             if step_logger:
@@ -340,14 +460,27 @@ class CookieThenCredentialLoginStrategy(ITikTokLoginStrategy):
                     browser, account, step_logger=step_logger, email_service=email_service
                 )
                 if ok:
+                    self.last_login_method = "COOKIE"
                     if step_logger:
                         await step_logger("[+] Dang nhap COOKIES thanh cong -> bo qua OTP.")
                     return True
                 if step_logger:
-                    await step_logger("[!] Cookies het han/khong dung -> chuyen sang login OTP.")
+                    await step_logger(
+                        "[!] Trang đã tải ổn định nhưng vẫn hiện trạng thái chưa đăng nhập; "
+                        "Cookies không còn hiệu lực -> chuyển sang login OTP."
+                    )
             except AccountBannedException as e_ban:
                 # Banned -> khong fallback (login OTP cung se banned).
                 raise e_ban
+            except AuthenticationPageNotReady as exc:
+                # Network/render uncertainty is not proof that the cookie is
+                # expired. Keep the stored session and do not burn an OTP.
+                if step_logger:
+                    await step_logger(
+                        "[!] Trang TikTok chưa tải ổn định để xác minh Cookies; "
+                        "giữ nguyên Cookies và dừng account này, không chuyển OTP."
+                    )
+                raise exc
             except Exception as e:
                 logger.warning(f"[!] Loi khi thu Cookie login: {str(e)} -> fallback OTP.")
                 if step_logger:
@@ -356,7 +489,17 @@ class CookieThenCredentialLoginStrategy(ITikTokLoginStrategy):
             if step_logger:
                 await step_logger("Tai khoan chua co Cookies -> dung login OTP.")
 
-        # 2. Fallback: Credential + OTP
-        return await CredentialEmailOtpLoginStrategy().login(
+        # 2. Fallback: Credential + OTP. Cookie login may already have injected
+        # an expired or identity-mismatched session into this context. Remove it
+        # before typing credentials so the OTP flow always starts cleanly.
+        if account.cookies:
+            if step_logger:
+                await step_logger("Dang xoa phien Cookies hong truoc khi login OTP...")
+            await browser.clear_auth_session()
+
+        result = await CredentialEmailOtpLoginStrategy().login(
             browser, account, step_logger=step_logger, email_service=email_service
         )
+        if result:
+            self.last_login_method = "CREDENTIAL"
+        return result

@@ -5,8 +5,22 @@ import { AccountFolderPickerModal } from './AccountFolderPickerModal';
 
 interface Props { accounts: Account[]; selectedAccountIds: string[]; onSelectedAccountIdsChange: (ids: string[]) => void; concurrency: number }
 interface Video { id: string; name: string; path: string; size_bytes: number }
-interface Batch { id: string; status: string; created_at: string; account_count: number; videos_per_account?: number; total: number; submitted: number; completed: number; processed?: number; failed?: number }
+interface Batch { id: string; status: string; created_at: string; account_count: number; videos_per_account?: number; total: number; submitted: number; completed: number; processed?: number; failed?: number; archived?: number; archive_failed?: number; duplicates?: number; swallowed?: number; replacements?: number }
 const API = 'http://127.0.0.1:9000/api/v1/tasks';
+
+const readApiJson = async <T,>(response: Response): Promise<T> => {
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    const fallback = raw.trim() || `HTTP ${response.status}`;
+    throw new Error(
+      response.ok
+        ? 'Backend trả về dữ liệu không hợp lệ.'
+        : `Backend lỗi ${response.status}: ${fallback}`,
+    );
+  }
+};
 
 const bytes = (value: number) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GB` : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.ceil(value / 1024)} KB`;
 const batchLabel = (value: string) => ({ PENDING: 'Đang chờ', RUNNING: 'Đang chạy', DONE: 'Hoàn tất', DONE_WITH_ERRORS: 'Xong, có lỗi', CANCELLED: 'Đã dừng' }[value] || value);
@@ -31,13 +45,15 @@ export const VideoManager: React.FC<Props> = ({ accounts, selectedAccountIds, on
     () => accounts.filter((account) => selectedSet.has(account.id) && account.is_sold).length,
     [accounts, selectedSet],
   );
-  const hasEnoughDistinctVideos = videos.length >= videosPerAccount;
+  const requiredVideoCount = selectedAccounts.length * videosPerAccount;
+  const spareVideoCount = Math.max(0, videos.length - requiredVideoCount);
+  const hasEnoughDistinctVideos = requiredVideoCount === 0 || videos.length >= requiredVideoCount;
   const distribution = useMemo(() => {
     if (!selectedAccounts.length || !videos.length || !hasEnoughDistinctVideos) return [];
     return selectedAccounts.flatMap((account, accountIndex) => {
-      const start = (accountIndex * videosPerAccount) % videos.length;
+      const start = accountIndex * videosPerAccount;
       return Array.from({ length: videosPerAccount }, (_, slot) => ({
-        video: videos[(start + slot) % videos.length],
+        video: videos[start + slot],
         account,
         accountSlot: slot + 1,
       }));
@@ -63,7 +79,7 @@ export const VideoManager: React.FC<Props> = ({ accounts, selectedAccountIds, on
     setBusy(true); setError(null);
     try {
       const response = await fetch(`${API}/video-library/pick-${kind}`, { method: 'POST' });
-      const data = await response.json();
+      const data = await readApiJson<{ detail?: string; videos?: Video[] }>(response);
       if (!response.ok) throw new Error(data.detail || 'Không mở được bộ chọn video.');
       mergeVideos(data.videos || []);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Không mở được bộ chọn video.'); }
@@ -84,7 +100,7 @@ export const VideoManager: React.FC<Props> = ({ accounts, selectedAccountIds, on
   const start = async () => {
     if (!videos.length) return setError('Kho video đang trống.');
     if (!selectedAccounts.length) return setError('Chọn ít nhất một Hotmail nhận video.');
-    if (!hasEnoughDistinctVideos) return setError(`Cần ít nhất ${videosPerAccount} video khác nhau để không trùng trong một Hotmail.`);
+    if (!hasEnoughDistinctVideos) return setError(`Cần ít nhất ${requiredVideoCount} video khác nhau để mỗi video chỉ thuộc một Hotmail.`);
     setBusy(true); setError(null); setMessage(null);
     try {
       const response = await fetch(`${API}/video-batches`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account_ids: selectedAccounts.map((account) => account.email), video_paths: videos.map((video) => video.path), videos_per_account: videosPerAccount, proxy_concurrency: concurrency }) });
@@ -111,7 +127,7 @@ export const VideoManager: React.FC<Props> = ({ accounts, selectedAccountIds, on
 
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <section className="card overflow-hidden">
-        <div className="border-b border-line-soft p-4"><h3 className="font-bold text-fg">1. Nạp kho video</h3><p className="mt-1 text-xs text-fg-muted">MP4, MOV, WEBM, M4V; thư mục được quét cả thư mục con.</p>
+        <div className="border-b border-line-soft p-4"><h3 className="font-bold text-fg">1. Nạp kho video</h3><p className="mt-1 text-xs text-fg-muted">MP4, MOV, WEBM, M4V; quét cả thư mục con nhưng luôn bỏ qua thư mục DA_DANG.</p>
           <div className="mt-3 flex flex-wrap gap-2"><button disabled={busy} onClick={() => pick('files')} className="btn btn-primary"><Files className="h-4 w-4" /> Chọn nhiều video</button><button disabled={busy} onClick={() => pick('folder')} className="btn btn-ghost"><FolderOpen className="h-4 w-4" /> Chọn thư mục</button>{videos.length > 0 && <button onClick={() => setVideos([])} className="btn btn-danger"><Trash2 className="h-4 w-4" /> Xóa kho</button>}</div>
           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"><textarea value={manualPaths} onChange={(event) => setManualPaths(event.target.value)} rows={2} className="field resize-y font-mono text-xs" placeholder={'D:\\videos\\batch-01\nD:\\videos\\clip.mp4'} /><button disabled={busy} onClick={scan} className="btn btn-ghost sm:self-stretch"><Upload className="h-4 w-4" /> Nạp đường dẫn</button></div>
         </div>
@@ -123,7 +139,7 @@ export const VideoManager: React.FC<Props> = ({ accounts, selectedAccountIds, on
         <div className="grid flex-1 place-items-center p-5">
           <div className="w-full max-w-lg rounded-2xl border border-line-soft bg-surface-2/60 p-5 text-center">
             <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-brand/10 text-brand"><ListTree className="h-7 w-7" aria-hidden="true" /></span>
-            {selectedFolder ? <><p className="mt-4 text-xs font-bold uppercase tracking-wider text-brand">Thư mục đang dùng</p><h4 className="mt-1 text-lg font-bold text-fg"><span className="mr-2 badge border-brand/30 bg-brand/10 text-brand">{selectedFolder.country}</span>{selectedFolder.batch}</h4><p className="mt-2 text-sm text-fg-muted"><strong className="text-fg">{selectedAccounts.length}</strong> Hotmail · mỗi Hotmail nhận <strong className="text-brand">{videosPerAccount}</strong> video không trùng.</p></> : <><h4 className="mt-4 text-base font-bold text-fg">Chưa chọn thư mục account</h4><p className="mt-2 text-sm leading-6 text-fg-muted">Không cần tick từng account. Chọn một Lô và hệ thống sẽ lấy toàn bộ Hotmail trong đó.</p></>}
+            {selectedFolder ? <><p className="mt-4 text-xs font-bold uppercase tracking-wider text-brand">Thư mục đang dùng</p><h4 className="mt-1 text-lg font-bold text-fg"><span className="mr-2 badge border-brand/30 bg-brand/10 text-brand">{selectedFolder.country}</span>{selectedFolder.batch}</h4><p className="mt-2 text-sm text-fg-muted"><strong className="text-fg">{selectedAccounts.length}</strong> Hotmail · cần <strong className="text-brand">{requiredVideoCount}</strong> video riêng · <strong className="text-sky-300">{spareVideoCount}</strong> video dự phòng khi bị trùng.</p></> : <><h4 className="mt-4 text-base font-bold text-fg">Chưa chọn thư mục account</h4><p className="mt-2 text-sm leading-6 text-fg-muted">Không cần tick từng account. Chọn một Lô và hệ thống sẽ lấy toàn bộ Hotmail trong đó.</p></>}
             <button type="button" onClick={() => setFolderPickerOpen(true)} className="btn btn-primary mt-5 min-h-12 w-full"><FolderOpen className="h-4 w-4" aria-hidden="true" /> {selectedFolder ? 'Đổi thư mục account' : 'Mở cây thư mục account'}</button>
             {selectedFolder && <button type="button" onClick={() => { setSelectedFolder(null); onSelectedAccountIdsChange([]); }} className="btn btn-ghost mt-2 min-h-11 w-full"><X className="h-4 w-4" aria-hidden="true" /> Bỏ thư mục đã chọn</button>}
           </div>
@@ -131,13 +147,13 @@ export const VideoManager: React.FC<Props> = ({ accounts, selectedAccountIds, on
       </section>
     </div>
 
-    <section className="card overflow-hidden"><div className="border-b border-line-soft p-4"><div className="grid gap-4 md:grid-cols-[1fr_220px] md:items-end"><div><h3 className="font-bold text-fg">3. Xem trước phân phối</h3><p className="mt-1 text-xs leading-5 text-fg-muted">Trong một Hotmail không trùng video; video được phép dùng lại ở Hotmail khác. Mỗi Hotmail đăng tuần tự trong cùng một browser.</p></div><div><label htmlFor="videos-per-account" className="mb-1.5 block text-xs font-bold text-fg">Số video mỗi Hotmail</label><input id="videos-per-account" type="number" min={1} step={1} value={videosPerAccount} onChange={(event) => setVideosPerAccount(Math.max(1, Math.floor(Number(event.target.value) || 1)))} aria-describedby="videos-per-account-help" aria-invalid={videos.length > 0 && !hasEnoughDistinctVideos} className="field min-h-11 w-full tabular-nums" /><p id="videos-per-account-help" className={`mt-1.5 text-[11px] ${videos.length > 0 && !hasEnoughDistinctVideos ? 'text-rose-300' : 'text-fg-subtle'}`}>{videos.length > 0 && !hasEnoughDistinctVideos ? `Kho cần ít nhất ${videosPerAccount} video khác nhau.` : `${distribution.length} lượt đăng dự kiến.`}</p></div></div>{loads.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{loads.map(([email, count]) => <span key={email} className="badge border-line bg-white/5 normal-case tracking-normal text-fg-muted">{email}: <strong className="text-brand">{count}</strong></span>)}</div>}</div>
-      {!distribution.length ? <div className="p-8 text-center text-sm text-fg-muted">{videos.length > 0 && !hasEnoughDistinctVideos ? `Cần thêm ${videosPerAccount - videos.length} video khác nhau để chia đúng yêu cầu.` : 'Nạp video và chọn Hotmail để xem bảng chia.'}</div> : <div className="max-h-80 overflow-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="sticky top-0 bg-surface-2 text-[11px] uppercase text-fg-subtle"><tr><th className="px-4 py-3">#</th><th className="px-4 py-3">Video / caption</th><th className="px-4 py-3">Hotmail nhận</th></tr></thead><tbody className="divide-y divide-line-soft">{distribution.slice(0, 100).map(({ video, account, accountSlot }, index) => <tr key={`${account.id}:${video.id}`}><td className="px-4 py-3 text-fg-subtle">{index + 1}</td><td className="max-w-md px-4 py-3"><p className="truncate font-medium text-fg">{video.name.replace(/\.[^.]+$/, '')}</p><p className="truncate text-xs text-fg-subtle">{video.name}</p></td><td className="px-4 py-3 font-semibold text-fg"><p>{account.email}</p><p className="mt-0.5 text-[10px] font-normal text-fg-subtle">Video {accountSlot}/{videosPerAccount} · cùng phiên browser</p></td></tr>)}</tbody></table>{distribution.length > 100 && <p className="p-3 text-center text-xs text-fg-muted">Còn {distribution.length - 100} phân công; tất cả sẽ được chạy.</p>}</div>}
+    <section className="card overflow-hidden"><div className="border-b border-line-soft p-4"><div className="grid gap-4 md:grid-cols-[1fr_220px] md:items-end"><div><h3 className="font-bold text-fg">3. Xem trước phân phối</h3><p className="mt-1 text-xs leading-5 text-fg-muted">Mỗi video chỉ được cấp cho đúng một Hotmail trên toàn đợt. Đăng thành công sẽ chuyển file vào DA_DANG/&lt;account&gt;.</p></div><div><label htmlFor="videos-per-account" className="mb-1.5 block text-xs font-bold text-fg">Số video mỗi Hotmail</label><input id="videos-per-account" type="number" min={1} step={1} value={videosPerAccount} onChange={(event) => setVideosPerAccount(Math.max(1, Math.floor(Number(event.target.value) || 1)))} aria-describedby="videos-per-account-help" aria-invalid={requiredVideoCount > 0 && videos.length > 0 && !hasEnoughDistinctVideos} className="field min-h-11 w-full tabular-nums" /><p id="videos-per-account-help" className={`mt-1.5 text-[11px] ${requiredVideoCount > 0 && videos.length > 0 && !hasEnoughDistinctVideos ? 'text-rose-300' : 'text-fg-subtle'}`}>{requiredVideoCount > 0 && videos.length > 0 && !hasEnoughDistinctVideos ? `Kho cần ít nhất ${requiredVideoCount} video khác nhau.` : `${distribution.length} lượt đăng dự kiến.`}</p></div></div>{loads.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{loads.map(([email, count]) => <span key={email} className="badge border-line bg-white/5 normal-case tracking-normal text-fg-muted">{email}: <strong className="text-brand">{count}</strong></span>)}</div>}</div>
+      {!distribution.length ? <div className="p-8 text-center text-sm text-fg-muted">{requiredVideoCount > 0 && videos.length > 0 && !hasEnoughDistinctVideos ? `Cần thêm ${requiredVideoCount - videos.length} video khác nhau để chia một-một.` : 'Nạp video và chọn Hotmail để xem bảng chia.'}</div> : <div className="max-h-80 overflow-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="sticky top-0 bg-surface-2 text-[11px] uppercase text-fg-subtle"><tr><th className="px-4 py-3">#</th><th className="px-4 py-3">Video / caption</th><th className="px-4 py-3">Hotmail nhận</th></tr></thead><tbody className="divide-y divide-line-soft">{distribution.slice(0, 100).map(({ video, account, accountSlot }, index) => <tr key={`${account.id}:${video.id}`}><td className="px-4 py-3 text-fg-subtle">{index + 1}</td><td className="max-w-md px-4 py-3"><p className="truncate font-medium text-fg">{video.name.replace(/\.[^.]+$/, '')}</p><p className="truncate text-xs text-fg-subtle">{video.name}</p></td><td className="px-4 py-3 font-semibold text-fg"><p>{account.email}</p><p className="mt-0.5 text-[10px] font-normal text-fg-subtle">Video {accountSlot}/{videosPerAccount} · file riêng</p></td></tr>)}</tbody></table>{distribution.length > 100 && <p className="p-3 text-center text-xs text-fg-muted">Còn {distribution.length - 100} phân công; tất cả sẽ được chạy.</p>}</div>}
       <div className="border-t border-line-soft bg-surface-2/60 p-4"><button disabled={busy || !distribution.length || !hasEnoughDistinctVideos} onClick={start} className="btn btn-primary min-h-12 w-full">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{busy ? 'Đang xử lý...' : `Xếp hàng ${distribution.length} lượt đăng cho ${selectedAccounts.length} Hotmail`}</button></div>
     </section>
 
     <section className="card overflow-hidden"><div className="flex items-center justify-between border-b border-line-soft p-4"><div><h3 className="font-bold text-fg">Các đợt đang chạy</h3><p className="mt-1 text-xs text-fg-muted">Tự cập nhật mỗi 4 giây.</p></div><button onClick={loadBatches} className="btn btn-sm btn-ghost"><RefreshCw className="h-3.5 w-3.5" /> Làm mới</button></div>
-      {!batches.length ? <div className="p-8 text-center text-sm text-fg-muted">Chưa có đợt đăng hàng loạt.</div> : <div className="divide-y divide-line-soft">{batches.map((batch) => { const processed = batch.processed ?? batch.completed; return <div key={batch.id} className="flex flex-wrap items-center gap-4 p-4"><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className={`badge normal-case ${batch.status === 'DONE' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : batch.status === 'RUNNING' ? 'border-brand/30 bg-brand/10 text-brand' : 'border-line bg-white/5 text-fg-muted'}`}>{batchLabel(batch.status)}</span><span className="text-xs text-fg-subtle">{new Date(batch.created_at).toLocaleString('vi-VN')}</span></div><p className="mt-2 text-sm font-semibold text-fg">{processed}/{batch.total} đã xử lý · <span className="text-emerald-300">{batch.completed} thành công</span>{Boolean(batch.failed) && <> · <span className="text-rose-300">{batch.failed} lỗi</span></>} · {batch.account_count} Hotmail · {batch.videos_per_account || 1} video/Hotmail</p><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-brand" style={{ width: `${batch.total ? Math.round(processed / batch.total * 100) : 0}%` }} /></div></div>{['PENDING', 'RUNNING'].includes(batch.status) && <button onClick={() => cancel(batch.id)} className="btn btn-sm btn-danger"><X className="h-3.5 w-3.5" /> Dừng cấp video</button>}</div>; })}</div>}
+      {!batches.length ? <div className="p-8 text-center text-sm text-fg-muted">Chưa có đợt đăng hàng loạt.</div> : <div className="divide-y divide-line-soft">{batches.map((batch) => { const processed = batch.processed ?? batch.completed; return <div key={batch.id} className="flex flex-wrap items-center gap-4 p-4"><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className={`badge normal-case ${batch.status === 'DONE' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : batch.status === 'RUNNING' ? 'border-brand/30 bg-brand/10 text-brand' : 'border-line bg-white/5 text-fg-muted'}`}>{batchLabel(batch.status)}</span><span className="text-xs text-fg-subtle">{new Date(batch.created_at).toLocaleString('vi-VN')}</span></div><p className="mt-2 text-sm font-semibold text-fg">{processed}/{batch.total} đã xử lý · <span className="text-emerald-300">{batch.completed} thành công</span>{Boolean(batch.failed) && <> · <span className="text-rose-300">{batch.failed} lỗi đăng</span></>} · <span className="text-sky-300">{batch.archived || 0} đã chuyển DA_DANG</span>{Boolean(batch.duplicates) && <> · <span className="text-amber-300">{batch.duplicates} video trùng</span></>}{Boolean(batch.replacements) && <> · <span className="text-sky-300">{batch.replacements} lần tự thay</span></>}{Boolean(batch.swallowed) && <> · <span className="text-rose-300">{batch.swallowed} video bị nuốt</span></>}{Boolean(batch.archive_failed) && <> · <span className="text-amber-300">{batch.archive_failed} lỗi chuyển file</span></>} · {batch.account_count} Hotmail · {batch.videos_per_account || 1} video/Hotmail</p><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-brand" style={{ width: `${batch.total ? Math.round(processed / batch.total * 100) : 0}%` }} /></div></div>{['PENDING', 'RUNNING'].includes(batch.status) && <button onClick={() => cancel(batch.id)} className="btn btn-sm btn-danger"><X className="h-3.5 w-3.5" /> Dừng cấp video</button>}</div>; })}</div>}
     </section>
 
     <AccountFolderPickerModal

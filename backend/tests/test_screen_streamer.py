@@ -7,6 +7,18 @@ from app.infrastructure.streaming import screen_streamer
 from app.infrastructure.streaming import win_capture
 
 
+def test_screen_watch_survives_several_delayed_frontend_ticks(monkeypatch):
+    now = 100.0
+    monkeypatch.setattr(screen_streamer.time, "monotonic", lambda: now)
+    monkeypatch.setattr(screen_streamer, "_last_view_ping", 0.0)
+
+    screen_streamer.note_screen_view_ping()
+    now += 12.0
+    assert screen_streamer.screens_are_watched() is True
+    now += 3.1
+    assert screen_streamer.screens_are_watched() is False
+
+
 def test_hwnd_lookup_uses_positive_session_token_ownership(monkeypatch):
     process_ids = {101: 9001, 202: 9002}
 

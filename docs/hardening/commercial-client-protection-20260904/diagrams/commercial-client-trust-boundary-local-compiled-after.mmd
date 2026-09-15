@@ -1,0 +1,9 @@
+flowchart LR
+    U[React UI] -->|Scoped commands| R[Tauri launcher]
+    R -->|Per-launch capability| B[Compiled sidecar]
+    X[Other local process] -.->|Reject| B
+    L[Signed offline license] --> B
+    B --> A[Local automation]
+    A --> T[TikTok and browser]
+    B <--> D[(DPAPI-protected state)]
+    P[Signed update] --> R

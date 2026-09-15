@@ -28,11 +28,12 @@ from urllib.parse import quote, unquote, urlparse
 import httpx
 from sqlmodel import Session
 
+from app.core.config import settings
+from app.core.tiktok_urls import ensure_tiktok_english_url
+from app.domain.account_rules import is_sold_account
 from app.infrastructure.database.connection import engine
 from app.infrastructure.database.sqlite_repository import SQLiteAccountRepository, SQLiteProxyRepository
 from app.infrastructure.websocket.socket_manager import ws_manager
-from app.domain.account_rules import is_sold_account
-from app.core.tiktok_urls import ensure_tiktok_english_url
 
 logger = logging.getLogger("QuickHealthCheck")
 
@@ -429,7 +430,10 @@ class QuickHealthCheckService:
     def _build_proxy_url(self, session: Session, proxy_id: Optional[str]) -> Optional[str]:
         """Dung URL proxy (co auth) cho httpx tu proxy cua account.
         None = khong co proxy -> di truc tiep (IP server, de bi WAF)."""
-        if not proxy_id:
+        # Keep public health checks on the same network route as browser tasks.
+        # In direct/VPN mode, account proxy assignments remain stored in the DB
+        # but must not silently override the operator's selected network mode.
+        if not settings.USE_PROXY or not proxy_id:
             return None
         try:
             proxy = SQLiteProxyRepository(session).get_by_id(proxy_id)
@@ -455,11 +459,12 @@ class QuickHealthCheckService:
         try:
             return await client.get(url, headers=headers), None
         except (httpx.TimeoutException, httpx.NetworkError, httpx.ProxyError) as exc:
+            detail = str(exc).strip() or "no exception detail"
             logger.warning(
                 "TikTok %s network error: %s: %s",
                 source,
                 type(exc).__name__,
-                str(exc)[:100],
+                detail[:100],
             )
             return None, QuickCheckResult(
                 None, f"{source}_network_{type(exc).__name__}", retryable=True
@@ -532,7 +537,7 @@ class QuickHealthCheckService:
             [Callable[[], Awaitable[QuickCheckResult]]], Awaitable[QuickCheckResult]
         ],
     ) -> QuickCheckResult:
-        """Fast pass bằng session, fallback public chạy song song có kiểm soát."""
+        """Fast pass by session, then use public signals without request bursts."""
         if cookie_header:
             account_result = await run_limited(
                 lambda: self._fetch_account_info(client, username, cookie_header)
@@ -540,61 +545,31 @@ class QuickHealthCheckService:
             if account_result.classification == "ALIVE":
                 return account_result
 
-        # oEmbed rất nhẹ và thường xác nhận profile public trước. Profile HTML
-        # nặng hơn nhưng là nguồn chắc chắn cho statusCode 10221. Chạy song song
-        # chỉ ở số account không qua được fast pass; mỗi request vẫn phải lấy
-        # semaphore proxy/global riêng trong run_limited().
-        oembed_task = asyncio.create_task(
-            run_limited(lambda: self._fetch_oembed(client, username))
+        # oEmbed is the lightest public signal. Run it first and only download
+        # the heavier profile HTML when oEmbed cannot reach a conclusion. This
+        # prevents a single account from occupying both route slots at once.
+        oembed_result = await run_limited(
+            lambda: self._fetch_oembed(client, username)
         )
-        profile_task = asyncio.create_task(
-            run_limited(lambda: self._fetch_profile(client, username, cookie_header))
+        if oembed_result.classification is not None:
+            return oembed_result
+
+        profile_result = await run_limited(
+            lambda: self._fetch_profile(client, username, cookie_header)
         )
-        pending = {oembed_task, profile_task}
-        results: Dict[asyncio.Task, QuickCheckResult] = {}
-        try:
-            while pending:
-                done, pending = await asyncio.wait(
-                    pending, return_when=asyncio.FIRST_COMPLETED
-                )
-                for task in done:
-                    results[task] = task.result()
+        if profile_result.classification is not None:
+            return profile_result
 
-                alive = next(
-                    (
-                        result
-                        for result in results.values()
-                        if result.classification in {
-                            "ALIVE", "SONG_DA_TUONG_TAC", "SONG_TRANG"
-                        }
-                    ),
-                    None,
-                )
-                if alive is not None:
-                    for task in pending:
-                        task.cancel()
-                    await asyncio.gather(*pending, return_exceptions=True)
-                    return alive
-
-            profile_result = results[profile_task]
-            if profile_result.classification is not None:
-                return profile_result
-
-            # Cookie cũ đôi khi nhận WAF stub 12 KB trong khi guest request cùng
-            # proxy vẫn có hydration JSON đầy đủ. Một lần guest fallback giúp
-            # giảm CHƯA KẾT LUẬN mà không lặp vô hạn/đẩy nhanh rate-limit.
-            await asyncio.sleep(random.uniform(0.4, 0.9))
-            retry_result = await run_limited(
-                lambda: self._fetch_profile(client, username, "")
-            )
-            if retry_result.classification is not None:
-                return retry_result
-            return retry_result if retry_result.reason != "tiktok_state_missing" else profile_result
-        finally:
-            for task in (oembed_task, profile_task):
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(oembed_task, profile_task, return_exceptions=True)
+        # An old cookie can receive a WAF stub while a guest request succeeds.
+        # A modest pause also gives a transient direct/VPN connection time to
+        # recover before the one bounded retry.
+        await asyncio.sleep(random.uniform(0.8, 1.6))
+        retry_result = await run_limited(
+            lambda: self._fetch_profile(client, username, "")
+        )
+        if retry_result.classification is not None:
+            return retry_result
+        return retry_result if retry_result.reason != "tiktok_state_missing" else profile_result
 
     @staticmethod
     def _inconclusive_message(result: QuickCheckResult) -> str:
@@ -641,7 +616,7 @@ class QuickHealthCheckService:
                 client = httpx.AsyncClient(
                     proxy=proxy_url,
                     headers=_HTTP_HEADERS,
-                    timeout=httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=3.0),
+                    timeout=httpx.Timeout(connect=10.0, read=12.0, write=5.0, pool=5.0),
                     limits=httpx.Limits(max_connections=2, max_keepalive_connections=2),
                     follow_redirects=True,
                     trust_env=False,

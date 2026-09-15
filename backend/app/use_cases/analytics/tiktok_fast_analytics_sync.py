@@ -1,9 +1,9 @@
 """Fast public TikTok profile/video metrics sync.
 
-The profile pass is plain HTTP. The optional public-video pass uses one shared
-invisible_playwright signer, never logs into TikTok Studio or authorizes a
-Developer application. Unavailable metrics remain untouched instead of being
-guessed as zero.
+The profile pass is plain HTTP. Known video URLs also stay on bounded HTTP;
+only unresolved profiles/pages enter a two-slot invisible_playwright fallback.
+It never opens TikTok Studio or authorizes a Developer application. Unavailable
+metrics remain untouched instead of being guessed as zero.
 """
 
 from __future__ import annotations
@@ -11,9 +11,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import time
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Iterable, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 from sqlmodel import Session, select
@@ -71,6 +72,64 @@ def _is_cache_fresh(updated_at: str, ttl_seconds: int) -> bool:
     return datetime.now() - timestamp < timedelta(seconds=ttl_seconds)
 
 
+def _is_sync_cache_usable(
+    status: str,
+    source: str,
+    updated_at: str,
+    ttl_seconds: int,
+) -> bool:
+    """Only successful profile reads may suppress a later sync attempt."""
+    return (
+        status in {"SUCCESS", "PARTIAL"}
+        and source in {PUBLIC_PROFILE_SOURCE, "TIKTOK_PUBLIC_WEB"}
+        and _is_cache_fresh(updated_at, ttl_seconds)
+    )
+
+
+def _is_video_cache_usable(
+    rows: list[Any],
+    expected: int,
+    ttl_seconds: int,
+) -> bool:
+    """Reuse a complete, recent detail snapshot without issuing video requests."""
+    if expected <= 0 or len(rows) != expected:
+        return False
+    return all(
+        _is_cache_fresh(str(getattr(row, "synced_at", "") or ""), ttl_seconds)
+        for row in rows[:expected]
+    )
+
+
+def _stale_video_ids_to_remove(
+    existing_ids: set[str],
+    current_ids: set[str],
+    *,
+    complete: bool,
+    profile_video_count: int,
+    max_videos: int,
+) -> set[str]:
+    """Delete old rows only when the crawl covered the entire public profile."""
+    if not complete or profile_video_count > max(1, max_videos):
+        return set()
+    return existing_ids - current_ids
+
+
+def _merge_video_completeness(
+    status: str,
+    error: str,
+    expected: int,
+    collected: int,
+    complete: bool,
+) -> tuple[str, str]:
+    """Do not report SUCCESS when only part of the public video list was read."""
+    if status != "SUCCESS" or expected <= 0 or complete:
+        return status, error
+    return (
+        "PARTIAL",
+        f"Profile đã đồng bộ; chi tiết video chưa đủ ({collected}/{expected}).",
+    )
+
+
 class TikTokFastAnalyticsSyncService:
     """Bounded-concurrency public sync, independent from the browser dispatcher."""
 
@@ -81,10 +140,53 @@ class TikTokFastAnalyticsSyncService:
         self.updated = 0
         self.failed = 0
         self.cached = 0
+        self.video_cached = 0
         self.skipped_sold = 0
+        self.browser_profile_fallbacks = 0
         self.reason_counts: Dict[str, int] = {}
         self._task: Optional[asyncio.Task] = None
-        self._video_client = TikTokPublicVideoClient()
+        browser_concurrency = max(
+            1,
+            min(
+                int(getattr(settings, "FAST_ANALYTICS_BROWSER_CONCURRENCY", 2)),
+                4,
+            ),
+        )
+        detail_concurrency = max(
+            1,
+            int(getattr(settings, "FAST_ANALYTICS_DETAIL_REQUEST_CONCURRENCY", 6)),
+        )
+        detail_global_gate = asyncio.Semaphore(detail_concurrency)
+        detail_account_gate = asyncio.Semaphore(detail_concurrency)
+        detail_route_gates: Dict[str, asyncio.Semaphore] = {}
+        self._video_clients = [
+            TikTokPublicVideoClient(
+                detail_request_concurrency=detail_concurrency,
+                detail_global_gate=detail_global_gate,
+                detail_account_gate=detail_account_gate,
+                detail_route_gates=detail_route_gates,
+            )
+            for _ in range(browser_concurrency)
+        ]
+        # Compatibility alias for integrations which inspect the original
+        # single-client attribute. Runtime work is sharded deterministically.
+        self._video_client = self._video_clients[0]
+        self._route_reachability: Dict[str, tuple[float, bool]] = {}
+
+    def _video_client_for(self, account_id: str) -> TikTokPublicVideoClient:
+        slot = sum(account_id.encode("utf-8")) % len(self._video_clients)
+        return self._video_clients[slot]
+
+    def _video_client_stats(self) -> Dict[str, int]:
+        totals = {
+            "video_http_requests": 0,
+            "video_http_retries": 0,
+            "video_browser_fallbacks": 0,
+        }
+        for client in self._video_clients:
+            for name, value in client.get_stats().items():
+                totals[name] = totals.get(name, 0) + int(value)
+        return totals
 
     def get_status(self) -> Dict[str, Any]:
         return {
@@ -94,18 +196,24 @@ class TikTokFastAnalyticsSyncService:
             "updated": self.updated,
             "failed": self.failed,
             "cached": self.cached,
+            "video_cached": self.video_cached,
             "skipped_sold": self.skipped_sold,
+            "browser_profile_fallbacks": self.browser_profile_fallbacks,
             "reason_counts": dict(self.reason_counts),
+            **self._video_client_stats(),
         }
 
     async def shutdown(self) -> None:
         """Close the shared signer once, when the backend itself stops."""
-        await self._video_client.close()
+        await asyncio.gather(
+            *(client.close() for client in self._video_clients),
+            return_exceptions=True,
+        )
 
     def start_batch(
         self,
         account_ids: Iterable[str],
-        concurrency_limit: int = 12,
+        concurrency_limit: int = 4,
         force: bool = False,
     ) -> bool:
         if self.is_running:
@@ -136,6 +244,63 @@ class TikTokFastAnalyticsSyncService:
                 f"{quote(str(proxy.password or ''), safe='')}@"
             )
         return f"{scheme}://{auth}{proxy.host}:{proxy.port}"
+
+    @classmethod
+    def _build_public_route_candidates(
+        cls,
+        session: Session,
+        assigned_proxy_id: Optional[str],
+    ) -> list[Optional[str]]:
+        """Assigned proxy first, then bounded guest-only proxy fallbacks."""
+        if not settings.USE_PROXY:
+            return [None]
+        proxy_repo = SQLiteProxyRepository(session)
+        proxies = proxy_repo.get_all()
+        ordered = sorted(
+            proxies,
+            key=lambda proxy: 0 if proxy.id == assigned_proxy_id else 1,
+        )
+        routes: list[Optional[str]] = []
+        for proxy in ordered:
+            route = cls._build_proxy_url(session, proxy.id)
+            if route and route not in routes:
+                routes.append(route)
+        limit = max(
+            1,
+            int(getattr(settings, "FAST_ANALYTICS_PROXY_ROUTE_ATTEMPTS", 3)),
+        )
+        return routes[:limit] or [None]
+
+    async def _proxy_endpoint_reachable(self, proxy_url: Optional[str]) -> bool:
+        """Skip an offline proxy port before paying several HTTP/browser timeouts."""
+        if not proxy_url:
+            return True
+        cached = self._route_reachability.get(proxy_url)
+        now = time.monotonic()
+        if cached and now - cached[0] < 60:
+            return cached[1]
+        parsed = urlparse(proxy_url)
+        if not parsed.hostname or not parsed.port:
+            self._route_reachability[proxy_url] = (now, False)
+            return False
+        writer = None
+        try:
+            _reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(parsed.hostname, parsed.port),
+                timeout=3.0,
+            )
+            reachable = True
+        except Exception:
+            reachable = False
+        finally:
+            if writer is not None:
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except Exception:
+                    pass
+        self._route_reachability[proxy_url] = (time.monotonic(), reachable)
+        return reachable
 
     @staticmethod
     async def _fetch_profile(
@@ -188,6 +353,7 @@ class TikTokFastAnalyticsSyncService:
         cache_ttl_seconds: int,
         force: bool,
     ) -> None:
+        video_client = self._video_client_for(account_id)
         try:
             with Session(engine) as session:
                 repo = SQLiteAccountRepository(session)
@@ -200,22 +366,33 @@ class TikTokFastAnalyticsSyncService:
                     return
                 if (
                     not force
-                    and account.analytics_sync_source in {
-                        PUBLIC_PROFILE_SOURCE,
-                        "TIKTOK_PUBLIC_WEB",
-                    }
-                    and _is_cache_fresh(account.metrics_updated_at, cache_ttl_seconds)
+                    and _is_sync_cache_usable(
+                        account.analytics_sync_status,
+                        account.analytics_sync_source,
+                        account.metrics_updated_at,
+                        cache_ttl_seconds,
+                    )
                 ):
                     self.cached += 1
                     return
                 username = account.username.lstrip("@")
-                proxy_url = self._build_proxy_url(session, account.proxy_id)
+                previous_video_sync_success = (
+                    account.analytics_sync_status == "SUCCESS"
+                    and account.analytics_sync_source == "TIKTOK_PUBLIC_WEB"
+                )
+                assigned_proxy_url = self._build_proxy_url(session, account.proxy_id)
+                route_candidates = self._build_public_route_candidates(
+                    session, account.proxy_id
+                )
                 cookie_header = _build_tiktok_cookie_header(account.cookies)
                 known_video_rows = session.exec(
                     select(TikTokVideoMetricDbTable).where(
                         TikTokVideoMetricDbTable.account_email == account_id
                     )
                 ).all()
+                known_video_rows.sort(
+                    key=lambda row: int(row.create_time or 0), reverse=True
+                )
                 # Rebuild the URL with the current username. TikTok usernames can
                 # change while the stable numeric video ID remains the same.
                 known_video_urls = [
@@ -226,41 +403,128 @@ class TikTokFastAnalyticsSyncService:
                     if str(row.video_id or "").isdigit()
                 ]
 
-            client = clients.get(proxy_url)
-            if client is None:
-                client = httpx.AsyncClient(
-                    proxy=proxy_url,
-                    headers=_HTTP_HEADERS,
-                    timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
-                    limits=httpx.Limits(max_connections=4, max_keepalive_connections=4),
-                    follow_redirects=True,
-                    trust_env=False,
+            result = QuickCheckResult(None, "public_routes_unavailable", retryable=True)
+            proxy_url = route_candidates[0]
+            reachable_routes: list[Optional[str]] = []
+            for candidate_index, candidate_proxy_url in enumerate(route_candidates):
+                proxy_url = candidate_proxy_url
+                if not await self._proxy_endpoint_reachable(proxy_url):
+                    result = QuickCheckResult(
+                        None,
+                        "proxy_endpoint_unreachable",
+                        retryable=True,
+                    )
+                    if candidate_index + 1 < len(route_candidates):
+                        logger.info(
+                            "Assigned public proxy is offline for @%s; trying fallback %s/%s",
+                            username,
+                            candidate_index + 2,
+                            len(route_candidates),
+                        )
+                    continue
+                reachable_routes.append(proxy_url)
+                client = clients.get(proxy_url)
+                if client is None:
+                    client = httpx.AsyncClient(
+                        proxy=proxy_url,
+                        headers=_HTTP_HEADERS,
+                        timeout=httpx.Timeout(
+                            connect=10.0, read=15.0, write=5.0, pool=8.0
+                        ),
+                        limits=httpx.Limits(
+                            max_connections=2, max_keepalive_connections=2
+                        ),
+                        follow_redirects=True,
+                        trust_env=False,
+                    )
+                    clients[proxy_url] = client
+
+                proxy_key = proxy_url or "__DIRECT__"
+                per_route_limit = 1 if proxy_url else 2
+                proxy_gate = proxy_gates.setdefault(
+                    proxy_key, asyncio.Semaphore(per_route_limit)
                 )
-                clients[proxy_url] = client
 
-            proxy_key = proxy_url or "__DIRECT__"
-            per_route_limit = 2 if proxy_url else 4
-            proxy_gate = proxy_gates.setdefault(
-                proxy_key, asyncio.Semaphore(per_route_limit)
-            )
+                async def run_limited(
+                    factory: Callable[[], Awaitable[QuickCheckResult]],
+                ) -> QuickCheckResult:
+                    async with global_gate:
+                        async with proxy_gate:
+                            await asyncio.sleep(random.uniform(0.10, 0.30))
+                            return await factory()
 
-            async def run_limited(
-                factory: Callable[[], Awaitable[QuickCheckResult]],
-            ) -> QuickCheckResult:
-                async with global_gate:
-                    async with proxy_gate:
-                        await asyncio.sleep(random.uniform(0.02, 0.10))
-                        return await factory()
+                # Never send an account's authenticated cookie through a
+                # different fallback proxy. Browser/profile fallback is guest.
+                route_cookie = (
+                    cookie_header
+                    if not settings.USE_PROXY or proxy_url == assigned_proxy_url
+                    else ""
+                )
+                route_result = await self._fetch_with_fallback(
+                    client, username, route_cookie, run_limited
+                )
+                result = route_result
+                if route_result.classification == "DIE":
+                    break
+                if route_result.profile_metrics and route_result.profile_identity:
+                    break
+                if candidate_index + 1 < len(route_candidates):
+                    logger.info(
+                        "Public HTTP route failed for @%s (%s); trying route %s/%s before browser",
+                        username,
+                        result.reason,
+                        candidate_index + 2,
+                        len(route_candidates),
+                    )
 
-            result = await self._fetch_with_fallback(
-                client, username, cookie_header, run_limited
-            )
+            # Opening Firefox is the expensive fallback. Try every bounded HTTP
+            # route first, then use the browser only for accounts whose public
+            # structured profile still could not be read. This avoids repeated
+            # browser restarts when several proxies are configured.
+            if (
+                result.classification != "DIE"
+                and not (result.profile_metrics and result.profile_identity)
+                and reachable_routes
+            ):
+                browser_route_limit = max(
+                    1,
+                    min(
+                        int(getattr(
+                            settings,
+                            "FAST_ANALYTICS_BROWSER_ROUTE_ATTEMPTS",
+                            1,
+                        )),
+                        len(reachable_routes),
+                    ),
+                )
+                for browser_proxy_url in reachable_routes[:browser_route_limit]:
+                    self.browser_profile_fallbacks += 1
+                    browser_result = await video_client.fetch_profile(
+                        username,
+                        proxy_url=browser_proxy_url,
+                        cookie_header=(
+                            cookie_header
+                            if not settings.USE_PROXY
+                            or browser_proxy_url == assigned_proxy_url
+                            else ""
+                        ),
+                    )
+                    result = browser_result
+                    proxy_url = browser_proxy_url
+                    if browser_result.classification == "DIE":
+                        break
+                    if (
+                        browser_result.profile_metrics
+                        and browser_result.profile_identity
+                    ):
+                        break
             self.reason_counts[result.reason] = self.reason_counts.get(result.reason, 0) + 1
             metrics = result.profile_metrics or {}
             status, error = profile_metric_sync_result(metrics)
             videos: list[Dict[str, Any]] = []
             profile_video_count = max(0, int(metrics.get("video_count") or 0))
             videos_complete = profile_video_count == 0
+            video_cache_used = False
             video_error = ""
             if (
                 metrics
@@ -268,20 +532,67 @@ class TikTokFastAnalyticsSyncService:
                 and settings.FAST_ANALYTICS_FETCH_VIDEOS
                 and profile_video_count > 0
             ):
-                try:
-                    videos, videos_complete = await self._video_client.fetch_videos(
-                        username,
-                        result.profile_identity.get("sec_uid", ""),
-                        max_videos=max(1, settings.FAST_ANALYTICS_MAX_VIDEOS_PER_ACCOUNT),
-                        expected_video_count=profile_video_count,
-                        known_video_urls=known_video_urls,
+                expected_video_details = min(
+                    max(1, settings.FAST_ANALYTICS_MAX_VIDEOS_PER_ACCOUNT),
+                    profile_video_count,
+                )
+                video_cache_used = (
+                    not force
+                    and previous_video_sync_success
+                    and _is_video_cache_usable(
+                        known_video_rows,
+                        expected_video_details,
+                        max(
+                            0,
+                            int(getattr(
+                                settings,
+                                "FAST_ANALYTICS_VIDEO_CACHE_TTL_SECONDS",
+                                300,
+                            )),
+                        ),
                     )
-                except Exception as exc:
-                    video_error = f"video_detail_{type(exc).__name__}: {str(exc)[:160]}"
-                    logger.warning("Public video detail failed for %s: %s", username, video_error)
+                )
+                if video_cache_used:
+                    videos_complete = True
+                    self.video_cached += 1
+                else:
+                    try:
+                        videos, videos_complete = await video_client.fetch_videos(
+                            username,
+                            result.profile_identity.get("sec_uid", ""),
+                            max_videos=max(1, settings.FAST_ANALYTICS_MAX_VIDEOS_PER_ACCOUNT),
+                            expected_video_count=profile_video_count,
+                            known_video_urls=known_video_urls,
+                            proxy_url=proxy_url,
+                            cookie_header=(
+                                cookie_header
+                                if not settings.USE_PROXY
+                                or proxy_url == assigned_proxy_url
+                                else ""
+                            ),
+                        )
+                    except Exception as exc:
+                        video_error = f"video_detail_{type(exc).__name__}: {str(exc)[:160]}"
+                        logger.warning("Public video detail failed for %s: %s", username, video_error)
             if video_error and status == "SUCCESS":
                 status = "PARTIAL"
                 error = "Profile đã đồng bộ; chi tiết video chưa lấy được (" + video_error + ")"
+            elif metrics and settings.FAST_ANALYTICS_FETCH_VIDEOS:
+                expected_video_details = min(
+                    max(1, settings.FAST_ANALYTICS_MAX_VIDEOS_PER_ACCOUNT),
+                    profile_video_count,
+                )
+                status, error = _merge_video_completeness(
+                    status,
+                    error,
+                    expected_video_details,
+                    sum(
+                        1
+                        for video in videos
+                        if video.get("detail_available") is True
+                    ),
+                    videos_complete,
+                )
 
             with Session(engine) as session:
                 repo = SQLiteAccountRepository(session)
@@ -297,7 +608,7 @@ class TikTokFastAnalyticsSyncService:
                             setattr(account, field_name, value)
                     account.metrics_updated_at = datetime.now().isoformat(timespec="seconds")
                     account.analytics_sync_source = PUBLIC_PROFILE_SOURCE
-                    if videos:
+                    if videos or video_cache_used:
                         account.analytics_sync_source = "TIKTOK_PUBLIC_WEB"
                     account.analytics_sync_status = status
                     account.analytics_sync_error = error[:500]
@@ -315,6 +626,11 @@ class TikTokFastAnalyticsSyncService:
                         )
                     ).all()
                     existing_by_id = {row.video_id: row for row in existing}
+                    current_video_ids = {
+                        str(video.get("video_id") or "")
+                        for video in videos
+                        if str(video.get("video_id") or "")
+                    }
                     synced_at = datetime.now().isoformat(timespec="seconds")
                     for video in videos:
                         video_id = str(video.get("video_id") or "")
@@ -323,16 +639,54 @@ class TikTokFastAnalyticsSyncService:
                         row = existing_by_id.get(video_id) or TikTokVideoMetricDbTable(
                             account_email=account_id, video_id=video_id
                         )
-                        row.title = str(video.get("title") or "")
-                        row.create_time = video.get("create_time")
-                        row.view_count = int(video.get("view_count") or 0)
-                        row.like_count = int(video.get("like_count") or 0)
-                        row.comment_count = int(video.get("comment_count") or 0)
-                        row.share_count = int(video.get("share_count") or 0)
-                        row.cover_url = str(video.get("cover_url") or "")
-                        row.share_url = str(video.get("share_url") or "")
+                        if video.get("title") is not None:
+                            row.title = str(video.get("title") or "")
+                        if video.get("create_time") is not None:
+                            row.create_time = int(video["create_time"])
+                        for field_name in (
+                            "view_count",
+                            "like_count",
+                            "comment_count",
+                            "share_count",
+                            "favorite_count",
+                            "repost_count",
+                            "download_count",
+                            "duration_seconds",
+                        ):
+                            if video.get(field_name) is not None:
+                                setattr(row, field_name, int(video[field_name]))
+                        for field_name in (
+                            "cover_url",
+                            "share_url",
+                            "max_quality",
+                            "detail_source",
+                            "region",
+                            "shadow_ban",
+                            "shadow_ban_reason",
+                        ):
+                            if video.get(field_name) is not None:
+                                setattr(row, field_name, str(video[field_name]))
+                        for field_name in (
+                            "index_enabled",
+                            "is_reviewing",
+                            "is_private",
+                            "is_taken_down",
+                        ):
+                            if field_name in video:
+                                setattr(row, field_name, video[field_name])
                         row.synced_at = synced_at
                         session.add(row)
+                    stale_video_ids = _stale_video_ids_to_remove(
+                        set(existing_by_id),
+                        current_video_ids,
+                        complete=videos_complete,
+                        profile_video_count=profile_video_count,
+                        max_videos=settings.FAST_ANALYTICS_MAX_VIDEOS_PER_ACCOUNT,
+                    )
+                    if stale_video_ids:
+                        for stale_row in existing:
+                            if stale_row.video_id in stale_video_ids:
+                                session.delete(stale_row)
                     session.flush()
                     all_rows = session.exec(
                         select(TikTokVideoMetricDbTable).where(
@@ -345,6 +699,23 @@ class TikTokFastAnalyticsSyncService:
                         account.total_video_likes = sum(row.like_count for row in all_rows)
                         account.total_comments = sum(row.comment_count for row in all_rows)
                         account.total_shares = sum(row.share_count for row in all_rows)
+                elif (
+                    metrics
+                    and settings.FAST_ANALYTICS_FETCH_VIDEOS
+                    and profile_video_count == 0
+                ):
+                    empty_profile_rows = session.exec(
+                        select(TikTokVideoMetricDbTable).where(
+                            TikTokVideoMetricDbTable.account_email == account_id
+                        )
+                    ).all()
+                    for stale_row in empty_profile_rows:
+                        session.delete(stale_row)
+                    account.collected_video_count = 0
+                    account.total_views = 0
+                    account.total_video_likes = 0
+                    account.total_comments = 0
+                    account.total_shares = 0
                 repo.save(account)
                 event_data = {
                     "id": account.id,
@@ -376,7 +747,7 @@ class TikTokFastAnalyticsSyncService:
     async def run_batch(
         self,
         account_ids: Iterable[str],
-        concurrency_limit: int = 12,
+        concurrency_limit: int = 4,
         force: bool = False,
     ) -> None:
         ids = list(dict.fromkeys(str(value).strip().lower() for value in account_ids if value))
@@ -385,8 +756,12 @@ class TikTokFastAnalyticsSyncService:
         self.updated = 0
         self.failed = 0
         self.cached = 0
+        self.video_cached = 0
         self.skipped_sold = 0
+        self.browser_profile_fallbacks = 0
         self.reason_counts = {}
+        for client in self._video_clients:
+            client.reset_stats()
         clients: Dict[Optional[str], httpx.AsyncClient] = {}
         proxy_gates: Dict[str, asyncio.Semaphore] = {}
         global_gate = asyncio.Semaphore(max(1, min(concurrency_limit, 24)))

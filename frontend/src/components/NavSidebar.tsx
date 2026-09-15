@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Users, Heart, MonitorPlay, Globe, Film } from 'lucide-react';
+import React, { useCallback, useState } from 'react';
+import { Users, Heart, MonitorPlay, Globe, Film, Settings2 } from 'lucide-react';
 import { AppTab } from '../types';
+import { CaptchaSettingsModal } from './CaptchaSettingsModal';
 
 interface NavSidebarProps {
   activeTab: AppTab;
@@ -20,6 +21,9 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab,
   // LUÔN là rail biểu tượng; rê chuột vào -> TỰ ĐỘNG bung ra (overlay, không đẩy
   // nội dung). Rời chuột -> thu lại về rail. Không có chế độ ghim mở.
   const [hover, setHover] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   return (
     <aside
@@ -64,8 +68,18 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab,
           })}
         </nav>
 
-        {/* System status */}
+        {/* Settings + system status */}
         <div className={`py-3 border-t border-line-soft ${hover ? 'px-3.5' : 'flex justify-center'}`}>
+          <button
+            type="button"
+            onClick={openSettings}
+            aria-haspopup="dialog"
+            title={!hover ? 'Cài đặt extension' : undefined}
+            className={`mb-3 flex h-10 w-full cursor-pointer items-center rounded-lg text-[13px] font-semibold text-fg-muted transition-colors duration-150 hover:bg-white/5 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${hover ? 'gap-3 px-2.5' : 'justify-center'}`}
+          >
+            <Settings2 className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+            {hover && <span className="truncate whitespace-nowrap">Cài đặt extension</span>}
+          </button>
           {hover ? (
             <div className="flex items-center gap-2 text-[11px] font-semibold whitespace-nowrap">
               <span className={`w-2 h-2 rounded-full ${isGloballyPaused ? 'bg-amber-400 animate-pulse-soft' : 'bg-emerald-400'}`} />
@@ -81,6 +95,7 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab,
           )}
         </div>
       </div>
+      <CaptchaSettingsModal isOpen={settingsOpen} onClose={closeSettings} />
     </aside>
   );
 };

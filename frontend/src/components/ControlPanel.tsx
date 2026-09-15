@@ -193,7 +193,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
   return (
     <div className="card px-3.5 py-2.5 flex flex-col gap-2.5">
-      {/* HÀNG 1: điều khiển toàn cục + luồng/proxy + thư mục avatar (compact) */}
+      {/* HÀNG 1: điều khiển toàn cục + số luồng + thư mục avatar (compact) */}
       <div className="flex items-center gap-2.5 flex-wrap">
         <button onClick={onGlobalStart} className="btn btn-sm bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/20"
           title="Khởi động hệ thống điều phối tác vụ">
@@ -246,11 +246,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
         <div className="flex items-center gap-2"
           title={proxyMode
-            ? "Mỗi proxy chỉ chạy tối đa bấy nhiêu account cùng lúc; account thứ N+1 trên cùng proxy sẽ chờ"
+            ? "Tổng số account chạy song song; mỗi proxy chỉ chạy 1 account, account cùng proxy phải chờ"
             : "Đang chạy MẠNG THẬT (không proxy): đây là TỔNG số account chạy song song; account vượt quá sẽ xếp hàng chờ"}>
           <Gauge className="w-4 h-4 text-brand shrink-0" />
           <label className="text-[11px] text-fg-muted font-semibold whitespace-nowrap">
-            {proxyMode ? 'Luồng/proxy' : 'Số luồng'}
+            Số luồng
           </label>
           <input type="number" min={1} max={8} value={concurrency}
             onChange={(e) => setConcurrency(parseInt(e.target.value) || 1)}

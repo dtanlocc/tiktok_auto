@@ -11,3 +11,9 @@ class StudioReauthenticationRequired(RuntimeError):
     """TikTok web session works, but TikTok Studio requires a fresh login."""
 
     pass
+
+
+class AuthenticationPageNotReady(RuntimeError):
+    """The TikTok page never settled enough to judge the login session."""
+
+    pass

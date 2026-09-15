@@ -209,6 +209,8 @@ class ExtensionProfileBuilder:
         uuid_overrides: Optional[Mapping[str, str]] = None,
         storage_local_seed_resources: Optional[Mapping[str, str]] = None,
         storage_local_overrides: Optional[Mapping[str, Mapping[str, Any]]] = None,
+        storage_local_seed_directory: Optional[Path | str] = None,
+        excluded_addon_ids: Optional[Iterable[str]] = None,
         fail_if_empty: bool = True,
     ) -> None:
         self.source_roots = [Path(path).expanduser() for path in source_roots]
@@ -216,7 +218,118 @@ class ExtensionProfileBuilder:
         self.uuid_overrides = dict(uuid_overrides or {})
         self.storage_local_seed_resources = dict(storage_local_seed_resources or {})
         self.storage_local_overrides = dict(storage_local_overrides or {})
+        self.storage_local_seed_directory = (
+            Path(storage_local_seed_directory).expanduser()
+            if storage_local_seed_directory
+            else None
+        )
+        self._external_storage_seed_hashes: dict[str, str] = {}
+        self.excluded_addon_ids = {str(value) for value in (excluded_addon_ids or ())}
+        invalid_exclusions = sorted(
+            value for value in self.excluded_addon_ids if not _ADDON_ID_RE.fullmatch(value)
+        )
+        if invalid_exclusions:
+            raise ValueError(f"Invalid excluded Firefox add-on ID: {invalid_exclusions[0]!r}")
         self.fail_if_empty = fail_if_empty
+
+    def _external_storage_seed(
+        self, addon_id: str
+    ) -> tuple[dict[str, Any], Optional[str], Optional[bytes]]:
+        """Load one private storage.local snapshot without exposing its values."""
+
+        if self.storage_local_seed_directory is None:
+            return {}, None, None
+        addon_dir = self.storage_local_seed_directory / addon_id
+        storage_path = addon_dir / "storage.js"
+        metadata_path = addon_dir / "metadata.json"
+
+        storage_data: dict[str, Any] = {}
+        storage_raw: Optional[bytes] = None
+        if storage_path.is_file():
+            storage_raw = storage_path.read_bytes()
+            try:
+                parsed_storage = json.loads(storage_raw.decode("utf-8-sig"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError(
+                    f"External storage seed is invalid for {addon_id}: {storage_path}"
+                ) from exc
+            if not isinstance(parsed_storage, dict):
+                raise ValueError(
+                    f"External storage seed must be an object for {addon_id}: {storage_path}"
+                )
+            storage_data.update(parsed_storage)
+
+        metadata_uuid: Optional[str] = None
+        if metadata_path.is_file():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError(
+                    f"Extension storage metadata is invalid for {addon_id}: {metadata_path}"
+                ) from exc
+            if not isinstance(metadata, dict):
+                raise ValueError(
+                    f"Extension storage metadata must be an object for {addon_id}: {metadata_path}"
+                )
+            metadata_addon_id = metadata.get("addon_id")
+            if metadata_addon_id and str(metadata_addon_id) != addon_id:
+                raise ValueError(
+                    f"Extension storage metadata ID mismatch for {addon_id}: {metadata_addon_id}"
+                )
+            if metadata.get("extension_uuid"):
+                metadata_uuid = str(uuid.UUID(str(metadata["extension_uuid"])))
+
+        return storage_data, metadata_uuid, storage_raw
+
+    def persist_external_storage(self, profile_dir: Path | str) -> list[str]:
+        """Atomically retain refreshed state after Firefox has fully stopped.
+
+        Compare-and-swap protects a newer snapshot written by another session.
+        Invalid or concurrently changed seed data is never overwritten.
+        """
+
+        if self.storage_local_seed_directory is None:
+            return []
+        profile = Path(profile_dir)
+        persisted: list[str] = []
+        for addon_id, initial_hash in self._external_storage_seed_hashes.items():
+            source = profile / "browser-extension-data" / addon_id / "storage.js"
+            destination = self.storage_local_seed_directory / addon_id / "storage.js"
+            if not source.is_file() or not destination.is_file():
+                continue
+            source_raw = source.read_bytes()
+            try:
+                parsed = json.loads(source_raw.decode("utf-8-sig"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                logger.warning(
+                    "Skipping invalid refreshed extension storage for %s", addon_id
+                )
+                continue
+            if not isinstance(parsed, dict):
+                logger.warning(
+                    "Skipping non-object refreshed extension storage for %s", addon_id
+                )
+                continue
+            current_raw = destination.read_bytes()
+            if hashlib.sha256(current_raw).hexdigest() != initial_hash:
+                logger.warning(
+                    "Skipping refreshed extension storage for %s because the private seed changed concurrently",
+                    addon_id,
+                )
+                continue
+            temporary = destination.with_name(
+                f".{destination.name}.{uuid.uuid4().hex}.tmp"
+            )
+            try:
+                temporary.write_bytes(source_raw)
+                temporary.replace(destination)
+            finally:
+                temporary.unlink(missing_ok=True)
+            self._external_storage_seed_hashes[addon_id] = hashlib.sha256(
+                source_raw
+            ).hexdigest()
+            persisted.append(addon_id)
+        return persisted
 
     def discover_sources(self) -> list[Path]:
         discovered: list[Path] = []
@@ -335,18 +448,28 @@ class ExtensionProfileBuilder:
         profile = Path(profile_dir)
         extension_dir = profile / "extensions"
         extension_dir.mkdir(parents=True, exist_ok=True)
+        self._external_storage_seed_hashes.clear()
 
         sources = self.discover_sources()
         if not sources and self.fail_if_empty:
             roots = "; ".join(str(path) for path in self.source_roots) or "<none>"
             raise RuntimeError(f"No Firefox extensions found in: {roots}")
 
-        prepared = self._deduplicate(self._prepare(source) for source in sources)
+        prepared = [
+            item
+            for item in self._deduplicate(self._prepare(source) for source in sources)
+            if item.addon_id not in self.excluded_addon_ids
+        ]
         installed: list[InstalledExtension] = []
 
         for item in prepared:
-            extension_uuid = self.uuid_overrides.get(item.addon_id) or str(
-                uuid.uuid5(uuid.NAMESPACE_URL, f"tiktok-auto:{item.addon_id}")
+            external_storage, metadata_uuid, external_storage_raw = (
+                self._external_storage_seed(item.addon_id)
+            )
+            extension_uuid = (
+                self.uuid_overrides.get(item.addon_id)
+                or metadata_uuid
+                or str(uuid.uuid5(uuid.NAMESPACE_URL, f"tiktok-auto:{item.addon_id}"))
             )
             # Validate caller-provided UUID early; Firefox otherwise replaces it
             # silently and extension-specific URLs become unpredictable.
@@ -368,7 +491,7 @@ class ExtensionProfileBuilder:
 
             seed_resource = self.storage_local_seed_resources.get(item.addon_id)
             storage_patch = self.storage_local_overrides.get(item.addon_id, {})
-            if seed_resource or storage_patch:
+            if seed_resource or external_storage_raw is not None or storage_patch:
                 storage_data: dict[str, Any] = {}
                 if seed_resource:
                     safe_resource = _safe_archive_name(seed_resource)
@@ -388,6 +511,11 @@ class ExtensionProfileBuilder:
                             f"Storage seed resource {safe_resource!r} must be an object"
                         )
                     storage_data.update(parsed_seed)
+                storage_data.update(external_storage)
+                if external_storage_raw is not None:
+                    self._external_storage_seed_hashes[item.addon_id] = hashlib.sha256(
+                        external_storage_raw
+                    ).hexdigest()
                 if not isinstance(storage_patch, Mapping):
                     raise ValueError(
                         f"Storage override for {item.addon_id} must be an object"

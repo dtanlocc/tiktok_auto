@@ -9,10 +9,20 @@ from pydantic import BaseModel
 
 from app.use_cases.orchestration.task_dispatcher import ConcurrentTaskDispatcher
 from app.infrastructure.scheduler.interaction_scheduler import InteractionScheduler
-from app.interfaces.api.deps import get_task_dispatcher, get_interaction_scheduler, get_account_repository
+from app.interfaces.api.deps import (
+    get_account_repository,
+    get_interaction_scheduler,
+    get_task_dispatcher,
+    require_runtime_entitlement,
+)
 from app.domain.ports.repository import IAccountRepository
+from app.core.proxy_allocation import interleave_accounts_by_proxy
 
-router = APIRouter(prefix="/interactions", tags=["Interactions"])
+router = APIRouter(
+    prefix="/interactions",
+    tags=["Interactions"],
+    dependencies=[Depends(require_runtime_entitlement("app.start"))],
+)
 
 
 def _load_comment_list(comment_file_path: Optional[str]) -> List[str]:
@@ -20,7 +30,10 @@ def _load_comment_list(comment_file_path: Optional[str]) -> List[str]:
     if not comment_file_path:
         return []
     if not os.path.exists(comment_file_path):
-        raise HTTPException(status_code=400, detail=f"Không tìm thấy file bình luận: {comment_file_path}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không tìm thấy file bình luận: {comment_file_path}",
+        )
     try:
         with open(comment_file_path, "r", encoding="utf-8", errors="ignore") as f:
             lines = [line.strip() for line in f.readlines()]
@@ -31,7 +44,7 @@ def _load_comment_list(comment_file_path: Optional[str]) -> List[str]:
 
 class InteractionConfig(BaseModel):
     account_ids: List[str]
-    mode: str = "foryou"                    # "foryou" hoặc "hashtag"
+    mode: str = "foryou"  # "foryou" hoặc "hashtag"
     hashtag: Optional[str] = None
     duration_minutes: int = 10
     like_probability: float = 0.4
@@ -87,7 +100,11 @@ def select_comment_file():
         if selected_path:
             normalized_path = os.path.abspath(selected_path)
             comment_count = len(_load_comment_list(normalized_path))
-            return {"status": "SUCCESS", "path": normalized_path, "comment_count": comment_count}
+            return {
+                "status": "SUCCESS",
+                "path": normalized_path,
+                "comment_count": comment_count,
+            }
         return {"status": "CANCELLED", "path": ""}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi mở bộ chọn file: {str(e)}")
@@ -103,9 +120,13 @@ async def run_interaction_once(
     account_repo: IAccountRepository = Depends(get_account_repository),
 ):
     if not payload.account_ids:
-        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
+        raise HTTPException(
+            status_code=400, detail="Vui lòng chọn ít nhất một tài khoản."
+        )
     if payload.mode == "hashtag" and not payload.hashtag:
-        raise HTTPException(status_code=400, detail="Chế độ hashtag cần nhập từ khóa hashtag.")
+        raise HTTPException(
+            status_code=400, detail="Chế độ hashtag cần nhập từ khóa hashtag."
+        )
 
     comment_list = _load_comment_list(payload.comment_file_path)
 
@@ -123,13 +144,17 @@ async def run_interaction_once(
         "max_watch_seconds": payload.max_watch_seconds,
     }
 
-    queued_count = 0
+    selected_accounts = []
     for acc_id in payload.account_ids:
         account = account_repo.get_by_id(acc_id)
         if not account:
             continue
+        selected_accounts.append(account)
+
+    queued_count = 0
+    for account in interleave_accounts_by_proxy(selected_accounts):
         await dispatcher.submit_task(
-            account_id=acc_id,
+            account_id=account.id,
             task_type="INTERACT_VIDEOS",
             extra_config=extra_config,
         )
@@ -152,16 +177,25 @@ async def create_schedule(
     account_repo: IAccountRepository = Depends(get_account_repository),
 ):
     if not payload.account_ids:
-        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
+        raise HTTPException(
+            status_code=400, detail="Vui lòng chọn ít nhất một tài khoản."
+        )
     if payload.mode == "hashtag" and not payload.hashtag:
-        raise HTTPException(status_code=400, detail="Chế độ hashtag cần nhập từ khóa hashtag.")
+        raise HTTPException(
+            status_code=400, detail="Chế độ hashtag cần nhập từ khóa hashtag."
+        )
     if payload.interval_minutes <= 0:
-        raise HTTPException(status_code=400, detail="Chu kỳ lặp lại (interval_minutes) phải lớn hơn 0.")
+        raise HTTPException(
+            status_code=400, detail="Chu kỳ lặp lại (interval_minutes) phải lớn hơn 0."
+        )
 
     # Lọc account tồn tại thật trong DB
     valid_ids = [aid for aid in payload.account_ids if account_repo.get_by_id(aid)]
     if not valid_ids:
-        raise HTTPException(status_code=400, detail="Không có tài khoản hợp lệ nào trong danh sách đã chọn.")
+        raise HTTPException(
+            status_code=400,
+            detail="Không có tài khoản hợp lệ nào trong danh sách đã chọn.",
+        )
 
     comment_list = _load_comment_list(payload.comment_file_path)
 

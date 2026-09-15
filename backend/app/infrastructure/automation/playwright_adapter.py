@@ -9,6 +9,8 @@ import uuid
 import tempfile
 import json
 import zipfile
+import unicodedata
+import weakref
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -25,7 +27,15 @@ from invisible_playwright import (
 )
 from app.domain.ports.browser import IBrowserService
 from app.core.config import settings
-from app.core.exceptions import AccountBannedException, StudioReauthenticationRequired
+from app.core.extension_settings import (
+    NORDVPN_ADDON_ID,
+    is_nordvpn_extension_enabled,
+)
+from app.core.exceptions import (
+    AccountBannedException,
+    AuthenticationPageNotReady,
+    StudioReauthenticationRequired,
+)
 from app.core.tiktok_urls import ensure_tiktok_english_url
 from app.infrastructure.automation.extension_profile_builder import (
     ExtensionProfileBuilder,
@@ -42,6 +52,23 @@ from app.use_cases.upload.caption_hashtags import (
 logger = logging.getLogger("PlaywrightAdapter")
 
 
+# Firefox/Juggler occasionally loses its launch pipe when two sessions start at
+# exactly the same time.  Serialize only the short startup/cleanup phase; once
+# a context is ready, all account sessions still run concurrently.
+_BROWSER_LAUNCH_LOCKS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _browser_launch_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _BROWSER_LAUNCH_LOCKS.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _BROWSER_LAUNCH_LOCKS[loop] = lock
+    return lock
+
+
 _PLAYWRIGHT_COOKIE_FIELDS = {
     "name",
     "value",
@@ -56,7 +83,15 @@ _PLAYWRIGHT_COOKIE_FIELDS = {
 
 
 def _sanitize_browser_cookies(cookies: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Drop browser-export metadata that Playwright refuses on import."""
+    """Drop export metadata and repair cookies before browser import.
+
+    Firefox does not reliably send a cookie declared as ``SameSite=None``
+    without ``Secure``. A cookie imported from a plain ``name=value`` file
+    starts without attributes, but ``context.cookies()`` later serializes that
+    default as ``sameSite=None, secure=false``. Persisting that snapshot after
+    an upload made the current tab stay logged in while the next fresh browser
+    silently rejected the restored TikTok session.
+    """
     deduped: Dict[tuple, Dict[str, Any]] = {}
     for raw in cookies or []:
         if not isinstance(raw, dict) or not raw.get("name"):
@@ -69,6 +104,35 @@ def _sanitize_browser_cookies(cookies: List[Dict[str, Any]]) -> List[Dict[str, A
         same_site = cookie.get("sameSite")
         if same_site not in {None, "Strict", "Lax", "None"}:
             cookie.pop("sameSite", None)
+        # Playwright exports session cookies with ``expires=-1``. Feeding that
+        # value back into Firefox does not recreate a session cookie: Firefox
+        # treats it as an already-expired Unix timestamp and silently drops it
+        # during add_cookies(). Omit non-positive/invalid expiry values so the
+        # cookie is imported as a real browser-session cookie again.
+        if "expires" in cookie:
+            try:
+                expires = float(cookie["expires"])
+            except (TypeError, ValueError):
+                cookie.pop("expires", None)
+            else:
+                if expires <= 0:
+                    cookie.pop("expires", None)
+                else:
+                    cookie["expires"] = expires
+        domain = str(cookie.get("domain") or "").lstrip(".").casefold()
+        is_tiktok_cookie = domain == "tiktok.com" or domain.endswith(".tiktok.com")
+        if is_tiktok_cookie and (
+            cookie.get("sameSite") == "None"
+            or str(cookie.get("name") or "") in {
+                "sessionid",
+                "sessionid_ss",
+                "sid_guard",
+                "sid_tt",
+                "uid_tt",
+                "uid_tt_ss",
+            }
+        ):
+            cookie["secure"] = True
         key = (
             cookie.get("name"),
             cookie.get("domain", ""),
@@ -78,8 +142,39 @@ def _sanitize_browser_cookies(cookies: List[Dict[str, Any]]) -> List[Dict[str, A
     return list(deduped.values())
 
 
+async def _locator_has_visible(locator, max_items: int = 20) -> bool:
+    """Require a rendered match; hidden SPA templates are not UI evidence."""
+    try:
+        count = min(await locator.count(), max_items)
+        for index in range(count):
+            item = locator.nth(index) if hasattr(locator, "nth") else locator.first
+            if await item.is_visible():
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _normalize_caption_text(value: str) -> str:
+    """Normalize visible Draft.js text without its invisible entity markers."""
+    without_format_markers = "".join(
+        character
+        for character in (value or "")
+        if unicodedata.category(character) != "Cf"
+    )
+    return unicodedata.normalize(
+        "NFKC", " ".join(without_format_markers.split())
+    ).strip()
+
+
 def _foryou_state_ready(state: Dict[str, Any], network_idle: bool) -> bool:
     """Return True only for a fully rendered, signed-in For You observation."""
+    # TikTok's virtualized infinite feed commonly keeps one or two in-viewport
+    # skeleton slots mounted below already playable posts. They are prefetch
+    # placeholders, not a blocking page loader. Network quiet + decoded media +
+    # five sustained observations in ``prepare_foryou_home`` are the guard; a
+    # small residual count must not turn a healthy feed into a 90-second timeout.
+    residual_busy = int(state.get("busy") or 0)
     return bool(
         network_idle
         and state.get("ready") == "complete"
@@ -88,8 +183,23 @@ def _foryou_state_ready(state: Dict[str, Any], network_idle: bool) -> bool:
         and int(state.get("feedItems") or 0) > 0
         and int(state.get("mediaReady") or 0) > 0
         and int(state.get("pendingImages") or 0) == 0
-        and int(state.get("busy") or 0) == 0
+        and residual_busy <= 2
         and state.get("fontsLoaded")
+    )
+
+
+def _auth_shell_state_ready(state: Dict[str, Any]) -> bool:
+    """Require TikTok's document and navigation shell to finish rendering.
+
+    This is intentionally lighter than the upload gate because a logged-out
+    page has no usable For You media. It is still strict enough that a temporary
+    guest navbar shown during SPA hydration cannot invalidate a live cookie.
+    """
+    return bool(
+        state.get("ready") == "complete"
+        and state.get("rootReady")
+        and state.get("fontsLoaded")
+        and int(state.get("busy") or 0) <= 2
     )
 
 
@@ -110,6 +220,150 @@ def _classify_distribution_text(value: str) -> str:
     ):
         return "UNDER_REVIEW"
     return "PUBLISHED"
+
+
+def _normalize_studio_post_text(value: str) -> str:
+    """Normalize filename/caption text across Studio's punctuation variants."""
+    text = unicodedata.normalize("NFKC", value or "").casefold()
+    text = re.sub(
+        r"\.(?:mp4|mov|m4v|webm|avi|mkv)\s*$",
+        "",
+        text,
+        flags=re.I,
+    )
+    return " ".join(re.sub(r"[\W_]+", " ", text, flags=re.UNICODE).split())
+
+
+def _studio_post_text_matches(expected: str, observed: str) -> bool:
+    """Accept a full, extended, or visibly truncated Studio post title."""
+    wanted = _normalize_studio_post_text(expected)
+    page_text = _normalize_studio_post_text(observed)
+    if not wanted or not page_text:
+        return False
+    if wanted in page_text:
+        return True
+
+    # Studio commonly renders only the first part of a long caption followed
+    # by an ellipsis. Twenty-four normalized characters retain the video's
+    # distinctive title for our filename convention while tolerating that UI
+    # truncation. Try longer prefixes first to minimise accidental matches.
+    for length in (48, 40, 32, 28, 24):
+        if len(wanted) >= length and wanted[:length].rstrip() in page_text:
+            return True
+    return False
+
+
+def _is_studio_posts_url(value: str) -> bool:
+    """Accept current and legacy TikTok routes for the published-content list."""
+    normalized = str(value or "").casefold()
+    return any(
+        route in normalized
+        for route in (
+            "/tiktokstudio/content",
+            "/tiktokstudio/posts",
+            "/creator-center/content",
+            "/creator-center/manage",
+        )
+    )
+
+
+def _studio_posts_body_ready(body_text: str, expected_values: List[str]) -> bool:
+    """Recognize the Posts list when SPA/page URL bookkeeping is stale."""
+    text = body_text or ""
+    lines = {
+        " ".join(line.split()).casefold()
+        for line in text.splitlines()
+        if line.strip()
+    }
+    has_posts_heading = bool(
+        lines.intersection({
+            "posts",
+            "manage posts",
+            "content",
+            "bài đăng",
+            "nội dung",
+        })
+    )
+    if not has_posts_heading:
+        return False
+    has_expected_video = any(
+        _studio_post_text_matches(expected, text)
+        for expected in expected_values
+        if expected
+    )
+    has_posts_columns = bool(
+        lines.intersection({
+            "views",
+            "likes",
+            "comments",
+            "status",
+            "visibility",
+            "date posted",
+            "posted",
+        })
+    )
+    return has_expected_video or has_posts_columns
+
+
+def _caption_hashtags(value: str) -> list[str]:
+    """Return hashtags already present in TikTok's filename caption.
+
+    TikTok treats every non-whitespace character after ``#`` as part of the
+    token. Preserve that exact boundary so positioning the caret does not
+    silently change a filename-provided hashtag.
+    """
+    return [match.group(0) for match in re.finditer(r"#[^\s]+", value or "")]
+
+
+def _upload_progress_percent(
+    raw_value: Optional[str],
+    raw_max: Optional[str] = None,
+    label: str = "",
+) -> Optional[float]:
+    """Normalize the progress representations used by Studio to 0..100."""
+    percent_match = re.search(r"(?<!\d)(\d{1,3}(?:[.,]\d+)?)\s*%", label or "")
+    if percent_match:
+        try:
+            return max(0.0, min(100.0, float(percent_match.group(1).replace(",", "."))))
+        except ValueError:
+            pass
+    try:
+        value = float(raw_value) if raw_value not in (None, "") else None
+    except (TypeError, ValueError):
+        value = None
+    try:
+        maximum = float(raw_max) if raw_max not in (None, "") else None
+    except (TypeError, ValueError):
+        maximum = None
+    if value is None:
+        return None
+    if maximum and maximum > 0:
+        value = value / maximum * 100.0
+    elif 0.0 <= value <= 1.0:
+        value *= 100.0
+    return max(0.0, min(100.0, value))
+
+
+def _video_upload_finished(
+    state: Dict[str, Any],
+    *,
+    reached_high: bool = False,
+    reached_100: bool = False,
+) -> bool:
+    """Return whether Studio has finished the file-upload lifecycle.
+
+    Some Studio builds remove their short-lived progress node before a 500 ms
+    poll observes it. Once the generated video preview exposes ``Edit cover``,
+    no progress node remains and no uploading copy is visible, the file is
+    already available to the publish editor. Content checks can still run
+    independently and are deliberately not treated as file-upload progress.
+    """
+    no_upload_activity = not state.get("has_progress") and not state.get("uploading")
+    return bool(
+        reached_100
+        or state.get("complete")
+        or (no_upload_activity and (reached_high or state.get("preview_ready")))
+    )
 
 # =============================================================================
 # THEO DOI CUA SO (HWND) DE STREAM BANG PrintWindow
@@ -147,13 +401,38 @@ def _reap_session_tree(token) -> int:
         return 0
 
 
+async def _launch_invisible_context(instance: InvisiblePlaywright, timeout: int):
+    """Launch one context without overlapping another Firefox/Juggler startup."""
+    async with _browser_launch_lock():
+        try:
+            return await asyncio.wait_for(instance.__aenter__(), timeout=timeout)
+        except BaseException:
+            # Keep cleanup inside the same gate.  Starting another session while
+            # Juggler is still closing the failed pipe is what created orphaned
+            # Firefox trees and made the following launch hang as well.
+            token = getattr(instance, "_session_token", None)
+            try:
+                await asyncio.wait_for(instance.__aexit__(None, None, None), timeout=10)
+            except BaseException:
+                pass
+            if token:
+                try:
+                    await asyncio.to_thread(_reap_session_tree, token)
+                except BaseException:
+                    pass
+            raise
+
+
 class InvisiblePlaywrightAdapter(IBrowserService):
     def __init__(self):
         self._invisible_pw: Optional[InvisiblePlaywright] = None
         self._browser = None
         self._page = None
         self._temp_profile_path: Optional[str] = None
+        self._extension_profile_builder: Optional[ExtensionProfileBuilder] = None
         self._native_upload_staging_dirs: set[str] = set()
+        self._last_native_upload_error: Optional[str] = None
+        self._last_attached_media_names: List[str] = []
         # HWND cua so Firefox cua rieng phien nay (dung cho PrintWindow stream).
         self._hwnd: Optional[int] = None
         self._window_visible: bool = False
@@ -166,6 +445,16 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # The upload use case uses this to decide whether a read-only public
         # profile check is safe after Studio itself produces a false negative.
         self.last_publish_acknowledged: bool = False
+        # Exact observation which set ``last_publish_acknowledged``. Keep this
+        # separate from the boolean because an editor disappearing is weaker
+        # evidence than clicking Post now or reaching Studio Posts.
+        self.last_publish_ack_source: str = ""
+        self.last_publish_diagnostics: List[Dict[str, Any]] = []
+        # Machine-readable result for the queue. Duplicate rejection happens
+        # before Post now; swallowed means Post now was accepted but the video
+        # did not appear on the redirected Studio Posts page.
+        self.last_publish_failure_code: str = ""
+        self.last_publish_failure_detail: str = ""
         # A successful For You readiness check issues one short-lived ticket.
         # Upload consumes it before navigating to Studio, preventing callers
         # from bypassing the mandatory home-load gate.
@@ -174,6 +463,10 @@ class InvisiblePlaywrightAdapter(IBrowserService):
     @property
     def stream_suspended(self) -> bool:
         return self._stream_suspended
+
+    def _set_native_dialog_active(self, active: bool) -> None:
+        """Pause capture only while this account owns the OS file chooser."""
+        self._stream_suspended = bool(active)
 
     def bind_automation_gate(self, gate: asyncio.Event) -> None:
         self._automation_gate = gate
@@ -239,6 +532,10 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if omo_uuid:
                 uuid_overrides.setdefault("omocaptcha@gmail.com", omo_uuid)
 
+            excluded_addon_ids: set[str] = set()
+            if not is_nordvpn_extension_enabled():
+                excluded_addon_ids.add(NORDVPN_ADDON_ID)
+
             extension_builder = ExtensionProfileBuilder(
                 source_paths,
                 json_resource_overrides=json_overrides,
@@ -252,8 +549,13 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         "initialized": True,
                     },
                 },
+                storage_local_seed_directory=getattr(
+                    settings, "BROWSER_EXTENSION_STORAGE_DIR", ""
+                ),
+                excluded_addon_ids=excluded_addon_ids,
                 fail_if_empty=getattr(settings, "BROWSER_EXTENSIONS_REQUIRED", True),
             )
+            self._extension_profile_builder = extension_builder
             installed_extensions = await asyncio.to_thread(
                 extension_builder.prepare_profile, self._temp_profile_path
             )
@@ -411,6 +713,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             self._invisible_pw.set_firefox_extensions(
                 item.xpi_path for item in installed_extensions
             )
+            self._invisible_pw.set_firefox_extension_exclusions(excluded_addon_ids)
             # =============================================================
             # LUOI AN TOAN (khong phai cach chua chinh).
             # Phong truong hop hi huu launch bi treo (vd may qua tai):
@@ -424,8 +727,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             for _att in range(1, _tries + 1):
                 _t0 = time.monotonic()
                 try:
-                    self._browser = await asyncio.wait_for(
-                        self._invisible_pw.__aenter__(), timeout=_lt
+                    self._browser = await _launch_invisible_context(
+                        self._invisible_pw, _lt
                     )
                     logger.info(f"[LAUNCH] OK sau {time.monotonic()-_t0:.1f}s (lan {_att}/{_tries}).")
                     break
@@ -433,30 +736,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     _err = e_l
                     _kind = "treo qua %ss" % _lt if isinstance(e_l, asyncio.TimeoutError) else str(e_l)[:70]
                     logger.warning(f"[LAUNCH] Lan {_att}/{_tries} hong ({_kind}) -> don + mo lai.")
-                    # PHAI lay token TRUOC __aexit__: _teardown() reap xong se dat
-                    # lai _session_token = SessionToken() rong (falsy, khop 0 process).
-                    _token = getattr(self._invisible_pw, "_session_token", None)
-                    # Dong context (co han gio, khong de treo o buoc don). Ban than
-                    # __aexit__ -> _teardown() DA tu reap theo token roi; buoc duoi
-                    # chi la luoi an toan cho truong hop chinh __aexit__ bi treo qua 10s.
-                    try:
-                        await asyncio.wait_for(self._invisible_pw.__aexit__(None, None, None), timeout=10)
-                    except Exception:
-                        pass
-                    # GIET dut tien trinh CUA RIENG lan hong nay, nhan dien bang
-                    # SessionToken cua thu vien (bien moi truong INVPW_SESSION_TOKEN
-                    # dong dau tren ca cay process).
-                    # ====================== VI SAO KHONG DUNG SNAPSHOT PID =========
-                    # Ban cu chup firefox_pids() luc bat dau roi giet MOI firefox.exe
-                    # khong nam trong snapshot do. Chay DA LUONG thi cac phien khac
-                    # khoi dong SAU snapshot -> bi giet oan, phien dang chay tot lan ra
-                    # "Connection closed" va account roi ERROR. Token khop DUONG (chi
-                    # dung process mang dung token nay) nen an toan tuyet doi.
-                    if _token:
-                        try:
-                            await asyncio.to_thread(_reap_session_tree, _token)
-                        except Exception:
-                            pass
+                    # _launch_invisible_context already closes/reaps the failed
+                    # attempt before releasing the global startup gate.
                     if _att < _tries:
                         await asyncio.sleep(1.5)
                         self._invisible_pw = InvisiblePlaywright(
@@ -471,6 +752,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         )
                         self._invisible_pw.set_firefox_extensions(
                             item.xpi_path for item in installed_extensions
+                        )
+                        self._invisible_pw.set_firefox_extension_exclusions(
+                            excluded_addon_ids
                         )
             if self._browser is None:
                 raise _err or RuntimeError(f"Khong mo duoc trinh duyet sau {_tries} lan.")
@@ -920,9 +1204,77 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
         contexts = getattr(self._browser, "contexts", [])
         if contexts:
-            return await contexts[0].cookies()
+            return _sanitize_browser_cookies(await contexts[0].cookies())
         else:
-            return await self._browser.cookies()
+            return _sanitize_browser_cookies(await self._browser.cookies())
+
+    async def validate_authenticated_identity(self, expected_username: str) -> bool:
+        """Require the signed-in nav identity to match the requested account."""
+        await self._wait_automation_gate()
+        if not self._page:
+            return False
+
+        expected = str(expected_username or "").strip().lstrip("@").casefold()
+        if not expected:
+            return False
+
+        for _ in range(12):
+            await self._wait_automation_gate()
+            try:
+                observed = await self._page.evaluate(
+                    r"""() => {
+                      const normalize = value => {
+                        try { value = decodeURIComponent(String(value || '')); }
+                        catch (_) { value = String(value || ''); }
+                        return value.trim().replace(/^@/, '').toLowerCase();
+                      };
+                      const nodes = Array.from(document.querySelectorAll(
+                        '[data-e2e="nav-profile"], [data-e2e="profile-icon"]'
+                      ));
+                      for (const node of nodes) {
+                        const anchor = node.matches('a')
+                          ? node : (node.closest('a') || node.querySelector('a'));
+                        const href = anchor && anchor.getAttribute('href');
+                        const match = String(href || '').match(
+                          /^\/@([^/?#]+)(?:[/?#]|$)/
+                        );
+                        if (match && normalize(match[1])) return normalize(match[1]);
+                      }
+
+                      const scope = window.__UNIVERSAL_DATA_FOR_REHYDRATION__
+                        && window.__UNIVERSAL_DATA_FOR_REHYDRATION__.__DEFAULT_SCOPE__;
+                      const context = scope && scope['webapp.app-context'];
+                      const username = context && (
+                        context.user?.uniqueId
+                        || context.userInfo?.user?.uniqueId
+                        || context.user?.unique_id
+                      );
+                      return normalize(username) || null;
+                    }"""
+                )
+                if observed:
+                    matched = str(observed).casefold() == expected
+                    if matched:
+                        logger.info(
+                            "[COOKIE] Da xac minh dung identity @%s.",
+                            expected_username,
+                        )
+                    else:
+                        logger.warning(
+                            "[COOKIE] Identity sai: can @%s nhung browser dang @%s.",
+                            expected_username,
+                            observed,
+                        )
+                    return matched
+            except Exception as exc:
+                logger.debug("[COOKIE] Chua doc duoc identity: %s", exc)
+            await asyncio.sleep(0.5)
+
+        logger.warning(
+            "[COOKIE] Khong xac minh duoc identity @%s; khong chap nhan cookie login.",
+            expected_username,
+        )
+        return False
 
     async def clear_auth_session(self) -> None:
         """Clear the partial web session before a forced Studio re-login."""
@@ -941,9 +1293,21 @@ class InvisiblePlaywrightAdapter(IBrowserService):
     async def check_login_status(self) -> bool:
         await self._wait_automation_gate()
         if not self._page:
-            return False
+            raise AuthenticationPageNotReady("Trình duyệt chưa có trang TikTok để xác minh.")
 
-        logger.info("[*] Dang doi trang chu TikTok on dinh phien dang nhap...")
+        logger.info("[*] Dang cho TikTok tai day du va on dinh truoc khi xac minh phien...")
+
+        # navigate_to() deliberately returns after DOMContentLoaded so heavy
+        # TikTok pages do not block every navigation. Authentication is a place
+        # where an early verdict is dangerous, however: wait for the full load
+        # event here, then also require several stable render observations.
+        try:
+            await self._page.wait_for_load_state("load", timeout=30000)
+        except Exception as exc:
+            logger.warning(
+                "[COOKIE] Chua nhan load event; tiep tuc quan sat document: %s",
+                str(exc)[:120],
+            )
 
         ban_dialog_locator = self._page.locator(
             '.tux-dialog__content-title:has-text("Your account was banned"), '
@@ -962,9 +1326,18 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             '[data-e2e="messages-icon"], [data-e2e="inbox-icon"], '
             'a[href*="/messages"]'
         )
-        login_locator = self._page.locator('[data-e2e="nav-login-button"], button:has-text("Log in"), button:has-text("Dang nhap")')
+        login_locator = self._page.locator(
+            '[data-e2e="nav-login-button"], button:has-text("Log in"), '
+            'button:has-text("Dang nhap"), button:has-text("\u0110\u0103ng nh\u1eadp")'
+        )
 
-        for i in range(20):
+        visible_login_streak = 0
+        visible_account_streak = 0
+        stable_shell_streak = 0
+        last_url = ""
+        last_state: Dict[str, Any] = {}
+        saw_settled_shell = False
+        for i in range(45):
             await self._wait_automation_gate()
             try:
                 if await ban_dialog_locator.count() > 0 and await ban_dialog_locator.first.is_visible():
@@ -976,28 +1349,90 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 # mo phia sau co the khien cac dau hieu "da login" khop nham -> CHUA duoc
                 # coi la dang nhap. Bo qua vong nay, cho captcha giai xong (hoac timeout).
                 if await self.is_captcha_present():
+                    stable_shell_streak = 0
+                    visible_login_streak = 0
+                    visible_account_streak = 0
                     await asyncio.sleep(1)
                     continue
 
-                if await profile_link_locator.count() > 0:
-                    logger.info(f"[+] Xac minh THANH CONG sau {i+1} giay (Phat hien profile/messages cua account).")
-                    return True
+                state = await self._page.evaluate(r"""() => {
+                  const visible = el => !!(el && (
+                    el.offsetParent !== null || el.getClientRects().length
+                  ));
+                  const busySelectors = [
+                    '[aria-busy="true"]',
+                    '[data-e2e="loading"]', '[data-e2e*="skeleton"]',
+                    '.TUXLoading', '[class*="Skeleton"]'
+                  ];
+                  return {
+                    ready: document.readyState,
+                    rootReady: !!document.body && document.body.childElementCount > 0,
+                    fontsLoaded: !document.fonts || document.fonts.status === 'loaded',
+                    busy: Array.from(document.querySelectorAll(
+                      busySelectors.join(',')
+                    )).filter(visible).length,
+                    href: location.href
+                  };
+                }""")
+                if not isinstance(state, dict):
+                    state = {}
+                current_url = str(state.get("href") or self._page.url or "")
+                last_state = state
+                if current_url and current_url == last_url:
+                    stable_shell_streak += 1
+                else:
+                    last_url = current_url
+                    stable_shell_streak = 1
+                    visible_login_streak = 0
+                    visible_account_streak = 0
 
-                # Read only hydration scripts instead of serializing the full DOM.
-                try:
-                    hydrated_login = await self._page.evaluate(r"""() => Array.from(document.scripts).some(
-                      script => /"isLogin"\s*:\s*true/.test(script.textContent || '')
-                    )""")
-                    if hydrated_login:
-                        logger.info(f"[+] Xac minh THANH CONG sau {i+1} giay (isLogin=true trong HTML).")
-                        return True
-                except Exception:
-                    pass
+                shell_settled = bool(
+                    stable_shell_streak >= 3 and _auth_shell_state_ready(state)
+                )
+                if not shell_settled:
+                    visible_login_streak = 0
+                    visible_account_streak = 0
+                    await asyncio.sleep(1)
+                    continue
+                saw_settled_shell = True
 
-                if i >= 15:
-                    if await login_locator.count() > 0 and await login_locator.first.is_visible():
-                        logger.warning(f"[-] Xac minh THAT BAI sau {i+1} giay (Phat hien nut Log in thuc su).")
+                # Guest HTML can contain hidden profile templates and nested
+                # hydration records with isLogin=true for unrelated objects. It
+                # can also render a *visible* nav-profile control whose href is
+                # merely "/@?lang=en". Therefore a visible Log in control must
+                # always take precedence over generic profile/messages markers.
+                login_visible = await _locator_has_visible(login_locator)
+                on_login_route = "/login" in current_url.casefold()
+                if login_visible or on_login_route:
+                    visible_login_streak += 1
+                    visible_account_streak = 0
+                    # A temporary guest navbar commonly survives several
+                    # seconds after document.complete. Require eight settled
+                    # observations before declaring the cookie invalid.
+                    if visible_login_streak >= 8:
+                        logger.warning(
+                            f"[-] Xac minh THAT BAI sau {i+1} giay "
+                            "(Trang da tai on dinh va giao dien Log in van hien lien tuc)."
+                        )
                         return False
+                    await asyncio.sleep(1)
+                    continue
+                else:
+                    visible_login_streak = 0
+
+                # Require the authenticated marker to remain visible for three
+                # observations. This avoids accepting a transient guest shell
+                # while TikTok hydrates the actual navigation state.
+                if await _locator_has_visible(profile_link_locator):
+                    visible_account_streak += 1
+                    if visible_account_streak >= 3:
+                        logger.info(
+                            f"[+] Xac minh THANH CONG sau {i+1} giay "
+                            "(Phat hien profile/messages cua account va khong co nut Log in)."
+                        )
+                        return True
+                else:
+                    visible_account_streak = 0
 
             except AccountBannedException as e_ban:
                 raise e_ban
@@ -1006,8 +1441,15 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
             await asyncio.sleep(1)
 
-        logger.warning("[-] Qua thoi gian cho (Timeout) nhung khong the xac minh trang thai dang nhap.")
-        return False
+        logger.warning(
+            "[-] TikTok khong on dinh de xac minh dang nhap; settled=%s, url=%s, state=%s",
+            saw_settled_shell,
+            last_url,
+            last_state,
+        )
+        raise AuthenticationPageNotReady(
+            "Trang TikTok chưa tải ổn định nên chưa thể kết luận cookies hết hạn."
+        )
 
     async def prepare_foryou_home(self, step_logger=None) -> bool:
         """Open For You and require a fully loaded, stable signed-in feed.
@@ -1077,9 +1519,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                   const loggedIn = Array.from(document.querySelectorAll(
                     '[data-e2e="profile-icon"],[data-e2e="nav-profile"],'
                     + '[data-e2e="messages-icon"],[data-e2e="inbox-icon"],a[href*="/messages"]'
-                  )).some(visible) || Array.from(document.scripts).some(
-                    script => /"isLogin"\s*:\s*true/.test(script.textContent || '')
-                  );
+                  )).some(visible);
                   const feedSelectors = [
                     '[data-e2e="recommend-list-item-container"]',
                     '[data-e2e*="recommend-list-item"]',
@@ -1321,6 +1761,148 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
         return False, candidate
 
+    async def _wait_first_visible_locator(
+        self,
+        locator,
+        *,
+        timeout_seconds: float,
+    ):
+        """Return the first visible match instead of trusting DOM order."""
+        deadline = time.monotonic() + max(0.1, float(timeout_seconds))
+        while time.monotonic() < deadline:
+            await self._wait_automation_gate()
+            try:
+                count = await locator.count()
+            except Exception:
+                count = 0
+            for index in range(min(count, 24)):
+                candidate = locator.nth(index)
+                try:
+                    if await candidate.is_visible():
+                        return candidate
+                except Exception:
+                    continue
+            await asyncio.sleep(0.25)
+        return None
+
+    async def _open_own_profile_page(
+        self,
+        db_username: Optional[str],
+    ):
+        """Open the signed-in user's profile across desktop/nav variants."""
+        edit_selector = (
+            '[data-e2e="edit-profile-entrance"], '
+            'button:has-text("Edit profile"), '
+            'button:has-text("Chỉnh sửa hồ sơ")'
+        )
+
+        # UPDATE_PROFILE may already start on the account's own page.
+        edit_button = await self._wait_first_visible_locator(
+            self._page.locator(edit_selector),
+            timeout_seconds=1.0,
+        )
+        if edit_button is not None:
+            return edit_button
+
+        # TikTok often keeps the real nav-profile anchor in the DOM while a
+        # responsive duplicate before it is hidden. Read its own href instead
+        # of waiting for ``locator(...).first`` to become visible.
+        profile_href = None
+        try:
+            profile_href = await self._page.evaluate(
+                r"""() => {
+                  const visible = node => !!(node && (
+                    node.offsetParent !== null || node.getClientRects().length
+                  ));
+                  const nodes = Array.from(document.querySelectorAll(
+                    '[data-e2e="nav-profile"], [data-e2e="profile-icon"]'
+                  ));
+                  const paths = [];
+                  for (const node of nodes) {
+                    const anchor = node.matches('a')
+                      ? node : (node.closest('a') || node.querySelector('a'));
+                    const href = anchor && anchor.getAttribute('href');
+                    if (href && /^\/@[A-Za-z0-9._]+(?:[/?#]|$)/.test(href)) {
+                      paths.push({href, visible: visible(anchor)});
+                    }
+                  }
+                  paths.sort((left, right) => Number(right.visible) - Number(left.visible));
+                  if (paths.length) return paths[0].href;
+
+                  const scope = window.__UNIVERSAL_DATA_FOR_REHYDRATION__
+                    && window.__UNIVERSAL_DATA_FOR_REHYDRATION__.__DEFAULT_SCOPE__;
+                  const context = scope && scope['webapp.app-context'];
+                  const username = context && (
+                    context.user?.uniqueId
+                    || context.userInfo?.user?.uniqueId
+                    || context.user?.unique_id
+                  );
+                  return username ? `/@${encodeURIComponent(username)}` : null;
+                }"""
+            )
+        except Exception:
+            profile_href = None
+
+        attempted_urls: list[str] = []
+
+        async def navigate_profile(path: str) -> Optional[Any]:
+            target = str(path or "").strip()
+            if not target:
+                return None
+            if target.startswith("/@"):
+                target = f"https://www.tiktok.com{target}"
+            if not target.lower().startswith("https://www.tiktok.com/@"):
+                return None
+            if target in attempted_urls:
+                return None
+            attempted_urls.append(target)
+            await self.navigate_to(target)
+            return await self._wait_first_visible_locator(
+                self._page.locator(edit_selector),
+                timeout_seconds=25.0,
+            )
+
+        if profile_href:
+            edit_button = await navigate_profile(str(profile_href))
+            if edit_button is not None:
+                return edit_button
+
+        # If hydration/nav discovery is unavailable, click whichever profile
+        # control is actually visible. Iterating every match avoids the hidden
+        # responsive template that caused the reported timeout.
+        profile_controls = self._page.locator(
+            '[data-e2e="nav-profile"], [data-e2e="profile-icon"]'
+        )
+        visible_profile = await self._wait_first_visible_locator(
+            profile_controls,
+            timeout_seconds=5.0,
+        )
+        if visible_profile is not None:
+            try:
+                await visible_profile.click(timeout=5000, no_wait_after=True)
+                edit_button = await self._wait_first_visible_locator(
+                    self._page.locator(edit_selector),
+                    timeout_seconds=20.0,
+                )
+                if edit_button is not None:
+                    return edit_button
+            except Exception:
+                pass
+
+        safe_username = re.sub(
+            r"[^A-Za-z0-9._]", "", (db_username or "").strip().lstrip("@")
+        )
+        if safe_username:
+            edit_button = await navigate_profile(f"/@{safe_username}")
+            if edit_button is not None:
+                return edit_button
+
+        current_url = str(getattr(self._page, "url", "") or "")
+        raise RuntimeError(
+            "Không mở được profile của account đã đăng nhập hoặc không thấy "
+            f"nút Edit profile (URL cuối: {current_url[:180]})."
+        )
+
     async def update_profile(
         self,
         avatar_path: Optional[str] = None,
@@ -1340,21 +1922,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if step_logger:
                 await step_logger("Dang di chuyen toi trang ca nhan TikTok...")
 
-            # Dung nut Profile tren thanh nav (data-e2e="nav-profile" = link
-            # <a href="/@username">) -> LUON tro dung profile CUA MINH. Truoc day
-            # dung a[href*="/@"] co the khop nham link user KHAC (video/goi y) ->
-            # nhay sang profile nguoi khac -> khong co nut Edit -> Timeout.
-            profile_btn = self._page.locator('[data-e2e="nav-profile"], a[href^="/@"]')
-            await profile_btn.first.wait_for(state="visible", timeout=15000)
-            await profile_btn.first.click()
-            await asyncio.sleep(5)
+            edit_btn = await self._open_own_profile_page(db_username)
 
             if step_logger:
                 await step_logger("Dang mo Modal chinh sua thong tin tai khoan...")
-            # Tang timeout 20s: trang profile la SPA, nut Edit render sau khi tai xong.
-            edit_btn = self._page.locator('[data-e2e="edit-profile-entrance"], button:has-text("Edit profile")')
-            await edit_btn.first.wait_for(state="visible", timeout=20000)
-            await edit_btn.first.click()
+            await edit_btn.click(timeout=10000, no_wait_after=True)
 
             # Cho Modal chinh sua ho so mo len. KHONG dung class roi '.e17raual2'
             # (TikTok doi ten class lien tuc -> selector chet -> Timeout). Cho cac
@@ -1386,10 +1958,21 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     trigger = await self._resolve_native_upload_trigger(
                         avatar_input, "photo"
                     )
+                    owner_process_ids = await asyncio.to_thread(
+                        self._native_upload_process_ids
+                    )
+                    owner_session_token = getattr(
+                        self._invisible_pw, "_session_token", None
+                    )
                     await set_input_files_native(
                         avatar_input,
                         [abs_origin_path],
                         trigger=trigger,
+                        owner_process_ids=owner_process_ids or None,
+                        owner_session_token=owner_session_token,
+                        on_dialog_active=self._set_native_dialog_active,
+                        trigger_dwell_ms=random.randint(160, 420),
+                        trigger_click_delay_ms=random.randint(70, 160),
                         timeout_ms=15000,
                     )
                     logger.info("[+] Da gan file avatar bang native chooser an.")
@@ -1771,6 +2354,57 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             f"Khong tim thay nut chon {media_kind} dang hien thi cho file input."
         )
 
+    async def _bridge_native_upload_trigger(self, target, trigger) -> None:
+        """Make a trusted trigger synchronously open the exact hidden input.
+
+        TikTok Studio can render its Select video button before its React click
+        handler is attached. A Playwright click then succeeds but performs no
+        action. Bind one capture listener to the already-resolved button. The
+        real pointer click remains the user-activation source; the listener
+        only connects that activation to the exact file input synchronously.
+        """
+        input_handle = await target.element_handle(timeout=5_000)
+        trigger_handle = await trigger.element_handle(timeout=5_000)
+        if input_handle is None or trigger_handle is None:
+            raise RuntimeError("Upload input or trigger disappeared before click.")
+        bridge_id = f"tkauto-{uuid.uuid4().hex}"
+        await trigger_handle.evaluate(
+            "(element, value) => element.setAttribute('data-tkauto-native-trigger', value)",
+            bridge_id,
+        )
+
+        await input_handle.evaluate(
+            """(input, bridgeId) => {
+                const trigger = input.ownerDocument.querySelector(
+                    `[data-tkauto-native-trigger="${bridgeId}"]`
+                );
+                if (!trigger) throw new Error('Native upload trigger is not in the input document');
+                if (input === trigger) return;
+                trigger.addEventListener('click', event => {
+                    trigger.removeAttribute('data-tkauto-native-trigger');
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    if (input.isConnected && !input.disabled) input.click();
+                }, {capture: true, once: true});
+            }""",
+            bridge_id,
+        )
+
+    def _native_upload_process_ids(self) -> list[int]:
+        """Return every process stamped with this browser session token."""
+        token = getattr(self._invisible_pw, "_session_token", None)
+        if not token:
+            return []
+        try:
+            from invisible_core.process import find_processes
+
+            return [int(process.pid) for process in find_processes(token)]
+        except Exception as exc:
+            logger.debug(
+                "Khong doc duoc PID cay Firefox de khoa native dialog: %s", exc
+            )
+            return []
+
     async def _wait_media_input_accepted(
         self,
         target,
@@ -1819,6 +2453,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
     async def _set_files_via_native_dialog(self, paths: List[str], media_kind: str) -> bool:
         """Open the native chooser with one video or up to 35 photos."""
+        self._last_native_upload_error = None
+        self._last_attached_media_names = []
         abs_paths = [os.path.abspath(os.path.expanduser(path)) for path in paths]
         if not abs_paths:
             raise ValueError("Khong co file de tai len.")
@@ -1826,8 +2462,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         if missing:
             raise FileNotFoundError(f"Khong tim thay file: {missing[0]}")
 
-        # Official invisible_playwright path: attach through Playwright's file
-        # input channel. This does not open an OS chooser in headed-cloaked mode.
+        # Prefer the ordinary Playwright channel when the handle belongs to a
+        # runtime that implements it. Our vendored invisible_playwright
+        # firefox-21 handle is the known B178 exception: invoking its missing
+        # ElementHandle.setInputFiles dispatcher also arms chooser interception,
+        # which then swallows the trusted click needed by the native fallback.
         last_error = None
         for attempt in range(1, 2):
             try:
@@ -1858,7 +2497,15 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 )
                 if handle is None:
                     raise RuntimeError("Input file da bien mat.")
+                if type(handle).__module__.startswith("invisible_playwright."):
+                    raise RuntimeError(
+                        "B178: invisible_playwright firefox-21 lacks the safe "
+                        "ElementHandle.setInputFiles dispatcher"
+                    )
                 await handle.set_input_files(abs_paths, timeout=15000)
+                self._last_attached_media_names = [
+                    os.path.basename(path) for path in abs_paths
+                ]
                 logger.info(
                     "[Upload] Da gan %s qua Playwright input channel (lan %d).",
                     media_kind,
@@ -1894,6 +2541,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                             )
                         )
                         if accepted:
+                            self._last_attached_media_names = [
+                                os.path.basename(path) for path in abs_paths
+                            ]
                             logger.info("[Upload] TikTok da nhan file sau khi thay input React.")
                             return True
                     except Exception:
@@ -1908,18 +2558,15 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # B178: the real-path protocol command is still broken in firefox-21.
         # Use the helper kept in our vendored invisible_playwright build
         # source. It opens the real Windows chooser, DWM-cloaks it immediately,
-        # never takes focus/clipboard, and preserves trusted input/change events
-        # for files of any size.
+        # keeps the chooser offscreen/cloaked, and preserves trusted
+        # input/change events for files of any size.
         try:
-            # pywinauto's filename edit can corrupt supplementary Unicode
-            # characters (notably emoji) even though the original file exists.
-            # Give only the native chooser an ASCII alias. Keep the alias until
-            # the browser session ends because Firefox may read it after the
-            # chooser has already closed.
-            native_paths = await asyncio.to_thread(
-                self._stage_native_upload_paths,
-                abs_paths,
-            )
+            # The native helper writes and verifies UTF-16 text directly in
+            # control 1148. Keep the original paths: copying Unicode-named
+            # videos to an ASCII alias added disk I/O and made chooser timing
+            # less deterministic, especially when media and profile are on
+            # different drives.
+            native_paths = self._stage_native_upload_paths(abs_paths)
             inputs = self._page.locator('input[type="file"]')
             count = await asyncio.wait_for(inputs.count(), timeout=3.0)
             target = inputs.first
@@ -1939,17 +2586,73 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     target = candidate
                     break
             trigger = await self._resolve_native_upload_trigger(target, media_kind)
-            await set_input_files_native(
-                target,
-                native_paths,
-                trigger=trigger,
-                allow_input_replacement=True,
-                timeout_ms=15000,
+            owner_process_ids = await asyncio.to_thread(
+                self._native_upload_process_ids
             )
+            owner_session_token = getattr(
+                self._invisible_pw, "_session_token", None
+            )
+            async def open_native_chooser() -> None:
+                await set_input_files_native(
+                    target,
+                    native_paths,
+                    trigger=trigger,
+                    allow_input_replacement=True,
+                    owner_process_ids=owner_process_ids or None,
+                    owner_session_token=owner_session_token,
+                    on_dialog_active=self._set_native_dialog_active,
+                    trigger_dwell_ms=random.randint(160, 420),
+                    trigger_click_delay_ms=random.randint(70, 160),
+                    timeout_ms=15000,
+                )
+
+            try:
+                # Let TikTok's own visible Select video button open the native
+                # chooser. The helper performs the curved pointer approach,
+                # dwell and held click only after this account owns the global
+                # chooser lock, so parallel account sessions cannot interleave.
+                try:
+                    await open_native_chooser()
+                except Exception as direct_trigger_error:
+                    if (
+                        "windows file chooser did not appear"
+                        not in str(direct_trigger_error).casefold()
+                    ):
+                        raise
+                    # A few Studio builds paint the button before React binds
+                    # its handler. Preserve the manual direct click as the
+                    # primary path and install the one-shot bridge only for
+                    # that proven missing-handler case.
+                    logger.info(
+                        "[Upload] Nut Select video chua mo dialog; "
+                        "gan cau noi mot lan roi click lai."
+                    )
+                    await self._bridge_native_upload_trigger(target, trigger)
+                    await open_native_chooser()
+            except Exception as native_error:
+                # TikTok sometimes replaces the accepted file input with a new
+                # empty input before the helper reads ``files.length``. In that
+                # case the old locator reports 0/1 even though the editor or
+                # progress bar is already mounting. Check page state before
+                # turning the helper's diagnostic into a task failure.
+                if (
+                    "input contains" not in str(native_error).casefold()
+                    or not await self._wait_media_input_accepted(
+                        target, len(abs_paths), timeout_seconds=15.0
+                    )
+                ):
+                    raise
+                logger.info(
+                    "[Upload] TikTok da thay input sau native chooser; "
+                    "chap nhan editor/progress lam xac nhan."
+                )
             if not await self._wait_media_input_accepted(target, len(abs_paths)):
                 raise RuntimeError(
                     "Native chooser da dong nhung TikTok khong hien editor/progress."
                 )
+            self._last_attached_media_names = [
+                os.path.basename(path) for path in native_paths
+            ]
             logger.info(
                 "[Upload] Da gan %d file %s qua native chooser DWM-cloaked.",
                 len(abs_paths),
@@ -1957,6 +2660,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             )
             return True
         except Exception as exc:
+            self._last_native_upload_error = f"{type(exc).__name__}: {exc}"
             logger.warning(
                 "[Upload] Native chooser that bai: %s (%r)", exc, exc,
                 exc_info=True,
@@ -1964,48 +2668,27 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             return False
 
     def _stage_native_upload_paths(self, paths: List[str]) -> List[str]:
-        """Return ASCII aliases for paths the Windows chooser cannot type.
+        """Keep original media paths, including supplementary Unicode.
 
-        A same-volume hard link avoids copying large videos. If the selected
-        media is on another drive, copying is the compatibility fallback. The
-        staging directory is owned by this adapter and removed by ``close``.
+        ``native_upload`` now uses Unicode-safe Win32 messages and confirms
+        the File name control before accepting the chooser. This compatibility
+        hook deliberately performs no hard-link or cross-drive copy.
         """
-        if all(str(path).isascii() for path in paths):
-            return list(paths)
-
-        if self._temp_profile_path:
-            staging_dir = os.path.join(self._temp_profile_path, "upload_staging")
-            os.makedirs(staging_dir, exist_ok=True)
-        else:
-            staging_dir = tempfile.mkdtemp(prefix="tiktok_auto_upload_")
-        self._native_upload_staging_dirs.add(staging_dir)
-
-        staged: List[str] = []
-        for index, source in enumerate(paths, start=1):
-            if str(source).isascii():
-                staged.append(source)
-                continue
-            suffix = Path(source).suffix.lower()
-            alias = os.path.join(
-                staging_dir,
-                f"media_{index}_{uuid.uuid4().hex}{suffix}",
-            )
-            try:
-                os.link(source, alias)
-                method = "hard-link"
-            except OSError:
-                shutil.copy2(source, alias)
-                method = "copy"
-            staged.append(alias)
-            logger.info(
-                "[Upload] Da tao alias ASCII bang %s cho ten file Unicode.",
-                method,
-            )
-        return staged
+        return list(paths)
 
     async def _set_file_via_native_dialog(self, video_path: str) -> bool:
-        """Compatibility wrapper for the previous video-only flow."""
-        return await self._set_files_via_native_dialog([video_path], "video")
+        """Attach a video, retrying once after native-dialog cleanup."""
+        for attempt in range(1, 3):
+            if await self._set_files_via_native_dialog([video_path], "video"):
+                return True
+            if attempt == 1:
+                logger.warning(
+                    "[Upload] Lan chon video dau tien that bai (%s); "
+                    "dialog da duoc don, thu lai mot lan.",
+                    self._last_native_upload_error or "khong co chi tiet",
+                )
+                await asyncio.sleep(0.5)
+        return False
 
     async def _human_click(self, locator, timeout: int = 5000) -> None:
         """Approach a control with the pointer, pause briefly, then click it."""
@@ -2180,14 +2863,94 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 await button.click(
                     timeout=2500,
                     no_wait_after=True,
-                    delay=random.randint(70, 160),
                 )
                 logger.info("[UPLOAD] Đã xác nhận popup Post now.")
-                await asyncio.sleep(random.uniform(0.35, 0.75))
                 return True
             except Exception:
                 continue
         return None if popup_visible else False
+
+    async def _read_publish_blocking_failure(self) -> Optional[Tuple[str, str]]:
+        """Return an explicit publish rejection shown after the primary Post click."""
+        visible_text = await self._read_visible_page_text()
+        if not visible_text:
+            return None
+        duplicate_pattern = re.compile(
+            r"duplicate (?:video|content)|(?:video|content) (?:is |was )?duplicate|"
+            r"(?:you(?:'ve| have) )?already (?:posted|uploaded) (?:this|the) video|"
+            r"this video (?:has )?already been (?:posted|uploaded)|"
+            r"previously (?:posted|uploaded) video|"
+            r"(?:video|nội dung) (?:bị |là )?trùng(?: lặp)?|"
+            r"(?:bạn )?đã đăng video này|video này đã (?:được )?đăng|"
+            r"(?:video|konten) duplikat|video ini sudah pernah (?:diposting|diunggah)|"
+            r"vídeo duplicado|você já publicou (?:este|esse) vídeo|"
+            r"(?:este|esse) vídeo já foi publicado",
+            re.I,
+        )
+        match = duplicate_pattern.search(visible_text)
+        if not match:
+            return None
+        matching_line = next(
+            (
+                " ".join(line.split())
+                for line in visible_text.splitlines()
+                if duplicate_pattern.search(line)
+            ),
+            " ".join(match.group(0).split()),
+        )
+        return "VIDEO_DUPLICATE", matching_line[:300]
+
+    async def _read_publish_notice_texts(self) -> List[str]:
+        """Return visible modal/toast text without treating page copy as a notice."""
+        selector = (
+            '[role="dialog"]:visible, [role="alert"]:visible, '
+            '[data-e2e*="toast" i]:visible, [class*="toast" i]:visible, '
+            '[class*="notification" i]:visible'
+        )
+        notices: List[str] = []
+        try:
+            candidates = self._page.locator(selector)
+            count = min(await candidates.count(), 12)
+            for index in range(count):
+                candidate = candidates.nth(index)
+                try:
+                    if not await candidate.is_visible():
+                        continue
+                    raw_text = await candidate.inner_text(timeout=500)
+                except Exception:
+                    continue
+                text = " ".join((raw_text or "").split()).strip()
+                if text and text.casefold() not in {
+                    value.casefold() for value in notices
+                }:
+                    notices.append(text[:500])
+        except Exception:
+            pass
+        return notices
+
+    async def _read_unexpected_notice_after_post(
+        self,
+        notices_before_post: set[str],
+    ) -> Optional[str]:
+        """Treat a new unknown notice without Post now as duplicate feedback.
+
+        The queue contract supplied by the operator is UI-based: after the
+        primary Post click, the normal immediate flow exposes Post now. A new
+        modal/toast instead means this media must be replaced. Known transient
+        prerequisites are excluded because they are handled independently.
+        """
+        ignored_pattern = re.compile(
+            r"\b(?:post now|publish now|đăng ngay|turn on|got it|"
+            r"verify to continue|slide to complete|drag the slider|captcha|"
+            r"uploading|content check|checking your video)\b",
+            re.I,
+        )
+        for notice in await self._read_publish_notice_texts():
+            normalized = notice.casefold()
+            if normalized in notices_before_post or ignored_pattern.search(notice):
+                continue
+            return notice
+        return None
 
     async def _publish_success_visible(self) -> bool:
         """Accept only an explicit completed-publish message.
@@ -2246,6 +3009,413 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         return self._page.locator("button:visible").filter(
             has_text=re.compile(rf"^\s*({labels})\s*$", re.IGNORECASE)
         ).first
+
+    async def _upload_editor_is_active(self) -> bool:
+        """Return whether the current page still shows the pre-publish editor."""
+        try:
+            editor = self._page.locator(
+                '.public-DraftEditor-content, [contenteditable="true"]'
+            ).first
+            return bool(
+                await editor.count()
+                and await editor.is_visible()
+            )
+        except Exception:
+            return False
+
+    def _session_page_candidates(self) -> List[Any]:
+        """Return every live tab, newest first, without duplicating self._page."""
+        candidates: List[Any] = []
+        try:
+            browser_pages = list(getattr(self._browser, "pages", None) or [])
+        except Exception:
+            browser_pages = []
+        for page in reversed(browser_pages):
+            if page is not None and all(page is not item for item in candidates):
+                candidates.append(page)
+        if self._page is not None and all(
+            self._page is not item for item in candidates
+        ):
+            candidates.append(self._page)
+        return candidates
+
+    def _adopt_studio_posts_page_by_url(self):
+        """Track TikTok's Posts tab even when publishing opened a new page."""
+        for page in self._session_page_candidates():
+            try:
+                if _is_studio_posts_url(getattr(page, "url", "")):
+                    self._page = page
+                    return page
+            except Exception:
+                continue
+        return None
+
+    async def _adopt_studio_posts_page_by_ui(
+        self,
+        expected_values: List[str],
+    ):
+        """Use rendered Posts UI when Firefox reports a stale SPA URL."""
+        for page in self._session_page_candidates():
+            try:
+                body_text = await asyncio.wait_for(
+                    page.locator("body").inner_text(timeout=500),
+                    timeout=0.7,
+                )
+                if not _studio_posts_body_ready(body_text, expected_values):
+                    continue
+                editor = page.locator(
+                    '.public-DraftEditor-content, [contenteditable="true"]'
+                ).first
+                editor_count = await asyncio.wait_for(editor.count(), timeout=0.35)
+                if editor_count and await asyncio.wait_for(
+                    editor.is_visible(), timeout=0.35
+                ):
+                    continue
+                self._page = page
+                return page
+            except Exception:
+                continue
+        return None
+
+    async def _collect_post_submit_diagnostics(
+        self,
+        expected_values: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Capture a small, read-only snapshot when Studio never redirects.
+
+        This is deliberately collected only on the failure path. It records
+        enough rendered state to distinguish an unclicked confirmation dialog,
+        a still-active editor, and a stale URL without dumping the whole page.
+        """
+        snapshots: List[Dict[str, Any]] = []
+        for index, page in enumerate(self._session_page_candidates(), start=1):
+            snapshot: Dict[str, Any] = {
+                "tab": index,
+                "url": str(getattr(page, "url", "") or "")[:240],
+                "editor_visible": False,
+                "dialog": "",
+                "buttons": [],
+                "expected_text_visible": False,
+                "body": "",
+            }
+            body_text = ""
+            try:
+                body_text = await asyncio.wait_for(
+                    page.locator("body").inner_text(timeout=800),
+                    timeout=1.0,
+                )
+            except Exception:
+                pass
+            normalized_body = " ".join((body_text or "").split())
+            snapshot["body"] = normalized_body[:900]
+            snapshot["expected_text_visible"] = any(
+                _studio_post_text_matches(expected, body_text)
+                for expected in expected_values
+                if expected
+            )
+            try:
+                editor = page.locator(
+                    '.public-DraftEditor-content, [contenteditable="true"]'
+                ).first
+                snapshot["editor_visible"] = bool(
+                    await asyncio.wait_for(editor.count(), timeout=0.4)
+                    and await asyncio.wait_for(editor.is_visible(), timeout=0.4)
+                )
+            except Exception:
+                pass
+            try:
+                dialog = page.locator('[role="dialog"]:visible').first
+                if (
+                    await asyncio.wait_for(dialog.count(), timeout=0.4)
+                    and await asyncio.wait_for(dialog.is_visible(), timeout=0.4)
+                ):
+                    dialog_text = await asyncio.wait_for(
+                        dialog.inner_text(timeout=500), timeout=0.7
+                    )
+                    snapshot["dialog"] = " ".join(dialog_text.split())[:500]
+            except Exception:
+                pass
+            try:
+                buttons = page.locator("button:visible")
+                button_count = min(
+                    await asyncio.wait_for(buttons.count(), timeout=0.5), 20
+                )
+                labels: List[str] = []
+                for button_index in range(button_count):
+                    try:
+                        label = await asyncio.wait_for(
+                            buttons.nth(button_index).inner_text(timeout=350),
+                            timeout=0.5,
+                        )
+                    except Exception:
+                        continue
+                    label = " ".join((label or "").split())
+                    if label and label not in labels:
+                        labels.append(label[:100])
+                snapshot["buttons"] = labels
+            except Exception:
+                pass
+            snapshots.append(snapshot)
+        self.last_publish_diagnostics = snapshots
+        return snapshots
+
+    async def _select_existing_hashtag_suggestion(
+        self,
+        token: str,
+        *,
+        excluded_tokens: Optional[List[str]] = None,
+        timeout_seconds: float = 4.0,
+    ) -> Optional[str]:
+        """Click a live Studio suggestion without typing or changing caption text."""
+        candidates = self._page.locator(
+            "[role='listbox']:visible [role='option']:visible, "
+            "[role='menu']:visible [role='menuitem']:visible, "
+            "[role='option']:visible, "
+            "[data-e2e*='hashtag' i]:visible, "
+            "[data-e2e*='search' i]:visible [role='button']:visible"
+        )
+        deadline = time.monotonic() + max(0.2, timeout_seconds)
+        while time.monotonic() < deadline:
+            try:
+                count = await candidates.count()
+            except Exception:
+                count = 0
+            visible_indexes: List[int] = []
+            suggestion_texts: List[str] = []
+            for index in range(min(count, 40)):
+                candidate = candidates.nth(index)
+                try:
+                    if not await candidate.is_visible():
+                        continue
+                    text_value = " ".join(
+                        (await candidate.inner_text(timeout=800)).split()
+                    )
+                    if text_value:
+                        visible_indexes.append(index)
+                        suggestion_texts.append(text_value)
+                except Exception:
+                    continue
+            choice = choose_stable_hashtag_suggestion(
+                token,
+                suggestion_texts,
+                excluded_tokens=excluded_tokens or (),
+            )
+            if choice is not None:
+                try:
+                    await candidates.nth(
+                        visible_indexes[choice.source_index]
+                    ).click(timeout=4000, no_wait_after=True)
+                    logger.info(
+                        "[UPLOAD] Hashtag %s -> %s (usage=%s)",
+                        token,
+                        choice.token,
+                        choice.usage_count or "not-shown",
+                    )
+                    return choice.token
+                except Exception:
+                    pass
+            await asyncio.sleep(0.2)
+        return None
+
+    async def _activate_filename_hashtags(
+        self,
+        media_name: str = "",
+        step_logger=None,
+    ) -> str:
+        """Activate only hashtags already present in TikTok's auto-caption.
+
+        Selecting a video makes Studio populate Description from the filename.
+        Keep that text untouched. For each existing ``#token``, perform exactly
+        one physical click inside its final character so Studio opens the native
+        suggestion popup, then select the matching suggestion. This enhancement
+        is best-effort: a missing popup leaves plain hashtag text intact and
+        never blocks publishing. With no hashtag this method performs no editor
+        input at all.
+        """
+        async def log(message: str) -> None:
+            if step_logger:
+                await step_logger(message)
+
+        editor = self._page.locator(
+            '.public-DraftEditor-content, [contenteditable="true"]'
+        ).first
+        await editor.wait_for(state="visible", timeout=30000)
+        expected = Path(media_name).stem.strip() if media_name else ""
+        caption = ""
+        hydration_deadline = time.monotonic() + 12.0
+        while time.monotonic() < hydration_deadline:
+            caption = " ".join((await editor.inner_text(timeout=5000)).split())
+            if caption and (
+                not expected or _studio_post_text_matches(expected, caption)
+            ):
+                break
+            await asyncio.sleep(0.25)
+        if not caption:
+            raise RuntimeError("TikTok chưa tự điền tên video vào caption.")
+        if expected and not _studio_post_text_matches(expected, caption):
+            raise RuntimeError(
+                "Caption TikTok tự điền không khớp tên video; không đăng để tránh sai nội dung."
+            )
+        hashtags = _caption_hashtags(caption)
+        if not hashtags:
+            await log("Caption đã có sẵn từ tên video; không có hashtag cần kích hoạt.")
+            return caption
+
+        occurrences: list[tuple[str, int]] = []
+        seen: dict[str, int] = {}
+        for token in hashtags:
+            occurrence = seen.get(token, 0)
+            seen[token] = occurrence + 1
+            occurrences.append((token, occurrence))
+
+        selected: List[str] = []
+        for token, occurrence in reversed(occurrences):
+            await self._handle_upload_interruptions(step_logger=step_logger)
+            try:
+                point = await editor.evaluate(
+                    r"""(element, target) => {
+                      element.scrollIntoView({block: 'center', inline: 'nearest'});
+                      const text = element.textContent || '';
+                      let start = -1;
+                      let from = 0;
+                      for (let index = 0; index <= target.occurrence; index++) {
+                        start = text.indexOf(target.token, from);
+                        if (start < 0) return null;
+                        from = start + target.token.length;
+                      }
+                      const end = start + target.token.length;
+                      const walker = document.createTreeWalker(
+                        element, NodeFilter.SHOW_TEXT
+                      );
+                      let consumed = 0;
+                      let node = walker.nextNode();
+                      while (node) {
+                        const length = (node.nodeValue || '').length;
+                        if (end <= consumed + length) {
+                          const offset = Math.max(0, end - consumed);
+                          const glyph = document.createRange();
+                          glyph.setStart(node, Math.max(0, offset - 1));
+                          glyph.setEnd(node, offset);
+                          const rect = glyph.getBoundingClientRect();
+                          const editorRect = element.getBoundingClientRect();
+                          if (!rect || (!rect.width && !rect.height)) return null;
+                          return {
+                            // One real click inside the right half of the last
+                            // hashtag glyph. Never click the blank area after it:
+                            // that moves the caret past the token like a trailing
+                            // space and closes TikTok's suggestion popup.
+                            x: Math.max(
+                              editorRect.left + 2,
+                              Math.min(
+                                editorRect.right - 2,
+                                rect.right - Math.max(0.5, Math.min(2, rect.width * 0.2))
+                              )
+                            ),
+                            y: rect.top + Math.max(1, rect.height / 2)
+                          };
+                        }
+                        consumed += length;
+                        node = walker.nextNode();
+                      }
+                      return null;
+                    }""",
+                    {"token": token, "occurrence": occurrence},
+                )
+                if not point:
+                    logger.warning(
+                        "[UPLOAD] Không xác định được cuối hashtag %s; giữ nguyên.",
+                        token,
+                    )
+                    continue
+                await self._page.mouse.move(point["x"], point["y"])
+                await self._page.mouse.click(point["x"], point["y"])
+                selected_token = await self._select_existing_hashtag_suggestion(
+                    token,
+                )
+                if selected_token:
+                    selected.append(selected_token)
+                    await log(f"Đã kích hoạt hashtag TikTok: {selected_token}")
+                else:
+                    logger.warning(
+                        "[UPLOAD] TikTok không hiện gợi ý cho %s; giữ nguyên caption.",
+                        token,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "[UPLOAD] Không kích hoạt được hashtag %s; giữ nguyên: %s",
+                    token,
+                    exc,
+                )
+
+        if len(selected) != len(occurrences):
+            missing_count = len(occurrences) - len(selected)
+            logger.warning(
+                "[UPLOAD] Khong kich hoat duoc %d/%d hashtag; "
+                "giu nguyen caption va tiep tuc dang.",
+                missing_count,
+                len(occurrences),
+            )
+            await log(
+                f"⚠️ Không làm đậm được {missing_count}/{len(occurrences)} hashtag; "
+                "giữ nguyên caption và tiếp tục đăng."
+            )
+
+        try:
+            final_caption = " ".join(
+                (await editor.inner_text(timeout=5000)).split()
+            )
+        except Exception as exc:
+            logger.warning(
+                "[UPLOAD] Khong doc lai duoc caption sau buoc hashtag; "
+                "dung caption da xac minh truoc do: %s",
+                exc,
+            )
+            final_caption = caption
+        await log(
+            "Caption tên video đã sẵn sàng; tiếp tục đăng."
+            if len(selected) != len(occurrences)
+            else "Caption tên video và hashtag đã sẵn sàng."
+        )
+        return final_caption or caption
+
+    async def _prepare_video_caption(
+        self,
+        caption: str,
+        media_name: str,
+        step_logger=None,
+    ) -> str:
+        """Keep Studio's filename caption and activate its existing hashtags."""
+        async def log(message: str) -> None:
+            if step_logger:
+                await step_logger(message)
+
+        expected = Path(media_name).stem.strip()
+        if not expected:
+            raise RuntimeError("Tên video trống; không thể kiểm tra caption tự điền.")
+
+        # Studio has already copied the filename into Description. Preserve it
+        # byte-for-byte: click once inside each existing hashtag and select
+        # TikTok's suggestion. Do not click the trailing blank area afterward.
+        await log(
+            "Giữ nguyên caption TikTok tự điền; bấm trực tiếp từng hashtag và chọn gợi ý..."
+        )
+        final_value = await self._activate_filename_hashtags(
+            media_name=media_name,
+            step_logger=step_logger,
+        )
+        if not _studio_post_text_matches(expected, final_value):
+            raise RuntimeError(
+                "Caption tu dien khong con khop ten video sau khi chon hashtag "
+                f"(hien tai: {final_value[:100]})."
+            )
+        requested = (caption or "").strip()
+        if requested and not _studio_post_text_matches(requested, final_value):
+            logger.info(
+                "[UPLOAD] Bo qua caption truyen vao de giu nguyen caption ten file: %s",
+                final_value,
+            )
+        logger.info("[UPLOAD] Caption filename hashtags verified: %s", final_value)
+        return final_value
 
     async def _publish_button_in_viewport(
         self,
@@ -2307,13 +3477,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if step_logger:
                 await step_logger(message)
 
-        def normalize_caption(value: str) -> str:
-            # Draft.js inserts zero-width markers around hashtag entities. They
-            # are invisible in Studio but used to make the strict comparison
-            # reject a caption that was actually entered correctly.
-            without_markers = re.sub(r"[\u200b-\u200f\u2060\ufeff]", "", value or "")
-            return " ".join(without_markers.split())
-
         editor = self._page.locator('.public-DraftEditor-content, [contenteditable="true"]').first
         await editor.wait_for(state="visible", timeout=30000)
         last_error = None
@@ -2342,7 +3505,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # the suggestion list, then click the matching visible option/link.
         async def read_caption() -> str:
             try:
-                return normalize_caption(await editor.inner_text(timeout=5000))
+                return _normalize_caption_text(await editor.inner_text(timeout=5000))
             except Exception:
                 return ""
 
@@ -2363,9 +3526,23 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             # captions mid-entry. Budget for the chosen per-character delay,
             # protocol overhead and a detached/re-rendered Draft.js frame.
             timeout_ms = max(20_000, min(180_000, 10_000 + len(value) * (delay + 25)))
-            await editor.press_sequentially(value, delay=delay, timeout=timeout_ms)
+            # Playwright's key model has no physical US-layout key for emoji
+            # and many non-Latin glyphs. Send those runs through insertText,
+            # while retaining real sequential key events for ASCII hashtags so
+            # TikTok opens its native hashtag suggestion popup.
+            runs = re.findall(r"[\x20-\x7e]+|[^\x20-\x7e]+", value)
+            for run in runs:
+                if run.isascii() and all(0x20 <= ord(char) <= 0x7E for char in run):
+                    await editor.press_sequentially(
+                        run,
+                        delay=delay,
+                        timeout=timeout_ms,
+                    )
+                else:
+                    await self._page.keyboard.insert_text(run)
+                    await asyncio.sleep(random.uniform(0.04, 0.12))
 
-        expected = normalize_caption(caption)
+        expected = _normalize_caption_text(caption)
 
         async def restore_plain_caption() -> bool:
             """Recover from optional rich-hashtag UI failures without losing the post."""
@@ -2583,12 +3760,209 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             except Exception:
                 pass
             await editor.click(timeout=5000)
+        if selected_hashtags:
+            logger.warning(
+                "[UPLOAD] Caption rich chưa khớp sau khi chọn hashtag; "
+                "expected=%r observed=%r",
+                expected,
+                last_value,
+            )
         if await restore_plain_caption():
             await log("⚠️ Đã nhập lại caption bằng chế độ dự phòng; tiếp tục đăng.")
             return
         raise RuntimeError(
             f"Caption khong duoc ghi nhan day du (gia tri hien tai: {last_value[:80]})"
         )
+
+    async def _read_video_upload_state(self) -> Dict[str, Any]:
+        """Read Studio upload progress without trusting the enabled Post button."""
+        progress_nodes = self._page.locator(
+            "[role='progressbar']:visible, "
+            "[aria-valuenow]:visible, "
+            "[data-e2e*='progress' i]:visible"
+        )
+        percentages: list[float] = []
+        try:
+            count = await progress_nodes.count()
+        except Exception:
+            count = 0
+        for index in range(min(count, 12)):
+            node = progress_nodes.nth(index)
+            try:
+                raw_value = await node.get_attribute("aria-valuenow", timeout=700)
+                raw_max = await node.get_attribute("aria-valuemax", timeout=700)
+                aria_text = await node.get_attribute("aria-valuetext", timeout=700)
+                node_text = await node.inner_text(timeout=700)
+                percent = _upload_progress_percent(
+                    raw_value,
+                    raw_max,
+                    f"{aria_text or ''} {node_text or ''}",
+                )
+                if percent is not None:
+                    percentages.append(percent)
+            except Exception:
+                continue
+
+        async def first_visible_text(pattern: re.Pattern) -> Optional[str]:
+            """Return a short visible match, not an arbitrary first DOM match."""
+            try:
+                locator = self._page.get_by_text(pattern)
+                count = await locator.count()
+                for index in range(min(count, 12)):
+                    candidate = locator.nth(index)
+                    if not await candidate.is_visible():
+                        continue
+                    try:
+                        text = " ".join(
+                            (await candidate.inner_text(timeout=700)).split()
+                        )
+                    except Exception:
+                        text = ""
+                    # Large ancestor containers can contain an unrelated error
+                    # elsewhere on the page. Only a compact status/toast label
+                    # is valid evidence for the file-upload lifecycle.
+                    if text and len(text) <= 320:
+                        return text
+            except Exception:
+                pass
+            return None
+
+        uploading_text = await first_visible_text(re.compile(
+            r"uploading|đang tải lên", re.I
+        ))
+        complete_text = await first_visible_text(re.compile(
+            r"(?:^|\s)100(?:[.,]0+)?\s*%|upload complete|uploaded successfully|"
+            r"video uploaded|ready to post|tải lên hoàn tất|đã tải lên thành công",
+            re.I,
+        ))
+        preview_text = await first_visible_text(
+            re.compile(r"^\s*edit cover\s*$", re.I)
+        )
+        # Abort only for language that explicitly ties the failure to this
+        # video/upload. Generic page-level copy such as "Please try again" can
+        # come from recommendations, content checks, extensions, or a stale
+        # toast while the video upload itself continues normally.
+        failure_text = await first_visible_text(re.compile(
+            r"upload(?:ing)? (?:the )?video failed|video upload failed|"
+            r"upload failed|failed to upload(?: (?:the )?video)?|"
+            r"(?:could not|couldn't|unable to) upload(?: (?:the )?video)?|"
+            r"tải (?:video )?lên thất bại|không thể tải (?:video )?lên",
+            re.I,
+        ))
+        warning_text = await first_visible_text(re.compile(
+            r"network error|please try again|something went wrong|đã xảy ra lỗi",
+            re.I,
+        ))
+
+        return {
+            "has_progress": bool(percentages),
+            "percent": max(percentages) if percentages else None,
+            "uploading": bool(uploading_text),
+            "uploading_text": uploading_text,
+            "complete": bool(complete_text),
+            "complete_text": complete_text,
+            # This action appears only after Studio has decoded the selected
+            # video into its generated preview. It is independent of the
+            # optional Content check lite that may continue in the background.
+            "preview_ready": bool(preview_text),
+            "failed": bool(failure_text),
+            "failure_text": failure_text,
+            "warning_text": warning_text,
+        }
+
+    async def _wait_video_upload_completion(
+        self,
+        *,
+        timeout_seconds: float = 420.0,
+        step_logger=None,
+    ) -> Dict[str, Any]:
+        """Wait for upload completion and confirm explicit failures three times."""
+        page = self._page
+        if page is None:
+            raise RuntimeError("Trang upload không còn khả dụng.")
+        editor = page.locator(
+            '.public-DraftEditor-content, [contenteditable="true"]'
+        ).first
+        post_button = self._publish_button()
+        reached_high = False
+        reached_100 = False
+        failure_streak = 0
+        last_failure_text: Optional[str] = None
+        logged_warnings: set[str] = set()
+        deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+
+        while time.monotonic() < deadline:
+            await self._wait_automation_gate()
+            await self._handle_upload_interruptions(step_logger=step_logger)
+            state = await self._read_video_upload_state()
+
+            warning_text = str(state.get("warning_text") or "").strip()
+            if warning_text and warning_text not in logged_warnings:
+                logged_warnings.add(warning_text)
+                logger.info(
+                    "[Upload] Bo qua thong bao chung, tiep tuc doi upload: %s",
+                    warning_text[:240],
+                )
+
+            failure_text = str(state.get("failure_text") or "").strip()
+            if state.get("failed") and failure_text:
+                if failure_text == last_failure_text:
+                    failure_streak += 1
+                else:
+                    last_failure_text = failure_text
+                    failure_streak = 1
+                # A single toast sample can race a React replacement or belong
+                # to a previous request. Three consecutive 500 ms observations
+                # are required before cancelling this upload.
+                if failure_streak >= 3:
+                    return {
+                        "ready": False,
+                        "failure_text": failure_text,
+                        "timed_out": False,
+                        "state": state,
+                    }
+                await asyncio.sleep(0.5)
+                continue
+            else:
+                failure_streak = 0
+                last_failure_text = None
+
+            percent = state.get("percent")
+            if percent is not None and percent >= 95.0:
+                reached_high = True
+            if percent is not None and percent >= 100.0:
+                reached_100 = True
+            editor_ready = bool(
+                await editor.count() > 0 and await editor.is_visible()
+            )
+            post_ready = bool(
+                await post_button.count() > 0
+                and await post_button.is_visible()
+                and await post_button.is_enabled()
+            )
+            if (
+                editor_ready
+                and post_ready
+                and _video_upload_finished(
+                    state,
+                    reached_high=reached_high,
+                    reached_100=reached_100,
+                )
+            ):
+                return {
+                    "ready": True,
+                    "failure_text": None,
+                    "timed_out": False,
+                    "state": state,
+                }
+            await asyncio.sleep(0.5)
+
+        return {
+            "ready": False,
+            "failure_text": None,
+            "timed_out": True,
+            "state": None,
+        }
 
     async def _wait_publish_ready(
         self,
@@ -2627,7 +4001,15 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 await step_logger(message)
 
         self.last_publish_acknowledged = False
+        self.last_publish_ack_source = ""
+        self.last_publish_diagnostics = []
+        self.last_publish_failure_code = ""
+        self.last_publish_failure_detail = ""
         await self._handle_upload_interruptions(step_logger=step_logger)
+        notices_before_post = {
+            notice.casefold()
+            for notice in await self._read_publish_notice_texts()
+        }
         button = await self._publish_button_in_viewport(
             scheduled=scheduled,
             timeout_seconds=60,
@@ -2643,9 +4025,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         for _ in range(45):
             await self._wait_automation_gate()
             try:
-                current_url = (self._page.url or "").lower()
-                if "/tiktokstudio/content" in current_url:
+                if self._adopt_studio_posts_page_by_url() is not None:
                     self.last_publish_acknowledged = True
+                    self.last_publish_ack_source = "studio_posts_url"
                     return True
                 # Turn on/Got it and CAPTCHA can appear after the primary Post
                 # click as well. Resolve them before interpreting any success
@@ -2653,6 +4035,16 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 accepted = await self._handle_upload_interruptions(
                     step_logger=step_logger
                 )
+                blocking_failure = await self._read_publish_blocking_failure()
+                if blocking_failure is not None:
+                    code, detail = blocking_failure
+                    self.last_publish_failure_code = code
+                    self.last_publish_failure_detail = detail
+                    await log(
+                        "⚠️ VIDEO_TRUNG: TikTok báo video đã tồn tại nên không "
+                        f"hiện Post now ({detail})."
+                    )
+                    return False
                 # Immediate posts can require a second, explicit "Post now"
                 # confirmation. Check it BEFORE generic success text: dialog
                 # copy can itself contain "posted/published", which is not a
@@ -2663,8 +4055,12 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     post_now_result = await self._confirm_post_now_popup()
                     if post_now_result is True:
                         self.last_publish_acknowledged = True
+                        self.last_publish_ack_source = "post_now_clicked"
                         await log("Đã xác nhận Post now; đang chờ TikTok đăng bài...")
-                        continue
+                        # Post now is a one-shot external action. Return at once
+                        # so the caller can inspect the filename receipt; never
+                        # loop back and click a still-mounted dialog twice.
+                        return True
                     if post_now_result is None:
                         # Popup exists but its action is still hydrating. Do not
                         # mistake dialog copy for a publish-success message.
@@ -2672,6 +4068,28 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         continue
                 if await self._publish_success_visible():
                     self.last_publish_acknowledged = True
+                    self.last_publish_ack_source = "publish_success_message"
+                    return True
+                if not scheduled:
+                    unexpected_notice = await self._read_unexpected_notice_after_post(
+                        notices_before_post
+                    )
+                    if unexpected_notice:
+                        self.last_publish_failure_code = "VIDEO_DUPLICATE"
+                        self.last_publish_failure_detail = (
+                            "TikTok hiện thông báo khác thay vì Post now: "
+                            f"{unexpected_notice[:300]}"
+                        )
+                        await log(
+                            "⚠️ VIDEO_TRUNG: Sau khi bấm Đăng, TikTok hiện thông báo "
+                            f"khác và không có Post now ({unexpected_notice[:220]})."
+                        )
+                        return False
+                if not scheduled and not await self._upload_editor_is_active():
+                    # The submit replaced the editor. The filename receipt is
+                    # checked by _finalize_immediate_media_publish next.
+                    self.last_publish_acknowledged = True
+                    self.last_publish_ack_source = "upload_editor_disappeared"
                     return True
                 # A coachmark can be injected at the exact moment Post is
                 # clicked. Retry Post only after accepting such a popup; never
@@ -2689,70 +4107,264 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             except Exception:
                 pass
             await asyncio.sleep(1)
-        await log("TikTok chưa trả về xác nhận đăng bài; tác vụ được đánh dấu thất bại để tránh báo sai.")
+        if self.last_publish_acknowledged:
+            await log(
+                "TikTok đã nhận thao tác đăng nhưng chưa hiện xác nhận hoàn tất; "
+                "chuyển sang Studio Posts để kiểm tra tên bài."
+            )
+            return True
+        await log(
+            "TikTok chưa hiện toast hoặc tự chuyển trang; "
+            "tiếp tục mở Studio Posts để kiểm tra tên bài."
+        )
         return False
 
-    async def _review_before_publish(
+    async def _finalize_immediate_video_publish(
         self,
+        acknowledged: bool,
+        caption: str,
+        video_path: str,
         step_logger=None,
-        min_seconds: float = 5.0,
-        max_seconds: float = 9.0,
-    ) -> None:
-        """Leave a short visible review pause after editing and before Post."""
-        async def log(message):
+    ) -> bool:
+        if self.last_publish_failure_code == "VIDEO_DUPLICATE":
+            return False
+
+        # For video, only the redirected Studio Posts list is accepted. A
+        # filename receipt/toast is not enough because TikTok can acknowledge
+        # Post now and still swallow the video before it reaches Posts.
+        verified = await self._verify_post_in_studio(
+            caption,
+            media_name=os.path.basename(video_path),
+            step_logger=step_logger,
+            timeout_seconds=5,
+            require_auto_redirect=True,
+            allow_reload=False,
+            auto_redirect_timeout_seconds=20.0,
+            poll_seconds=0.2,
+        )
+        if verified:
+            self.last_publish_acknowledged = True
+            return True
+
+        reached_posts = self._adopt_studio_posts_page_by_url() is not None
+        if not reached_posts:
+            reached_posts = (
+                await self._adopt_studio_posts_page_by_ui([
+                    Path(video_path).stem,
+                    caption,
+                ])
+            ) is not None
+        if not reached_posts:
+            self.last_publish_failure_code = "PUBLISH_NOT_CONFIRMED"
+            ack_source = self.last_publish_ack_source or (
+                "legacy_acknowledged" if acknowledged else "none"
+            )
+            self.last_publish_failure_detail = (
+                "Không quan sát được trang Studio Posts sau thao tác đăng; "
+                f"nguồn xác nhận trước đó: {ack_source}."
+            )
+            if step_logger:
+                await step_logger(
+                    "❌ KHONG_CHUYEN_SANG_POSTS: Không quan sát được trang Studio Posts; "
+                    "chưa đủ căn cứ gọi video bị nuốt."
+                )
+            return False
+
+        self.last_publish_failure_code = "VIDEO_SWALLOWED"
+        self.last_publish_failure_detail = (
+            "Post now đã được xử lý nhưng không thấy video trên Studio Posts."
+        )
+        if step_logger:
+            await step_logger(
+                "❌ VIDEO_BI_NUOT: Không thấy video trong Studio Posts; "
+                "kết thúc ngay, không reload trang."
+            )
+        return False
+
+    async def _finalize_immediate_media_publish(
+        self,
+        acknowledged: bool,
+        caption: str,
+        media_path: str,
+        step_logger=None,
+    ) -> bool:
+        """Use the filename receipt first, then Studio Posts as a fallback."""
+        if not acknowledged and step_logger:
+            await step_logger(
+                "Chưa có toast xác nhận; vẫn kiểm tra tên file trên trang "
+                "chuyển tiếp rồi mới dự phòng bằng Studio Posts."
+            )
+        if await self._wait_for_transition_publish_receipt(
+            os.path.basename(media_path),
+            step_logger=step_logger,
+        ):
+            self.last_publish_acknowledged = True
+            return True
+        verified = await self._verify_post_in_studio(
+            caption,
+            media_name=os.path.basename(media_path),
+            step_logger=step_logger,
+        )
+        if verified:
+            self.last_publish_acknowledged = True
+        return verified
+
+    async def _wait_for_transition_publish_receipt(
+        self,
+        media_name: str,
+        step_logger=None,
+        timeout_seconds: float = 20.0,
+    ) -> bool:
+        """Accept the post-submit page when it shows this video's filename.
+
+        TikTok commonly replaces the editor with a short transition/receipt
+        page after ``Post now``. That page is stronger and faster evidence than
+        waiting for the eventually-consistent Studio Posts list. Do not accept
+        the same filename while the pre-publish editor is still active.
+        """
+        async def log(message: str) -> None:
             if step_logger:
                 await step_logger(message)
 
-        low = max(0.0, float(min_seconds))
-        high = max(low, float(max_seconds))
-        deadline = time.monotonic() + random.uniform(low, high)
-        await log("Đang rà soát lại caption và cài đặt trước khi đăng...")
+        expected = Path(media_name).stem.strip()
+        if not expected:
+            return False
+        receipt_pattern = re.compile(
+            r"your videos? (?:is|are) being uploaded to tiktok|"
+            r"your (?:video|post) (?:has been|was) (?:posted|published)|"
+            r"(?:video|post) (?:posted|published) successfully|"
+            r"video submitted for review|upload another|"
+            r"manage (?:your )?(?:posts|videos)|go to (?:your )?profile|"
+            r"(?:video|bài đăng) đang được (?:tải lên|xử lý)|"
+            r"đã (?:đăng|xuất bản) thành công|tải (?:lên )?video khác|"
+            r"quản lý (?:bài đăng|video)",
+            re.I,
+        )
+        deadline = time.monotonic() + max(0.5, timeout_seconds)
         while time.monotonic() < deadline:
             await self._wait_automation_gate()
-            await self._handle_upload_interruptions(step_logger=step_logger)
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            await asyncio.sleep(min(remaining, random.uniform(0.7, 1.2)))
+            try:
+                current_url = str(getattr(self._page, "url", "") or "").lower()
+                visible_text = await self._read_visible_page_text()
+                if visible_text and _studio_post_text_matches(expected, visible_text):
+                    editor_active = await self._upload_editor_is_active()
+                    if (
+                        "/tiktokstudio/content" in current_url
+                        or receipt_pattern.search(visible_text)
+                        or not editor_active
+                    ):
+                        self.last_publish_distribution_status = "PUBLISHED"
+                        await log(
+                            f"Đã thấy tên video '{expected}' trên trang xác nhận sau Post now."
+                        )
+                        return True
+                if "/tiktokstudio/content" in current_url:
+                    return False
+            except Exception:
+                pass
+            await asyncio.sleep(0.4)
+        return False
 
     async def _verify_post_in_studio(
         self,
         caption: str,
+        media_name: Optional[str] = None,
         step_logger=None,
         timeout_seconds: int = 75,
+        require_auto_redirect: bool = False,
+        allow_reload: bool = True,
+        auto_redirect_timeout_seconds: float = 12.0,
+        poll_seconds: float = 3.0,
     ) -> bool:
-        """Require the new caption to appear in Studio Posts.
+        """Accept the new caption or filename appearing in Studio Posts.
 
-        A publish toast or redirect is only an acknowledgement. TikTok can
-        still discard a video whose bytes were not committed, so this check is
-        the source of truth for the final task result.
+        Studio can add hashtags to the displayed text or truncate a long title.
+        Matching therefore accepts a normalized full string or a distinctive
+        leading prefix. The public profile is not required for this result.
         """
         async def log(message):
             if step_logger:
                 await step_logger(message)
 
-        expected = " ".join((caption or "").split()).strip()
+        expected_values: list[str] = []
+        for raw_value in (
+            Path(media_name).stem if media_name else "",
+            caption,
+        ):
+            candidate = " ".join((raw_value or "").split()).strip()
+            if candidate and candidate.casefold() not in {
+                value.casefold() for value in expected_values
+            }:
+                expected_values.append(candidate)
         self.last_publish_distribution_status = "UNKNOWN"
-        if not expected:
-            await log("Khong co caption de doi chieu trong Studio Posts.")
+        if not expected_values:
+            await log("Không có caption hoặc tên media để đối chiếu trong Studio Posts.")
             return False
-        needle = expected[:64]
+        locator_needles: list[str] = []
+        for expected in expected_values:
+            for length in (min(64, len(expected)), 48, 40, 32, 28, 24):
+                needle = expected[:length].rstrip()
+                minimum = min(24, len(expected))
+                if len(needle) >= minimum and needle.casefold() not in {
+                    item.casefold() for item in locator_needles
+                }:
+                    locator_needles.append(needle)
         await log("Đang chờ TikTok tự chuyển sang trang bài đăng...")
-        auto_deadline = time.monotonic() + 12.0
+        auto_deadline = time.monotonic() + max(0.5, float(auto_redirect_timeout_seconds))
         auto_redirected = False
+        redirect_detected_by_ui = False
         while time.monotonic() < auto_deadline:
             await self._wait_automation_gate()
-            current_url = str(getattr(self._page, "url", "") or "").lower()
-            if "/tiktokstudio/content" in current_url:
+            if self._adopt_studio_posts_page_by_url() is not None:
                 auto_redirected = True
                 break
-            await asyncio.sleep(random.uniform(0.65, 1.05))
+            if await self._adopt_studio_posts_page_by_ui(expected_values) is not None:
+                auto_redirected = True
+                redirect_detected_by_ui = True
+                break
+            remaining = auto_deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            redirect_poll = (
+                min(max(0.05, float(poll_seconds)), remaining)
+                if require_auto_redirect
+                else min(random.uniform(0.65, 1.05), remaining)
+            )
+            await asyncio.sleep(redirect_poll)
 
         if auto_redirected:
-            await log(
-                "TikTok đã tự chuyển sang Studio Posts; chờ video xuất hiện ổn định..."
+            if require_auto_redirect:
+                await log(
+                    "Đã nhận diện giao diện Studio Posts; kiểm tra video ngay..."
+                    if redirect_detected_by_ui
+                    else "TikTok đã tự chuyển sang Studio Posts; kiểm tra video ngay..."
+                )
+            else:
+                await log(
+                    "TikTok đã tự chuyển sang Studio Posts; chờ bài xuất hiện ổn định..."
+                )
+                await asyncio.sleep(random.uniform(4.0, 7.0))
+        elif require_auto_redirect:
+            observed_urls = [
+                str(getattr(page, "url", "") or "")[:180]
+                for page in self._session_page_candidates()
+            ]
+            diagnostics = await self._collect_post_submit_diagnostics(
+                expected_values
             )
-            await asyncio.sleep(random.uniform(4.0, 7.0))
+            for snapshot in diagnostics:
+                logger.warning(
+                    "[UPLOAD][POST_DIAG] ack_source=%s snapshot=%s",
+                    self.last_publish_ack_source or "none",
+                    snapshot,
+                )
+            await log(
+                "Sau Post now TikTok không chuyển sang Studio Posts; "
+                "không mở hoặc reload trang thay thế. "
+                f"Nguồn xác nhận: {self.last_publish_ack_source or 'không có'}; "
+                f"URL driver đang thấy: {observed_urls or ['không có page']}."
+            )
+            return False
         else:
             await log(
                 "TikTok chưa tự chuyển trang; mở Studio Posts trong cùng phiên để xác minh..."
@@ -2772,56 +4384,115 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 logger.warning("[Upload] Khong mo duoc Studio Posts: %s", exc)
                 return False
 
-        deadline = time.monotonic() + max(10, timeout_seconds)
+        # The requested five seconds starts only after Studio Posts is present.
+        # Redirect latency is not evidence that TikTok swallowed the video.
+        deadline = time.monotonic() + (
+            max(0.5, float(timeout_seconds))
+            if require_auto_redirect
+            else max(10, timeout_seconds)
+        )
         next_reload = time.monotonic() + 18
         while time.monotonic() < deadline:
             await self._wait_automation_gate()
-            await asyncio.sleep(3)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(max(0.05, float(poll_seconds)), remaining))
             try:
-                match = self._page.get_by_text(needle, exact=False)
-                match_count = await asyncio.wait_for(match.count(), timeout=6)
-                for index in range(min(match_count, 5)):
-                    matched = match.nth(index)
-                    if await asyncio.wait_for(matched.is_visible(), timeout=6):
+                matched = None
+                for locator_needle in locator_needles:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    match = self._page.get_by_text(locator_needle, exact=False)
+                    operation_timeout = (
+                        min(0.35, remaining) if require_auto_redirect else 6
+                    )
+                    match_count = await asyncio.wait_for(
+                        match.count(), timeout=max(0.05, operation_timeout)
+                    )
+                    for index in range(min(match_count, 5)):
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        candidate = match.nth(index)
+                        operation_timeout = (
+                            min(0.35, remaining) if require_auto_redirect else 6
+                        )
+                        if await asyncio.wait_for(
+                            candidate.is_visible(),
+                            timeout=max(0.05, operation_timeout),
+                        ):
+                            matched = candidate
+                            break
+                    if matched is not None:
+                        break
+
+                if matched is not None:
+                    nearby_text = ""
+                    try:
+                        evaluate_operation = matched.evaluate(
+                            r"""element => {
+                              let node = element;
+                              for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+                                const text = (node.innerText || '').replace(/\s+/g, ' ').trim();
+                                if (text.length >= 20 && text.length <= 1600 &&
+                                    /under review|being reviewed|not eligible|ineligible|xét duyệt|kiểm duyệt|đủ điều kiện/i.test(text)) {
+                                  return text;
+                                }
+                              }
+                              return '';
+                            }"""
+                        )
+                        if require_auto_redirect:
+                            remaining = deadline - time.monotonic()
+                            if remaining > 0:
+                                nearby_text = await asyncio.wait_for(
+                                    evaluate_operation,
+                                    timeout=max(0.05, min(0.5, remaining)),
+                                )
+                            else:
+                                evaluate_operation.close()
+                        else:
+                            nearby_text = await evaluate_operation
+                    except Exception:
                         nearby_text = ""
-                        try:
-                            nearby_text = await matched.evaluate(
-                                r"""element => {
-                                  let node = element;
-                                  for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
-                                    const text = (node.innerText || '').replace(/\s+/g, ' ').trim();
-                                    if (text.length >= 20 && text.length <= 1600 &&
-                                        /under review|being reviewed|not eligible|ineligible|xét duyệt|kiểm duyệt|đủ điều kiện/i.test(text)) {
-                                      return text;
-                                    }
-                                  }
-                                  return '';
-                                }"""
-                            )
-                        except Exception:
-                            nearby_text = ""
-                        distribution = _classify_distribution_text(nearby_text)
-                        self.last_publish_distribution_status = distribution
-                        await log("Da xac minh video xuat hien trong Studio Posts.")
-                        if distribution == "FYF_INELIGIBLE":
-                            await log("⚠ TikTok ghi rõ bài không đủ điều kiện xuất hiện trên For You; cần mở Analytics để xem lý do/kháng nghị.")
-                        elif distribution == "UNDER_REVIEW":
-                            await log("⏳ Bài đã đăng nhưng TikTok đang xét duyệt; chưa được kết luận là bị hạn chế phân phối.")
-                        return True
+                    distribution = _classify_distribution_text(nearby_text)
+                    self.last_publish_distribution_status = distribution
+                    await log("Đã thấy tên bài/caption trong Studio Posts.")
+                    if distribution == "FYF_INELIGIBLE":
+                        await log("⚠ TikTok ghi rõ bài không đủ điều kiện xuất hiện trên For You; cần mở Analytics để xem lý do/kháng nghị.")
+                    elif distribution == "UNDER_REVIEW":
+                        await log("⏳ Bài đã đăng nhưng TikTok đang xét duyệt; chưa được kết luận là bị hạn chế phân phối.")
+                    return True
 
                 # Some Studio versions split captions across nested spans.
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                body_timeout = min(0.5, remaining) if require_auto_redirect else 7
                 body_text = await asyncio.wait_for(
-                    self._page.locator("body").inner_text(timeout=5000), timeout=7
+                    self._page.locator("body").inner_text(
+                        timeout=max(50, int(body_timeout * 1000))
+                        if require_auto_redirect
+                        else 5000
+                    ),
+                    timeout=max(0.05, body_timeout),
                 )
-                normalized_body = " ".join(body_text.split()).casefold()
-                if needle.casefold() in normalized_body:
+                if any(
+                    _studio_post_text_matches(expected, body_text)
+                    for expected in expected_values
+                ):
                     self.last_publish_distribution_status = "PUBLISHED"
-                    await log("Da xac minh video xuat hien trong Studio Posts.")
+                    await log(
+                        "Đã thấy tên bài/caption trong Studio Posts "
+                        "(chấp nhận nội dung dài hơn hoặc bị rút gọn)."
+                    )
                     return True
             except Exception:
                 pass
 
-            if time.monotonic() >= next_reload:
+            if allow_reload and time.monotonic() >= next_reload:
                 try:
                     await self._page.reload(wait_until="domcontentloaded", timeout=30000)
                 except Exception:
@@ -2829,7 +4500,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 next_reload = time.monotonic() + 18
 
         await log(
-            "Chưa thấy video trong Studio Posts sau thời gian xác minh; "
+            "Chưa thấy bài trong Studio Posts sau thời gian xác minh; "
             "đánh dấu thất bại để tránh báo thành công sai."
         )
         return False
@@ -3180,16 +4851,28 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         await self.navigate_to("https://www.tiktok.com/tiktokstudio/upload?lang=en")
         photo_tab = self._page.get_by_role("tab", name=re.compile(r"^(Photos|Ảnh)$", re.I), exact=True).first
         tab_deadline = time.monotonic() + 45.0
+        photo_tab_seen = False
         while time.monotonic() < tab_deadline:
             await self._handle_upload_interruptions(step_logger=step_logger)
+            current_url = (str(getattr(self._page, "url", "") or "")).lower()
+            if "/login" in current_url and "redirect_url" in current_url:
+                raise StudioReauthenticationRequired(
+                    "TikTok Studio yêu cầu đăng nhập lại; cookie hiện tại không có phiên Studio hợp lệ."
+                )
             try:
                 if await photo_tab.count() and await photo_tab.is_visible():
+                    photo_tab_seen = True
                     await photo_tab.click(timeout=10000)
                     break
             except Exception:
                 pass
             await asyncio.sleep(0.5)
         else:
+            if photo_tab_seen:
+                raise RuntimeError(
+                    "Đã thấy tab Photos nhưng CAPTCHA/popup đang chặn thao tác; "
+                    "hãy kiểm tra cấu hình extension giải CAPTCHA."
+                )
             raise RuntimeError("Không thấy tab Photos sau khi đã xử lý CAPTCHA/popup.")
 
         photo_input = self._page.locator(
@@ -3198,6 +4881,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         input_deadline = time.monotonic() + 20.0
         while time.monotonic() < input_deadline:
             await self._handle_upload_interruptions(step_logger=step_logger)
+            current_url = (str(getattr(self._page, "url", "") or "")).lower()
+            if "/login" in current_url and "redirect_url" in current_url:
+                raise StudioReauthenticationRequired(
+                    "TikTok Studio yêu cầu đăng nhập lại; cookie hiện tại không có phiên Studio hợp lệ."
+                )
             if await photo_input.count():
                 break
             await asyncio.sleep(0.5)
@@ -3207,7 +4895,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         await self._handle_upload_interruptions(step_logger=step_logger)
         await log("Đang chọn ảnh bằng hộp thoại Windows...")
         if not await self._set_files_via_native_dialog(image_paths, "photo"):
-            raise Exception("Không đưa được ảnh vào ô tải lên của TikTok Studio.")
+            detail = self._last_native_upload_error or "không có chi tiết"
+            raise Exception(
+                "Không đưa được ảnh vào ô tải lên của TikTok Studio. "
+                f"Chi tiết: {detail}"
+            )
         if not await self._wait_publish_ready(
             timeout_seconds=180,
             step_logger=step_logger,
@@ -3223,7 +4915,20 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if not scheduled:
                 raise Exception("Không đặt được lịch TikTok; không tự chuyển sang đăng ngay.")
         await log("Ảnh đã sẵn sàng. Đang đăng bài...")
-        return await self._click_publish_and_confirm(step_logger=step_logger, scheduled=bool(schedule_at))
+        acknowledged = await self._click_publish_and_confirm(
+            step_logger=step_logger,
+            scheduled=bool(schedule_at),
+        )
+        if schedule_at:
+            return acknowledged
+        # Photo posts can succeed without a toast or redirect, just like
+        # videos. Verify the caption in Studio Posts before returning failure.
+        return await self._finalize_immediate_media_publish(
+            acknowledged,
+            caption,
+            media_path=image_paths[0],
+            step_logger=step_logger,
+        )
 
     async def upload_video(self, video_path: str, caption: str = "",
                            schedule_at: Optional[str] = None, step_logger=None,
@@ -3293,13 +4998,13 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # 2) Dua FILE THAT vao qua hop thoai Windows.
         await self._handle_upload_interruptions(step_logger=step_logger)
         await log("Chọn video (hộp thoại Windows)...")
-        self._stream_suspended = True
-        try:
-            file_attached = await self._set_file_via_native_dialog(video_path)
-        finally:
-            self._stream_suspended = False
+        file_attached = await self._set_file_via_native_dialog(video_path)
         if not file_attached:
-            raise Exception("Không đưa được video vào ô upload (native dialog).")
+            detail = self._last_native_upload_error or "không có chi tiết"
+            raise Exception(
+                "Không đưa được video vào ô upload (native dialog). "
+                f"Chi tiết: {detail}"
+            )
         await self._handle_upload_interruptions(step_logger=step_logger)
 
         # 3) Cho video UPLOAD LEN SERVER XONG (progress ~100%) roi moi cho dang.
@@ -3311,64 +5016,82 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         #    07/08/2026: progress chay 0%->99% mat ~25s cho file 19MB.
         #    => PHAI doi progress bar dat ~100% / bien mat truoc khi dang.
         await log("Đang tải video lên máy chủ TikTok...")
-        ready = False
-        reached_high = False       # da tung thay progress >= 95%
-        done_streak = 0
-        editor = page.locator('.public-DraftEditor-content, [contenteditable="true"]').first
-        post_button = self._publish_button()
-        progress = page.locator('[role="progressbar"]').first
-        uploading_text = page.get_by_text(re.compile(r"uploading|đang tải lên", re.I)).first
-        failure_text = page.get_by_text(
-            re.compile(r"upload failed|tải lên thất bại|failed to upload|network error|please try again|đã xảy ra lỗi", re.I)
-        ).first
-        for i in range(140):       # ~420s cho file lon + mang cham
-            await asyncio.sleep(3)
-            if await self._handle_upload_interruptions(step_logger=step_logger):
-                done_streak = 0
-            has_bar = await progress.count() > 0 and await progress.is_visible()
-            progress_value = None
-            if has_bar:
-                raw_value = await progress.get_attribute("aria-valuenow")
-                try:
-                    progress_value = float(raw_value) if raw_value is not None else None
-                except ValueError:
-                    progress_value = None
-            s = {
-                "cap": await editor.count() > 0 and await editor.is_visible(),
-                "post": await post_button.count() > 0 and await post_button.is_enabled(),
-                "hasBar": has_bar,
-                "minVal": progress_value,
-                "uploading": await uploading_text.count() > 0 and await uploading_text.is_visible(),
-                "failed": await failure_text.count() > 0 and await failure_text.is_visible(),
-            }
-            if s["failed"]:
-                raise Exception("TikTok báo tải video lên thất bại.")
-            if s["minVal"] is not None and s["minVal"] >= 95:
-                reached_high = True
-            # Upload coi nhu XONG khi: da tung >=95%, gio khong con chu 'uploading',
-            # va (khong con thanh progress hoac thanh da >=99%).
-            upload_done = reached_high and (not s["uploading"]) and (not s["hasBar"] or (s["minVal"] is not None and s["minVal"] >= 99))
-            if s["cap"] and s["post"] and upload_done:
-                done_streak += 1
-                if done_streak >= 2:          # on dinh ~6s moi chac chan
-                    ready = True
+        upload_outcome = await self._wait_video_upload_completion(
+            timeout_seconds=420.0,
+            step_logger=step_logger,
+        )
+        failure_detail = str(upload_outcome.get("failure_text") or "").strip()
+
+        if not upload_outcome["ready"] and failure_detail:
+            # The file was selected correctly, but TikTok's media endpoint can
+            # fail transiently through a proxy. Reload only the upload page and
+            # make one clean re-selection in the same browser/account session.
+            await log(
+                "⚠️ TikTok xác nhận upload bị gián đoạn "
+                f"({failure_detail[:160]}). Đang thử lại video một lần..."
+            )
+            await self.navigate_to(
+                "https://www.tiktok.com/tiktokstudio/upload?lang=en"
+            )
+            retry_entry_ready = False
+            retry_deadline = time.monotonic() + 90.0
+            while time.monotonic() < retry_deadline:
+                await self._handle_upload_interruptions(
+                    step_logger=step_logger
+                )
+                current_url = str(
+                    getattr(self._page, "url", "") or ""
+                ).lower()
+                if "/login" in current_url and "redirect_url" in current_url:
+                    raise StudioReauthenticationRequired(
+                        "TikTok Studio yeu cau dang nhap lai khi thu lai upload."
+                    )
+                if await self._video_upload_entry_ready():
+                    retry_entry_ready = True
                     break
-            else:
-                done_streak = 0
-            # File RAT NHO: upload xong tuc thi, chua kip thay thanh progress nao.
-            if s["cap"] and s["post"] and not s["hasBar"] and not s["uploading"] and not reached_high and i >= 5:
-                ready = True
-                break
-        if not ready:
-            raise Exception("Video tải lên quá lâu / chưa đạt 100% -> hủy để tránh đăng rỗng.")
-        await log("Video đã tải lên xong (100%). Chuẩn bị đăng...")
+                await asyncio.sleep(0.5)
+            if not retry_entry_ready:
+                raise Exception(
+                    "TikTok không mở lại được ô chọn video sau lỗi upload."
+                )
+
+            await log("Chọn lại video (lần thử cuối)...")
+            if not await self._set_file_via_native_dialog(video_path):
+                detail = self._last_native_upload_error or "không có chi tiết"
+                raise Exception(
+                    "Không chọn lại được video sau lỗi upload. "
+                    f"Chi tiết: {detail}"
+                )
+            await log("Đang tải lại video lên máy chủ TikTok...")
+            upload_outcome = await self._wait_video_upload_completion(
+                timeout_seconds=420.0,
+                step_logger=step_logger,
+            )
+            failure_detail = str(
+                upload_outcome.get("failure_text") or ""
+            ).strip()
+
+        if not upload_outcome["ready"]:
+            if failure_detail:
+                raise Exception(
+                    "TikTok xác nhận tải video thất bại sau lần thử lại: "
+                    f"{failure_detail[:240]}"
+                )
+            raise Exception(
+                "Video tải lên quá lâu / chưa đạt 100% -> "
+                "hủy để tránh đăng rỗng."
+            )
+        await log("Video đã tải lên xong 100%.")
         await self._handle_upload_interruptions(step_logger=step_logger)
 
-        # 4) Caption (thay caption mac dinh lay tu ten file).
-        if caption:
-            await log("Điền caption...")
-            await self._fill_publish_caption(caption, step_logger=step_logger)
-            await self._handle_upload_interruptions(step_logger=step_logger)
+        # 4) Keep Studio's filename caption untouched. Click once inside each
+        # existing hashtag and activate it through TikTok's suggestions.
+        published_caption = await self._prepare_video_caption(
+            caption,
+            os.path.basename(video_path),
+            step_logger=step_logger
+        )
+        await self._handle_upload_interruptions(step_logger=step_logger)
 
         # Keep account defaults for privacy/comments/reuse. Those controls are
         # only touched when they become explicit inputs in a future UI.
@@ -3382,10 +5105,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if not scheduled:
                 raise Exception("Không đặt được lịch TikTok; không tự chuyển sang đăng ngay.")
 
-        # Keep the completed editor visible for a short review instead of
-        # clicking Post immediately after the last caption/setting action.
-        await self._review_before_publish(step_logger=step_logger)
-
         # 6) Bam Dang/Len lich voi VONG LAP: popup phu (vd 'New editing features/
         #    Got it', 'Bật kiểm tra nội dung') hay chen vao DUNG luc bam -> chan
         #    Post. Nen: moi vong -> dismiss popup -> JS-click Post -> kiem tra da
@@ -3394,11 +5113,12 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         acknowledged = await self._click_publish_and_confirm(
             step_logger=step_logger, scheduled=bool(schedule_at)
         )
-        if not acknowledged or schedule_at:
+        if schedule_at:
             return acknowledged
-        verify_caption = caption or os.path.splitext(os.path.basename(video_path))[0]
-        return await self._verify_post_in_studio(
-            verify_caption,
+        return await self._finalize_immediate_video_publish(
+            acknowledged,
+            published_caption,
+            video_path,
             step_logger=step_logger,
         )
 
@@ -3446,18 +5166,63 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         self._window_visible = False
         try:
             if self._invisible_pw:
-                await self._invisible_pw.__aexit__(None, None, None)
-                self._invisible_pw = None
-                self._browser = None
-                self._page = None
-                logger.info("[+] Da dong phien trinh duyet va giai phong tai nguyen.")
+                instance = self._invisible_pw
+                token = getattr(instance, "_session_token", None)
+                close_timeout = max(
+                    0.1,
+                    float(getattr(settings, "BROWSER_CLOSE_TIMEOUT", 15.0)),
+                )
+                try:
+                    await asyncio.wait_for(
+                        instance.__aexit__(None, None, None),
+                        timeout=close_timeout,
+                    )
+                    logger.info("[+] Da dong phien trinh duyet va giai phong tai nguyen.")
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "[CLOSE] Browser khong tu dong sau %.1fs; reap rieng session tree.",
+                        close_timeout,
+                    )
+                    if token:
+                        try:
+                            await asyncio.wait_for(
+                                asyncio.to_thread(_reap_session_tree, token),
+                                timeout=10,
+                            )
+                        except Exception as reap_exc:
+                            logger.warning("[CLOSE] Khong reap duoc session tree: %s", reap_exc)
+                except Exception as close_exc:
+                    logger.warning("[CLOSE] Driver close loi: %s", close_exc)
+                    if token:
+                        try:
+                            await asyncio.wait_for(
+                                asyncio.to_thread(_reap_session_tree, token),
+                                timeout=10,
+                            )
+                        except Exception:
+                            pass
+                finally:
+                    self._invisible_pw = None
+                    self._browser = None
+                    self._page = None
 
             if self._temp_profile_path and os.path.exists(self._temp_profile_path):
+                if self._extension_profile_builder is not None:
+                    persisted = await asyncio.to_thread(
+                        self._extension_profile_builder.persist_external_storage,
+                        self._temp_profile_path,
+                    )
+                    if persisted:
+                        logger.info(
+                            "[+] Da luu trang thai extension moi nhat: %s",
+                            ", ".join(persisted),
+                        )
                 logger.info(f"[*] Dang don dep ho so tam thoi: {self._temp_profile_path}")
                 # Xoa trong THREAD -> khong dong bang event loop luc dong browser.
                 _p = self._temp_profile_path
                 self._temp_profile_path = None
                 await asyncio.to_thread(shutil.rmtree, _p, ignore_errors=True)
+            self._extension_profile_builder = None
 
             for staging_dir in list(self._native_upload_staging_dirs):
                 await asyncio.to_thread(shutil.rmtree, staging_dir, ignore_errors=True)

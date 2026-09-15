@@ -1,0 +1,21 @@
+flowchart LR
+    U[React UI] -->|Scoped commands| R[Tauri launcher]
+    R -->|Secret via inherited pipe| B[Compiled sidecar]
+    X[Other local process] -.->|No capability: reject| B
+    B -->|Lease or job request| C[License and release control plane]
+    C -->|Signed short-lived entitlement| B
+    K[TPM key or DPAPI fallback] -->|Challenge response| C
+    B --> A[Local automation]
+    A --> T[TikTok and browser]
+    C -->|Signed update| R
+    subgraph Customer-controlled host
+        U
+        R
+        B
+        X
+        K
+        A
+    end
+    subgraph Vendor-controlled services
+        C
+    end

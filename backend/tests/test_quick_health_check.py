@@ -205,16 +205,52 @@ def test_fast_account_info_stops_before_public_fallback(monkeypatch):
     assert calls == ["account_info"]
 
 
+def test_direct_mode_ignores_an_accounts_stored_proxy(monkeypatch):
+    service = QuickHealthCheckService()
+    monkeypatch.setattr(quick_check_module.settings, "USE_PROXY", False)
+
+    assert service._build_proxy_url(object(), "stored-proxy-id") is None
+
+
+def test_public_oembed_alive_stops_before_heavy_profile(monkeypatch):
+    service = QuickHealthCheckService()
+    calls = []
+
+    async def oembed(*_args):
+        calls.append("oembed")
+        return QuickCheckResult("ALIVE", "tiktok_oembed", http_status=200)
+
+    async def profile(*_args):
+        calls.append("profile")
+        return QuickCheckResult(None, "unexpected")
+
+    async def run_limited(factory):
+        return await factory()
+
+    monkeypatch.setattr(service, "_fetch_oembed", oembed)
+    monkeypatch.setattr(service, "_fetch_profile", profile)
+
+    result = asyncio.run(service._fetch_and_classify(
+        None, "target_user", "", run_limited
+    ))
+
+    assert result.classification == "ALIVE"
+    assert calls == ["oembed"]
+
+
 def test_public_fallback_waits_for_profile_die_when_oembed_is_unavailable(monkeypatch):
     service = QuickHealthCheckService()
+    calls = []
 
     async def account_info(*_args):
         return QuickCheckResult(None, "account_info_session_invalid")
 
     async def oembed(*_args):
+        calls.append("oembed")
         return QuickCheckResult(None, "oembed_unavailable", http_status=400)
 
     async def profile(*_args):
+        calls.append("profile")
         return QuickCheckResult("DIE", "tiktok_status_10221", http_status=200)
 
     async def run_limited(factory):
@@ -230,6 +266,7 @@ def test_public_fallback_waits_for_profile_die_when_oembed_is_unavailable(monkey
 
     assert result.classification == "DIE"
     assert result.reason == "tiktok_status_10221"
+    assert calls == ["oembed", "profile"]
 
 
 def test_one_off_quick_check_broadcasts_completion(monkeypatch):

@@ -1,0 +1,151 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.0",
+  "analysisId": "hardening_20260904_commercial_client",
+  "sourceEvidence": {
+    "kind": "source_collection",
+    "label": "Commercial client boundary source review at ee06783",
+    "collectionSha256": "ea0c32f81c0e07683e2e0629ea27efc77c1b8744e82c316bb959dfa81e88b29e",
+    "artifactCount": 9,
+    "targetRevision": "ee06783a2a2f6ce38945a8845610fc72b0ad7e57",
+    "sourceDrift": "present"
+  },
+  "assessment": {
+    "outcome": "opportunities_identified",
+    "summary": "Use a compiled and signed desktop boundary plus service-owned licensing authority; local obfuscation alone remains patchable."
+  },
+  "constraints": {
+    "profile": "balanced",
+    "changeHorizons": ["incremental", "medium_term", "foundational"],
+    "nonNegotiables": [
+      "Windows x64 is the first release target.",
+      "Browser automation and video files remain local.",
+      "Production artifacts contain no repository or Python source files.",
+      "Release and license private keys never ship."
+    ],
+    "assumptions": [
+      "A short offline grace period is acceptable.",
+      "No measured latency or memory budget was supplied."
+    ]
+  },
+  "opportunities": [
+    {
+      "opportunityId": "commercial-client-trust-boundary",
+      "title": "Replace ambient local authority with a commercial client trust boundary",
+      "summary": "Compile and sign the desktop runtime, authenticate the local channel, and move durable licensing/release authority to a vendor service.",
+      "diagnosis": "Privileged automation is reachable through a fixed unauthenticated loopback API while source, secrets, and runtime artifacts share the deployment model.",
+      "evidence": [
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E001", "path": "backend/app/main.py", "claim": "Wildcard CORS and privileged routers have no global desktop-process authentication."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E002", "path": "frontend/src/App.tsx", "claim": "The UI directly calls fixed localhost HTTP and WebSocket endpoints."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E003", "path": "backend/app/core/config.py", "claim": "Debug and a third-party service secret are source-owned."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E004", "path": "pyproject.toml", "claim": "No compiled desktop release or signed updater target is defined."},
+        {"claimType": "observed", "sourceKind": "source", "evidenceId": "E005", "path": "backend/app/interfaces/api/tasks_router.py", "claim": "Privileged task routes do not enforce caller identity or entitlements."},
+        {"claimType": "inferred", "sourceKind": "source", "evidenceId": "E006", "path": "cookies.txt", "claim": "Tracked runtime artifacts make repository-copy release construction unsafe."}
+      ],
+      "desiredInvariants": [
+        "Every privileged operation requires a per-launch local capability and action-appropriate entitlement.",
+        "Activation keys are not runtime bearer credentials.",
+        "No customer artifact contains source, build secrets, signing keys, or runtime customer data.",
+        "Devices can be revoked and minimum safe versions enforced after bounded grace.",
+        "Only signed and verified releases execute or install."
+      ],
+      "proposalPath": "proposals/commercial-client-trust-boundary.md",
+      "options": [
+        {
+          "optionId": "hardened-local-client",
+          "title": "Hardened local client",
+          "kind": "baseline",
+          "summary": "Use Tauri, a compiled sidecar, local API authentication, and an offline signed license while keeping authority on the customer PC.",
+          "diagramPaths": {"before": "diagrams/commercial-client-trust-boundary-before.mmd", "after": "diagrams/commercial-client-trust-boundary-local-compiled-after.mmd"},
+          "evidenceCoverage": [
+            {"evidenceId": "E001", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Per-launch authentication rejects blind calls but remains locally patchable."},
+            {"evidenceId": "E004", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Creates a compiled and signed desktop target."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Harder static recovery and loopback replay; local checks remain patchable.", "validationPlan": "Attempt extraction, patching, stale-session replay, and direct route calls."},
+            {"dimension": "performance", "direction": "unknown", "confidence": "low", "basis": "hypothetical", "assessment": "No network task hop, but compiled cold start may change.", "validationPlan": "Compare cold start and task-start latency on a clean VM."},
+            {"dimension": "memory", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "Tauri and the sidecar add a process and WebView state.", "validationPlan": "Compare idle and peak RSS."},
+            {"dimension": "reliability", "direction": "improves", "confidence": "medium", "basis": "source-derived", "assessment": "Offline licensing avoids service outages but packaging adds lifecycle modes.", "validationPlan": "Test crash, restart, orphan cleanup, and offline recovery."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "medium", "basis": "hypothetical", "assessment": "Signing, installers, and transfers become owned operations.", "validationPlan": "Run a signed release and transfer drill."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "medium", "basis": "source-derived", "assessment": "UI/worker wrapping and authentication coverage are required.", "validationPlan": "Run all UI and automation tests through the package."}
+          ],
+          "residualRisks": ["Local administrators can patch the verifier.", "Offline licenses delay revocation."],
+          "implementationReadiness": {
+            "affectedComponents": ["frontend", "backend/app/main.py", "backend/app/interfaces/api", "release pipeline"],
+            "workPackages": ["Clean release", "Tauri launcher", "Nuitka sidecar", "Session auth", "Offline license", "Signed updater"],
+            "acceptanceCriteria": ["No Python source ships and unauthenticated local requests fail."],
+            "migrationNotes": ["Keep developer mode separate."],
+            "rollback": "Withdraw the commercial artifact and retain the developer launcher."
+          }
+        },
+        {
+          "optionId": "hybrid-control-plane",
+          "title": "Hybrid online control plane",
+          "kind": "structural",
+          "summary": "Keep automation local but centralize activation, entitlements, revocation, device binding, release policy, and selected job capabilities.",
+          "diagramPaths": {"before": "diagrams/commercial-client-trust-boundary-before.mmd", "after": "diagrams/commercial-client-trust-boundary-hybrid-control-plane-after.mmd"},
+          "evidenceCoverage": [
+            {"evidenceId": "E001", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Rust-owned per-launch authentication removes ambient loopback authority."},
+            {"evidenceId": "E003", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Secrets move to managed services, but exposed material must be rotated."},
+            {"evidenceId": "E005", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Central policy evaluates signed leases/capabilities inside use cases."},
+            {"evidenceId": "E006", "effect": "mitigates", "tacticalFixRequired": true, "rationale": "Clean builds avoid shipping artifacts, but repository cleanup remains required."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Durable signing, revocation, and release authority leave the client; the executor remains inspectable.", "validationPlan": "Test revocation, replay, cloning, forgery, bypass, and tampering."},
+            {"dimension": "performance", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "Lease renewal can be off-path; selected job capabilities add a request.", "validationPlan": "Measure p50/p95 activation, renewal, and protected task start."},
+            {"dimension": "memory", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "Client cost resembles the local option, with small caches and managed service state.", "validationPlan": "Measure client RSS and service memory per license/job."},
+            {"dimension": "reliability", "direction": "unknown", "confidence": "medium", "basis": "hypothetical", "assessment": "Grace masks short outages; long outages block new work by policy.", "validationPlan": "Run outage, skew, stale-cache, retry, and grace-extension drills."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "License, release, audit, key custody, support, and incidents become vendor operations.", "validationPlan": "Define SLOs and rehearse rotation, revocation, restore, and rollback."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "medium", "basis": "source-derived", "assessment": "All privileged transports and use cases adopt common controls.", "validationPlan": "Maintain a coverage inventory before enforcement."}
+          ],
+          "residualRisks": ["A determined attacker can patch a fully local execution path.", "Locally decrypted data can be captured.", "Long service outages require explicit grace policy."],
+          "implementationReadiness": {
+            "affectedComponents": ["frontend transport", "Tauri launcher", "backend auth and use cases", "data store", "license/release services", "CI signing"],
+            "workPackages": ["Release hygiene", "Local bridge", "Entitlement policy", "License service", "TPM/DPAPI identity", "Nuitka", "Updater", "Authenticode", "Admin portal"],
+            "acceptanceCriteria": ["Revocation, expiry, limits, stale sessions, cloning, unsigned updates, and tampered binaries fail closed."],
+            "migrationNotes": ["Use audit and warning modes first.", "Never interrupt active automation for update."],
+            "rollback": "Disable remote enforcement while retaining package, local auth, and signed-update controls."
+          }
+        },
+        {
+          "optionId": "cloud-authorized-execution",
+          "title": "Cloud-authorized execution",
+          "kind": "foundational",
+          "summary": "Treat the desktop as an untrusted executor and retain proprietary policy plus per-job authority on managed services.",
+          "diagramPaths": {"before": "diagrams/commercial-client-trust-boundary-before.mmd", "after": "diagrams/commercial-client-trust-boundary-cloud-authorized-after.mmd"},
+          "evidenceCoverage": [
+            {"evidenceId": "E001", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Local auth remains necessary while only the service can mint jobs."},
+            {"evidenceId": "E004", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Desktop is compiled/signed and proprietary policy is not distributed."},
+            {"evidenceId": "E005", "effect": "addresses", "tacticalFixRequired": true, "rationale": "Protected work requires a scoped server job."}
+          ],
+          "tradeoffs": [
+            {"dimension": "security", "direction": "improves", "confidence": "high", "basis": "source-derived", "assessment": "Policy that never ships cannot be statically recovered, and clients cannot mint jobs.", "validationPlan": "Attempt offline job creation, replay, mutation, substitution, and policy extraction."},
+            {"dimension": "performance", "direction": "regresses", "confidence": "medium", "basis": "hypothetical", "assessment": "Every protected job adds network, serialization, and scheduling latency.", "validationPlan": "Benchmark p50/p95/p99 task start against a product threshold."},
+            {"dimension": "memory", "direction": "regresses", "confidence": "low", "basis": "hypothetical", "assessment": "Managed queues, caches, and audit state add server memory.", "validationPlan": "Load-test concurrent authorization and record retained state."},
+            {"dimension": "reliability", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "The service enters the critical path and needs idempotency, backpressure, failover, and recovery.", "validationPlan": "Run dependency loss, duplicate delivery, delay, failover, and partial-completion tests."},
+            {"dimension": "operability", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "The vendor owns always-on jobs, privacy, audit, capacity, and on-call.", "validationPlan": "Define/test SLOs, alerts, disaster recovery, and deletion."},
+            {"dimension": "migration", "direction": "regresses", "confidence": "high", "basis": "source-derived", "assessment": "A versioned job state machine and incremental migration are required.", "validationPlan": "Pilot one action with dual paths and server rollback."}
+          ],
+          "residualRisks": ["Executor and runtime plans remain observable.", "Control-plane availability becomes product availability.", "Service metadata creates privacy obligations."],
+          "implementationReadiness": {
+            "affectedComponents": ["Option 2 components", "job protocol", "policy service", "queues", "audit/privacy controls"],
+            "workPackages": ["Job schema", "Policy engine", "Scoped signing", "Idempotent executor", "Queue/recovery", "Privacy/audit"],
+            "acceptanceCriteria": ["Modified/offline clients cannot originate valid protected work and service failures recover deterministically."],
+            "migrationNotes": ["Migrate one premium action first."],
+            "rollback": "Return the pilot to hybrid lease authorization."
+          }
+        }
+      ],
+      "recommendedOptionId": "hybrid-control-plane",
+      "recommendation": "Use hybrid control under current local-browser and bounded-offline constraints, with a protocol path to cloud authorization."
+    }
+  ],
+  "openQuestions": [
+    "Maximum offline grace period",
+    "License ownership model",
+    "Actions requiring one-use capability",
+    "Seat transfer policy",
+    "Mandatory update behavior during active work",
+    "Redistribution rights for browser and extension components"
+  ]
+}

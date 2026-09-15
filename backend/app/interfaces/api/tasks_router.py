@@ -1,25 +1,83 @@
 from typing import List, Optional
 import asyncio
+import json
+import logging
+import os
+import subprocess
+import sys
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from app.use_cases.orchestration.task_dispatcher import ConcurrentTaskDispatcher
-from app.interfaces.api.deps import get_task_dispatcher, get_account_repository
+from app.interfaces.api.deps import (
+    get_account_repository,
+    get_task_dispatcher,
+    require_runtime_entitlement,
+)
 from app.domain.ports.repository import IAccountRepository
 from app.use_cases.health_check.quick_check_use_case import quick_health_check_service
-from app.use_cases.analytics.tiktok_fast_analytics_sync import fast_analytics_sync_service
+from app.use_cases.analytics.tiktok_fast_analytics_sync import (
+    fast_analytics_sync_service,
+)
 from app.use_cases.debug.debug_login_service import debug_login_service
 from app.core.config import settings
+from app.core.extension_settings import (
+    is_nordvpn_extension_enabled,
+    nordvpn_authenticated_state_available,
+    nordvpn_package_available,
+    set_nordvpn_extension_enabled,
+)
 from app.use_cases.upload.media_selection import select_preferred_media
 from app.use_cases.upload.video_library import scan_video_paths
 from app.domain.account_rules import is_sold_account
+from app.core.proxy_allocation import interleave_accounts_by_proxy
 
+logger = logging.getLogger("TasksRouter")
 
-router = APIRouter(prefix="/tasks", tags=["Tasks"])
+router = APIRouter(
+    prefix="/tasks",
+    tags=["Tasks"],
+    dependencies=[Depends(require_runtime_entitlement("app.start"))],
+)
 
 
 class ProxyModeRequest(BaseModel):
-    use_proxy: bool     # True = auto-map proxy (nhu cu); False = mang that (khong proxy)
+    use_proxy: bool  # True = auto-map proxy (nhu cu); False = mang that (khong proxy)
+
+
+class NordVpnExtensionRequest(BaseModel):
+    enabled: bool
+
+
+def _nordvpn_extension_status() -> dict:
+    return {
+        "enabled": is_nordvpn_extension_enabled(),
+        "package_available": nordvpn_package_available(),
+        "authenticated_state_available": nordvpn_authenticated_state_available(),
+    }
+
+
+@router.get("/nordvpn-extension")
+async def get_nordvpn_extension_status():
+    return _nordvpn_extension_status()
+
+
+@router.post("/nordvpn-extension")
+async def set_nordvpn_extension_status(payload: NordVpnExtensionRequest):
+    if payload.enabled and not nordvpn_package_available():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Không tìm thấy gói NordVPN XPI trong thư mục extension đã cấu hình.",
+        )
+    set_nordvpn_extension_enabled(payload.enabled)
+    result = _nordvpn_extension_status()
+    result["status"] = "SUCCESS"
+    result["message"] = (
+        "Đã bật gắn NordVPN cho các browser mở sau."
+        if payload.enabled
+        else "Đã tắt gắn NordVPN cho các browser mở sau; dữ liệu đăng nhập vẫn được giữ lại."
+    )
+    return result
 
 
 @router.get("/proxy-mode")
@@ -37,15 +95,20 @@ async def set_proxy_mode(payload: ProxyModeRequest):
     return {
         "status": "SUCCESS",
         "use_proxy": settings.USE_PROXY,
-        "message": ("Đã bật auto-map proxy (dùng proxy như cũ)." if payload.use_proxy
-                    else "Đã chuyển sang MẠNG THẬT (không proxy) — dùng VPN toàn máy."),
+        "message": (
+            "Đã bật auto-map proxy (dùng proxy như cũ)."
+            if payload.use_proxy
+            else "Đã chuyển sang MẠNG THẬT (không proxy) — dùng VPN toàn máy."
+        ),
     }
+
 
 class BulkLoginRequest(BaseModel):
     account_ids: List[str]
-    login_method: str = "COOKIE" # COOKIE hoặc CREDENTIAL
-    # So luong chay DONG THOI TREN MOI PROXY (thay cho "so luong tong" truoc day).
+    login_method: str = "COOKIE"  # COOKIE hoặc CREDENTIAL
+    # Tong so luong; khi dung proxy moi host:port chi co mot account.
     proxy_concurrency: int = 8
+
 
 class BulkUpdateProfileRequest(BaseModel):
     account_ids: List[str]
@@ -59,10 +122,12 @@ class ProxyConcurrencyRequest(BaseModel):
 
 class BulkUploadVideoRequest(BaseModel):
     account_ids: List[str]
-    image_path: Optional[str] = None      # file ảnh hoặc thư mục ảnh; luôn ưu tiên
-    video_path: Optional[str] = None      # video dự phòng nếu không có ảnh hợp lệ
+    image_path: Optional[str] = None  # file ảnh hoặc thư mục ảnh; luôn ưu tiên
+    video_path: Optional[str] = None  # video dự phòng nếu không có ảnh hợp lệ
     caption: str = ""
-    schedule_at: Optional[str] = None      # 'YYYY-MM-DD HH:MM' -> đặt lịch; None -> đăng ngay
+    schedule_at: Optional[str] = (
+        None  # 'YYYY-MM-DD HH:MM' -> đặt lịch; None -> đăng ngay
+    )
     proxy_concurrency: int = 8
 
 
@@ -76,6 +141,7 @@ class VideoBatchRequest(BaseModel):
     videos_per_account: int = 1
     proxy_concurrency: int = 8
 
+
 class QuickHealthCheckRequest(BaseModel):
     account_ids: List[str]
     concurrency_limit: int = 5
@@ -83,7 +149,7 @@ class QuickHealthCheckRequest(BaseModel):
 
 class AnalyticsSyncRequest(BaseModel):
     account_ids: List[str]
-    concurrency_limit: int = 12
+    concurrency_limit: int = 4
     force: bool = False
 
 
@@ -102,41 +168,52 @@ def _operational_accounts(account_repo: IAccountRepository, account_ids: List[st
         (sold if is_sold_account(account) else valid).append(account)
     return valid, sold
 
+
 @router.post("/bulk-login")
 async def start_bulk_login(
     payload: BulkLoginRequest,
     dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
-    account_repo: IAccountRepository = Depends(get_account_repository)
+    account_repo: IAccountRepository = Depends(get_account_repository),
 ):
     """API Đăng nhập hàng loạt tài khoản đã chọn (COOKIE hoặc CREDENTIAL)"""
     if not payload.account_ids:
-        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
-    
+        raise HTTPException(
+            status_code=400, detail="Vui lòng chọn ít nhất một tài khoản."
+        )
+
     dispatcher.set_proxy_concurrency_limit(payload.proxy_concurrency)
     operational, sold = _operational_accounts(account_repo, payload.account_ids)
     queued_count = 0
-    for account in operational:
+    for account in interleave_accounts_by_proxy(operational):
 
         # Đẩy tác vụ LOGIN vào hàng đợi
         await dispatcher.submit_task(
             account_id=account.id,
-            task_type=f"LOGIN_{payload.login_method}", # LOGIN_COOKIE hoặc LOGIN_CREDENTIAL
-            avatar_folder=None
+            task_type=f"LOGIN_{payload.login_method}",  # LOGIN_COOKIE hoặc LOGIN_CREDENTIAL
+            avatar_folder=None,
         )
         queued_count += 1
-        
-    return {"status": "SUCCESS", "queued": queued_count, "skipped_sold": len(sold), "message": f"Đã xếp hàng {queued_count} tài khoản; bỏ qua {len(sold)} tài khoản ĐÃ BÁN."}
+
+    return {
+        "status": "SUCCESS",
+        "queued": queued_count,
+        "skipped_sold": len(sold),
+        "message": f"Đã xếp hàng {queued_count} tài khoản; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.",
+    }
+
 
 @router.post("/bulk-upload-video")
 @router.post("/bulk-upload-media")
 async def start_bulk_upload_media(
     payload: BulkUploadVideoRequest,
     dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
-    account_repo: IAccountRepository = Depends(get_account_repository)
+    account_repo: IAccountRepository = Depends(get_account_repository),
 ):
     """Đăng ảnh ưu tiên hoặc video dự phòng lên các tài khoản đã chọn."""
     if not payload.account_ids:
-        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
+        raise HTTPException(
+            status_code=400, detail="Vui lòng chọn ít nhất một tài khoản."
+        )
     try:
         selected = select_preferred_media(payload.image_path, payload.video_path)
     except ValueError as exc:
@@ -151,12 +228,23 @@ async def start_bulk_upload_media(
     }
     operational, sold = _operational_accounts(account_repo, payload.account_ids)
     queued = 0
-    for account in operational:
-        accepted = await dispatcher.submit_task(account_id=account.id, task_type="UPLOAD_MEDIA", extra_config=extra)
+    for account in interleave_accounts_by_proxy(operational):
+        accepted = await dispatcher.submit_task(
+            account_id=account.id, task_type="UPLOAD_MEDIA", extra_config=extra
+        )
         queued += int(accepted)
     kind = "đặt lịch đăng" if payload.schedule_at else "đăng"
-    media_name = f"{len(selected.image_paths)} ảnh" if selected.kind == "photo" else "video dự phòng"
-    return {"status": "SUCCESS", "queued": queued, "skipped_sold": len(sold), "message": f"Đã xếp hàng {kind} {media_name} cho {queued} tài khoản; bỏ qua {len(sold)} tài khoản ĐÃ BÁN."}
+    media_name = (
+        f"{len(selected.image_paths)} ảnh"
+        if selected.kind == "photo"
+        else "video dự phòng"
+    )
+    return {
+        "status": "SUCCESS",
+        "queued": queued,
+        "skipped_sold": len(sold),
+        "message": f"Đã xếp hàng {kind} {media_name} cho {queued} tài khoản; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.",
+    }
 
 
 @router.post("/video-library/scan")
@@ -165,7 +253,99 @@ async def scan_video_library(payload: VideoLibraryScanRequest):
     return {"status": "SUCCESS", "videos": videos, "count": len(videos)}
 
 
+def _pick_video_paths_windows(pick_folder: bool) -> list[str]:
+    """Show a WinForms picker in a dedicated STA process.
+
+    Tkinter dialogs can hang when created from a FastAPI worker thread or when
+    uvicorn has no console. The STA helper owns the native dialog while the
+    backend only waits for its JSON result.
+    """
+    powershell = os.path.join(
+        os.environ.get("SystemRoot", r"C:\Windows"),
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+    )
+    dialog_script = r"""
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedToolWindow
+$owner.Opacity = 0
+$owner.Size = New-Object System.Drawing.Size(1, 1)
+$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+$owner.Show()
+$paths = @()
+try {
+    if ($env:TIKTOK_PICK_FOLDER -eq '1') {
+        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dialog.Description = 'Chọn thư mục video'
+        $dialog.ShowNewFolderButton = $false
+        if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+            $paths = @($dialog.SelectedPath)
+        }
+    } else {
+        $dialog = New-Object System.Windows.Forms.OpenFileDialog
+        $dialog.Title = 'Chọn nhiều video'
+        $dialog.Filter = 'Video (*.mp4;*.mov;*.webm;*.m4v)|*.mp4;*.mov;*.webm;*.m4v|Tất cả tệp (*.*)|*.*'
+        $dialog.Multiselect = $true
+        $dialog.CheckFileExists = $true
+        $dialog.RestoreDirectory = $true
+        if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+            $paths = @($dialog.FileNames)
+        }
+    }
+    [Console]::Out.Write((ConvertTo-Json -InputObject @($paths) -Compress))
+} finally {
+    if ($null -ne $dialog) { $dialog.Dispose() }
+    $owner.Close()
+    $owner.Dispose()
+}
+"""
+    env = os.environ.copy()
+    env["TIKTOK_PICK_FOLDER"] = "1" if pick_folder else "0"
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoLogo",
+            "-NoProfile",
+            "-STA",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            dialog_script,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=180,
+        env=env,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "unknown error").strip()
+        raise RuntimeError(f"Windows picker helper failed: {detail[:500]}")
+    raw = completed.stdout.strip() or "[]"
+    selected = json.loads(raw)
+    if isinstance(selected, str):
+        selected = [selected]
+    if not isinstance(selected, list):
+        raise RuntimeError("Windows picker returned an invalid result")
+    return [str(path) for path in selected if str(path).strip()]
+
+
 def _pick_local_video_paths(pick_folder: bool) -> list[str]:
+    if sys.platform == "win32":
+        return _pick_video_paths_windows(pick_folder)
+
     import tkinter as tk
     from tkinter import filedialog
 
@@ -185,18 +365,34 @@ def _pick_local_video_paths(pick_folder: bool) -> list[str]:
         root.destroy()
 
 
+async def _pick_video_library(pick_folder: bool) -> dict:
+    try:
+        paths = await asyncio.to_thread(_pick_local_video_paths, pick_folder)
+    except Exception as exc:
+        logger.exception("Windows video picker failed")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Không mở được hộp thoại chọn video. "
+                "Hãy nhập đường dẫn thủ công nếu Windows không cho phép mở bộ chọn."
+            ),
+        ) from exc
+    videos = scan_video_paths(paths)
+    return {
+        "status": "SUCCESS" if videos else "CANCELLED",
+        "videos": videos,
+        "count": len(videos),
+    }
+
+
 @router.post("/video-library/pick-files")
 async def pick_video_files():
-    paths = await asyncio.to_thread(_pick_local_video_paths, False)
-    videos = scan_video_paths(paths)
-    return {"status": "SUCCESS" if videos else "CANCELLED", "videos": videos, "count": len(videos)}
+    return await _pick_video_library(False)
 
 
 @router.post("/video-library/pick-folder")
 async def pick_video_folder():
-    paths = await asyncio.to_thread(_pick_local_video_paths, True)
-    videos = scan_video_paths(paths)
-    return {"status": "SUCCESS" if videos else "CANCELLED", "videos": videos, "count": len(videos)}
+    return await _pick_video_library(True)
 
 
 @router.post("/video-batches")
@@ -206,41 +402,65 @@ async def create_video_batch(
     dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
     account_repo: IAccountRepository = Depends(get_account_repository),
 ):
-    account_emails = [value.strip().lower() for value in dict.fromkeys(payload.account_ids) if value.strip()]
+    account_emails = [
+        value.strip().lower()
+        for value in dict.fromkeys(payload.account_ids)
+        if value.strip()
+    ]
     if not account_emails:
         raise HTTPException(status_code=400, detail="Chọn ít nhất một Hotmail.")
     operational, sold = _operational_accounts(account_repo, account_emails)
-    valid_emails = [account.id for account in operational]
+    valid_emails = [
+        account.id for account in interleave_accounts_by_proxy(operational)
+    ]
     if not valid_emails:
         raise HTTPException(status_code=400, detail="Không tìm thấy Hotmail hợp lệ.")
     videos = scan_video_paths(payload.video_paths)
     if not videos:
-        raise HTTPException(status_code=400, detail="Không tìm thấy video hợp lệ (.mp4/.mov/.webm/.m4v).")
+        raise HTTPException(
+            status_code=400,
+            detail="Không tìm thấy video hợp lệ (.mp4/.mov/.webm/.m4v).",
+        )
     if payload.videos_per_account < 1:
-        raise HTTPException(status_code=400, detail="Số video mỗi account phải lớn hơn 0.")
-    if payload.videos_per_account > len(videos):
+        raise HTTPException(
+            status_code=400, detail="Số video mỗi account phải lớn hơn 0."
+        )
+    required_video_count = len(valid_emails) * payload.videos_per_account
+    if required_video_count > len(videos):
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Cần ít nhất {payload.videos_per_account} video khác nhau; "
+                f"Cần ít nhất {required_video_count} video khác nhau để cấp riêng "
+                f"{payload.videos_per_account} video cho mỗi account; "
                 f"kho hiện chỉ có {len(videos)} video."
             ),
         )
     dispatcher.set_proxy_concurrency_limit(payload.proxy_concurrency)
-    batch = request.app.state.video_batch.add(
-        valid_emails,
-        [video["path"] for video in videos],
-        videos_per_account=payload.videos_per_account,
-    )
-    total_assignments = len(valid_emails) * payload.videos_per_account
+    try:
+        batch = request.app.state.video_batch.add(
+            valid_emails,
+            [video["path"] for video in videos],
+            videos_per_account=payload.videos_per_account,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{exc} Một số video có thể đang được đợt khác giữ chỗ; "
+                "hãy nạp thêm video hoặc chờ đợt đó kết thúc."
+            ),
+        ) from exc
+    total_assignments = required_video_count
     return {
         "status": "SUCCESS",
         "batch": batch,
         "skipped_sold": len(sold),
         "message": (
-            f"Đã ghép {total_assignments} lượt đăng: "
-            f"{payload.videos_per_account} video không trùng cho mỗi "
-            f"{len(valid_emails)} Hotmail; video được phép dùng lại ở Hotmail khác, "
+            f"Đã ghép {total_assignments} lượt đăng một-một: "
+            f"{payload.videos_per_account} video riêng cho mỗi "
+            f"{len(valid_emails)} Hotmail; không video nào dùng lại ở account khác. "
+            f"Có {len(batch.get('spares', []))} video dự phòng để tự thay khi TikTok báo trùng. "
+            "Video đăng xong sẽ chuyển vào DA_DANG/<account>; "
             f"bỏ qua {len(sold)} tài khoản ĐÃ BÁN."
         ),
     }
@@ -254,8 +474,13 @@ async def list_video_batches(request: Request):
 @router.delete("/video-batches/{batch_id}")
 async def cancel_video_batch(batch_id: str, request: Request):
     if not request.app.state.video_batch.cancel(batch_id):
-        raise HTTPException(status_code=404, detail="Không tìm thấy đợt đang chờ hoặc đang chạy.")
-    return {"status": "SUCCESS", "message": "Đã dừng cấp thêm video; task hiện tại sẽ hoàn tất an toàn."}
+        raise HTTPException(
+            status_code=404, detail="Không tìm thấy đợt đang chờ hoặc đang chạy."
+        )
+    return {
+        "status": "SUCCESS",
+        "message": "Đã dừng cấp thêm video; task hiện tại sẽ hoàn tất an toàn.",
+    }
 
 
 class ScheduleUploadRequest(BaseModel):
@@ -263,7 +488,7 @@ class ScheduleUploadRequest(BaseModel):
     image_path: Optional[str] = None
     video_path: Optional[str] = None
     caption: str = ""
-    run_at: str                            # ISO 'YYYY-MM-DDTHH:MM' (giờ máy chạy)
+    run_at: str  # ISO 'YYYY-MM-DDTHH:MM' (giờ máy chạy)
 
 
 @router.post("/schedule-upload-video")
@@ -275,7 +500,9 @@ async def schedule_upload_media(
 ):
     """Hẹn giờ đăng ảnh/video phía app; tới giờ mới tạo task UPLOAD_MEDIA."""
     if not payload.account_ids:
-        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
+        raise HTTPException(
+            status_code=400, detail="Vui lòng chọn ít nhất một tài khoản."
+        )
     try:
         selected = select_preferred_media(payload.image_path, payload.video_path)
     except ValueError as exc:
@@ -283,12 +510,17 @@ async def schedule_upload_media(
     try:
         run_at = datetime.fromisoformat(payload.run_at)
     except Exception:
-        raise HTTPException(status_code=400, detail="run_at không hợp lệ (cần 'YYYY-MM-DDTHH:MM').")
+        raise HTTPException(
+            status_code=400, detail="run_at không hợp lệ (cần 'YYYY-MM-DDTHH:MM')."
+        )
     if run_at <= datetime.now():
         raise HTTPException(status_code=400, detail="Thời điểm hẹn phải ở tương lai.")
     operational, sold = _operational_accounts(account_repo, payload.account_ids)
     if not operational:
-        raise HTTPException(status_code=400, detail=f"Không có account để hẹn đăng; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không có account để hẹn đăng; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.",
+        )
     operational_ids = [account.id for account in operational]
     svc = request.app.state.scheduled_upload
     job_id = svc.add(
@@ -298,10 +530,15 @@ async def schedule_upload_media(
         run_at,
         image_path=payload.image_path,
     )
-    media_name = f"{len(selected.image_paths)} ảnh" if selected.kind == "photo" else "video"
-    return {"status": "SUCCESS", "job_id": job_id,
-            "skipped_sold": len(sold),
-            "message": f"Đã hẹn đăng {media_name} cho {len(operational_ids)} tài khoản; bỏ qua {len(sold)} ĐÃ BÁN, lúc {run_at.strftime('%H:%M %d/%m')}."}
+    media_name = (
+        f"{len(selected.image_paths)} ảnh" if selected.kind == "photo" else "video"
+    )
+    return {
+        "status": "SUCCESS",
+        "job_id": job_id,
+        "skipped_sold": len(sold),
+        "message": f"Đã hẹn đăng {media_name} cho {len(operational_ids)} tài khoản; bỏ qua {len(sold)} ĐÃ BÁN, lúc {run_at.strftime('%H:%M %d/%m')}.",
+    }
 
 
 @router.get("/scheduled-uploads")
@@ -321,8 +558,8 @@ async def cancel_scheduled_upload(job_id: str, request: Request):
 # TRINH DUYET TRANG (khong account) - de test tay captcha/thao tac
 # =============================================================================
 class BlankBrowserRequest(BaseModel):
-    url: str = "about:blank"              # trang muon mo san (de trong = trang trang)
-    proxy_id: Optional[str] = None        # None = truc tiep; co id = chay qua proxy do
+    url: str = "about:blank"  # trang muon mo san (de trong = trang trang)
+    proxy_id: Optional[str] = None  # None = truc tiep; co id = chay qua proxy do
 
 
 @router.post("/debug-blank")
@@ -332,14 +569,19 @@ async def start_blank_browser(payload: BlankBrowserRequest):
     if debug_login_service.is_blank_running():
         raise HTTPException(status_code=400, detail="Trình duyệt trắng đang mở rồi.")
     debug_login_service.start_blank(payload.url or "about:blank", payload.proxy_id)
-    return {"status": "SUCCESS", "message": "Đang mở trình duyệt trắng (chỉ có extension captcha)..."}
+    return {
+        "status": "SUCCESS",
+        "message": "Đang mở trình duyệt trắng (chỉ có extension captcha)...",
+    }
 
 
 @router.post("/debug-blank/stop")
 async def stop_blank_browser():
     ok = await debug_login_service.stop_blank()
     if not ok:
-        raise HTTPException(status_code=404, detail="Không có trình duyệt trắng nào đang mở.")
+        raise HTTPException(
+            status_code=404, detail="Không có trình duyệt trắng nào đang mở."
+        )
     return {"status": "SUCCESS", "message": "Đã đóng trình duyệt trắng."}
 
 
@@ -352,35 +594,43 @@ async def blank_browser_active():
 async def start_bulk_update_profile(
     payload: BulkUpdateProfileRequest,
     dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
-    account_repo: IAccountRepository = Depends(get_account_repository)
+    account_repo: IAccountRepository = Depends(get_account_repository),
 ):
     """API Cập nhật Profile (Avatar & Bio) hàng loạt cho các tài khoản đã chọn"""
     if not payload.account_ids:
-        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
-    
+        raise HTTPException(
+            status_code=400, detail="Vui lòng chọn ít nhất một tài khoản."
+        )
+
     dispatcher.set_proxy_concurrency_limit(payload.proxy_concurrency)
     operational, sold = _operational_accounts(account_repo, payload.account_ids)
     queued_count = 0
-    for account in operational:
+    for account in interleave_accounts_by_proxy(operational):
 
         # Đẩy tác vụ UPDATE_PROFILE vào hàng đợi
         await dispatcher.submit_task(
             account_id=account.id,
             task_type="UPDATE_PROFILE",
-            avatar_folder=payload.avatar_folder
+            avatar_folder=payload.avatar_folder,
         )
         queued_count += 1
-        
-    return {"status": "SUCCESS", "queued": queued_count, "skipped_sold": len(sold), "message": f"Đã xếp hàng cập nhật {queued_count} tài khoản; bỏ qua {len(sold)} tài khoản ĐÃ BÁN."}
+
+    return {
+        "status": "SUCCESS",
+        "queued": queued_count,
+        "skipped_sold": len(sold),
+        "message": f"Đã xếp hàng cập nhật {queued_count} tài khoản; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.",
+    }
 
 
 # =============================================================================
 # ĐIỀU KHIỂN TOÀN CỤC: Bắt đầu / Tạm dừng / Tiếp tục / Dừng khẩn cấp
 # =============================================================================
 
+
 @router.get("/status")
 async def get_global_status(
-    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
 ):
     """Trạng thái hiện tại của dispatcher - dùng để đồng bộ UI khi tải lại trang."""
     return dispatcher.get_global_status()
@@ -389,24 +639,25 @@ async def get_global_status(
 @router.post("/proxy-concurrency")
 async def set_proxy_concurrency(
     payload: ProxyConcurrencyRequest,
-    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
 ):
-    """Chỉnh SỐ LUỒNG CHẠY ĐỒNG THỜI TỐI ĐA / 1 PROXY ngay lập tức từ Web UI
-    (thay cho 'số luồng chạy' tổng cũ). Áp dụng cho các tác vụ chạy sau đó."""
+    """Chỉnh tổng số luồng chạy đồng thời ngay lập tức từ Web UI."""
     if payload.limit <= 0:
-        raise HTTPException(status_code=400, detail="Số luồng/proxy phải >= 1.")
+        raise HTTPException(status_code=400, detail="Số luồng phải >= 1.")
     dispatcher.set_proxy_concurrency_limit(payload.limit)
     await dispatcher.broadcast_global_state()
+    effective_limit = dispatcher.proxy_max_concurrent
     return {
         "status": "SUCCESS",
-        "proxy_max_concurrent": payload.limit,
-        "message": f"Đã đặt tối đa {payload.limit} luồng chạy đồng thời trên mỗi proxy.",
+        "proxy_max_concurrent": effective_limit,
+        "concurrency_limit": effective_limit,
+        "message": f"Đã đặt tối đa {effective_limit} luồng chạy đồng thời.",
     }
 
 
 @router.post("/start-global")
 async def start_global(
-    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
 ):
     """Khởi động (hoặc khởi động lại) vòng lặp xử lý hàng đợi nếu đang tắt."""
     await dispatcher.start()
@@ -416,7 +667,7 @@ async def start_global(
 
 @router.post("/pause-global")
 async def pause_global(
-    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
 ):
     """Tạm dừng TOÀN BỘ các luồng đang chạy - mỗi luồng sẽ dừng lại ở checkpoint
     gần nhất (thường chỉ trễ vài giây) và chờ lệnh tiếp tục."""
@@ -427,7 +678,7 @@ async def pause_global(
 
 @router.post("/resume-global")
 async def resume_global(
-    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
 ):
     """Tiếp tục lại toàn bộ hệ thống sau khi tạm dừng."""
     dispatcher.resume_global()
@@ -437,7 +688,7 @@ async def resume_global(
 
 @router.post("/stop-global")
 async def stop_global(
-    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher)
+    dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
 ):
     """DỪNG KHẨN CẤP: hủy ngay lập tức mọi luồng đang chạy (đóng browser của
     từng luồng) và xóa sạch các tác vụ còn đang chờ trong hàng đợi. Hệ thống
@@ -450,6 +701,7 @@ async def stop_global(
 # ĐIỀU KHIỂN TỪNG TÀI KHOẢN: Tạm dừng / Tiếp tục riêng lẻ
 # =============================================================================
 
+
 @router.post("/pause-account/{account_id}")
 async def pause_account(
     account_id: str,
@@ -459,7 +711,10 @@ async def pause_account(
     """Tạm dừng riêng 1 tài khoản đang chạy để can thiệp thủ công, các tài
     khoản khác không bị ảnh hưởng."""
     if is_sold_account(account_repo.get_by_id(account_id)):
-        raise HTTPException(status_code=403, detail="Account ĐÃ BÁN chỉ lưu trữ; không điều khiển tác vụ.")
+        raise HTTPException(
+            status_code=403,
+            detail="Account ĐÃ BÁN chỉ lưu trữ; không điều khiển tác vụ.",
+        )
     dispatcher.pause_account(account_id)
     await dispatcher.broadcast_account_pause_state(account_id)
     return {"status": "SUCCESS", "message": f"Đã tạm dừng tài khoản {account_id}."}
@@ -473,7 +728,10 @@ async def resume_account(
 ):
     """Tiếp tục lại 1 tài khoản đã bị tạm dừng riêng."""
     if is_sold_account(account_repo.get_by_id(account_id)):
-        raise HTTPException(status_code=403, detail="Account ĐÃ BÁN chỉ lưu trữ; không điều khiển tác vụ.")
+        raise HTTPException(
+            status_code=403,
+            detail="Account ĐÃ BÁN chỉ lưu trữ; không điều khiển tác vụ.",
+        )
     dispatcher.resume_account(account_id)
     await dispatcher.broadcast_account_pause_state(account_id)
     return {"status": "SUCCESS", "message": f"Đã tiếp tục tài khoản {account_id}."}
@@ -481,9 +739,10 @@ async def resume_account(
 
 # =============================================================================
 # ĐỒNG BỘ HIỆU SUẤT NHANH (TÁCH RIÊNG HOÀN TOÀN - KHÔNG QUA DISPATCHER)
-# Profile dùng HTTP hydration; tầng video dùng một signer invisible dùng chung.
+# Profile/video đã biết dùng HTTP có giới hạn; chỉ ca lỗi mới qua browser pool.
 # Không OAuth, không đăng nhập từng account và không mở Studio theo account.
 # =============================================================================
+
 
 @router.post("/sync-analytics")
 async def start_analytics_sync(
@@ -492,19 +751,26 @@ async def start_analytics_sync(
 ):
     operational, sold = _operational_accounts(account_repo, payload.account_ids)
     if not operational:
-        raise HTTPException(status_code=400, detail=f"Không có account để đồng bộ; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không có account để đồng bộ; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.",
+        )
     if not fast_analytics_sync_service.start_batch(
         [account.id for account in operational],
         concurrency_limit=max(1, min(payload.concurrency_limit, 24)),
         force=payload.force,
     ):
-        raise HTTPException(status_code=409, detail="Đang có một đợt đồng bộ nhanh chạy dở.")
+        raise HTTPException(
+            status_code=409, detail="Đang có một đợt đồng bộ nhanh chạy dở."
+        )
     return {
-        "status": "SUCCESS", "queued": len(operational), "skipped_sold": len(sold),
+        "status": "SUCCESS",
+        "queued": len(operational),
+        "skipped_sold": len(sold),
         "mode": "PUBLIC_PROFILE",
         "message": (
             f"Đã bắt đầu đồng bộ nhanh {len(operational)} tài khoản; "
-            "profile dùng HTTP công khai, chi tiết video dùng một browser ẩn dùng chung khi cần; "
+            "HTTP chạy có giới hạn, dữ liệu lỗi mới chuyển qua tối đa 2 browser ẩn; "
             f"bỏ qua {len(sold)} tài khoản ĐÃ BÁN."
         ),
     }
@@ -513,6 +779,7 @@ async def start_analytics_sync(
 @router.get("/sync-analytics/status")
 async def get_analytics_sync_status():
     return fast_analytics_sync_service.get_status()
+
 
 @router.post("/quick-health-check")
 async def start_quick_health_check(
@@ -524,24 +791,31 @@ async def start_quick_health_check(
     được cập nhật qua WebSocket (event ACCOUNT_STATUS_CHANGED cho từng acc,
     và QUICK_CHECK_FINISHED khi xong toàn bộ đợt)."""
     if not payload.account_ids:
-        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản.")
+        raise HTTPException(
+            status_code=400, detail="Vui lòng chọn ít nhất một tài khoản."
+        )
 
     if quick_health_check_service.is_running:
         raise HTTPException(
             status_code=409,
-            detail="Đang có 1 đợt Check nhanh chạy dở, vui lòng đợi hoàn tất trước khi chạy đợt mới."
+            detail="Đang có 1 đợt Check nhanh chạy dở, vui lòng đợi hoàn tất trước khi chạy đợt mới.",
         )
 
     operational, sold = _operational_accounts(account_repo, payload.account_ids)
     if not operational:
-        raise HTTPException(status_code=400, detail=f"Không có account để check; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không có account để check; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.",
+        )
     ids = [account.id for account in operational]
-    asyncio.create_task(quick_health_check_service.run_batch(ids, payload.concurrency_limit))
+    asyncio.create_task(
+        quick_health_check_service.run_batch(ids, payload.concurrency_limit)
+    )
 
     return {
         "status": "SUCCESS",
         "skipped_sold": len(sold),
-        "message": f"Đã bắt đầu Check nhanh cho {len(ids)} tài khoản; bỏ qua {len(sold)} tài khoản ĐÃ BÁN."
+        "message": f"Đã bắt đầu Check nhanh cho {len(ids)} tài khoản; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.",
     }
 
 
@@ -568,17 +842,25 @@ async def start_continuous_quick_check(
 ):
     """Bật quét lặp lại danh sách đã chọn, với cooldown 15-300 giây."""
     if not payload.account_ids:
-        raise HTTPException(status_code=400, detail="Vui lòng chọn ít nhất một tài khoản trước khi bật Check nhanh liên tục.")
+        raise HTTPException(
+            status_code=400,
+            detail="Vui lòng chọn ít nhất một tài khoản trước khi bật Check nhanh liên tục.",
+        )
     operational, sold = _operational_accounts(account_repo, payload.account_ids)
     if not operational:
-        raise HTTPException(status_code=400, detail=f"Không có account để check; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không có account để check; bỏ qua {len(sold)} tài khoản ĐÃ BÁN.",
+        )
     started = quick_health_check_service.start_continuous(
         account_ids=[account.id for account in operational],
         gap_seconds=payload.gap_seconds,
         concurrency_limit=payload.concurrency_limit,
     )
     if not started:
-        raise HTTPException(status_code=409, detail="Chế độ liên tục đã đang bật sẵn rồi.")
+        raise HTTPException(
+            status_code=409, detail="Chế độ liên tục đã đang bật sẵn rồi."
+        )
     return {
         "status": "SUCCESS",
         "message": (
@@ -622,16 +904,24 @@ async def start_debug_login(
     ket thuc khi ban DONG cua so hoac goi /debug-login/stop."""
     account = account_repo.get_by_id(payload.account_id)
     if is_sold_account(account):
-        raise HTTPException(status_code=403, detail="Tài khoản thuộc mục ĐÃ BÁN; debug bị khóa để chỉ lưu trữ.")
+        raise HTTPException(
+            status_code=403,
+            detail="Tài khoản thuộc mục ĐÃ BÁN; debug bị khóa để chỉ lưu trữ.",
+        )
     if debug_login_service.is_running(payload.account_id):
         raise HTTPException(
             status_code=409,
-            detail="Tài khoản này đã có 1 phiên debug đang mở. Hãy đóng cửa sổ đó trước."
+            detail="Tài khoản này đã có 1 phiên debug đang mở. Hãy đóng cửa sổ đó trước.",
         )
     started = debug_login_service.start(payload.account_id)
     if not started:
-        raise HTTPException(status_code=409, detail="Không thể khởi tạo phiên debug (đã đang chạy).")
-    return {"status": "SUCCESS", "message": "Đã mở phiên debug — trình duyệt sẽ hiện lên để bạn thao tác tay."}
+        raise HTTPException(
+            status_code=409, detail="Không thể khởi tạo phiên debug (đã đang chạy)."
+        )
+    return {
+        "status": "SUCCESS",
+        "message": "Đã mở phiên debug — trình duyệt sẽ hiện lên để bạn thao tác tay.",
+    }
 
 
 @router.post("/debug-login/stop")
@@ -639,7 +929,10 @@ async def stop_debug_login(payload: DebugLoginRequest):
     """Dong cua so debug tu xa (thay vi bam X tren cua so vat ly)."""
     stopped = await debug_login_service.stop(payload.account_id)
     if not stopped:
-        raise HTTPException(status_code=404, detail="Không có phiên debug nào đang mở cho tài khoản này.")
+        raise HTTPException(
+            status_code=404,
+            detail="Không có phiên debug nào đang mở cho tài khoản này.",
+        )
     return {"status": "SUCCESS", "message": "Đã yêu cầu đóng phiên debug."}
 
 
@@ -654,5 +947,6 @@ async def screen_view_ping():
     """Frontend (tab Màn Hình Trực Tiếp) gọi định kỳ khi đang mở. Chỉ khi có ping
     gần đây thì streamer mới chụp & gửi frame -> không ai xem thì không tốn CPU."""
     from app.infrastructure.streaming.screen_streamer import note_screen_view_ping
+
     note_screen_view_ping()
     return {"status": "OK"}

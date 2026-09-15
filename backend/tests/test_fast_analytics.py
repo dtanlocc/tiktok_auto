@@ -1,13 +1,20 @@
 import asyncio
 from datetime import datetime, timedelta
 
+from app.use_cases.analytics import tiktok_public_video_client as video_client_module
 from app.use_cases.analytics.tiktok_fast_analytics_sync import (
     _is_cache_fresh,
+    _is_sync_cache_usable,
+    _is_video_cache_usable,
+    _merge_video_completeness,
+    _stale_video_ids_to_remove,
     profile_metric_sync_result,
 )
 from app.use_cases.analytics.tiktok_public_video_client import (
     TikTokPublicVideoClient,
+    _playwright_proxy_options,
     extract_public_user_identity,
+    extract_public_video_detail_html,
     extract_video_detail_html,
     normalize_profile_video_links,
     resolve_profile_video_links,
@@ -31,6 +38,69 @@ def test_profile_cache_window_is_bounded():
     assert _is_cache_fresh(fresh, 120) is True
     assert _is_cache_fresh(stale, 120) is False
     assert _is_cache_fresh(fresh, 0) is False
+
+
+def test_failed_sync_is_never_treated_as_usable_cache():
+    fresh = (datetime.now() - timedelta(seconds=10)).isoformat(timespec="seconds")
+
+    assert _is_sync_cache_usable(
+        "SUCCESS", "TIKTOK_PUBLIC_PROFILE", fresh, 120
+    ) is True
+    assert _is_sync_cache_usable(
+        "FAILED", "TIKTOK_PUBLIC_PROFILE", fresh, 120
+    ) is False
+
+
+def test_video_cache_requires_every_expected_row_to_be_recent():
+    fresh = (datetime.now() - timedelta(seconds=10)).isoformat(timespec="seconds")
+    stale = (datetime.now() - timedelta(seconds=600)).isoformat(timespec="seconds")
+
+    class Row:
+        def __init__(self, synced_at):
+            self.synced_at = synced_at
+
+    assert _is_video_cache_usable([Row(fresh), Row(fresh)], 2, 300) is True
+    assert _is_video_cache_usable([Row(fresh)], 2, 300) is False
+    assert _is_video_cache_usable([Row(fresh), Row(fresh)], 1, 300) is False
+    assert _is_video_cache_usable([Row(fresh), Row(stale)], 2, 300) is False
+
+
+def test_stale_video_rows_are_removed_only_after_complete_full_crawl():
+    existing = {"1", "2", "3"}
+    current = {"1", "3"}
+
+    assert _stale_video_ids_to_remove(
+        existing,
+        current,
+        complete=True,
+        profile_video_count=2,
+        max_videos=60,
+    ) == {"2"}
+    assert _stale_video_ids_to_remove(
+        existing,
+        current,
+        complete=False,
+        profile_video_count=2,
+        max_videos=60,
+    ) == set()
+    assert _stale_video_ids_to_remove(
+        existing,
+        current,
+        complete=True,
+        profile_video_count=100,
+        max_videos=60,
+    ) == set()
+
+
+def test_incomplete_video_collection_is_partial_not_success():
+    status, error = _merge_video_completeness("SUCCESS", "", 31, 14, False)
+
+    assert status == "PARTIAL"
+    assert "14/31" in error
+    assert _merge_video_completeness("SUCCESS", "", 31, 31, True) == (
+        "SUCCESS",
+        "",
+    )
 
 
 def test_identity_extractor_ignores_suggested_users():
@@ -126,6 +196,81 @@ def test_video_detail_html_returns_only_requested_video():
     assert extract_video_detail_html(html, "9999999999999999999") is None
 
 
+def test_public_video_detail_reports_quality_region_favorites_and_shadow_ban():
+    html = '''<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+    {"__DEFAULT_SCOPE__":{"webapp.video-detail":{"statusCode":0,"itemInfo":{"itemStruct":{
+      "id":"7176222902134508827","desc":"caption","createTime":1670844603,
+      "locationCreated":"ID","isReviewing":false,"takeDown":0,
+      "stats":{"playCount":"8","diggCount":"1","commentCount":"2",
+               "shareCount":"3","collectCount":"4","repostCount":"5"},
+      "video":{"duration":17,"width":720,"height":1280,"bitrateInfo":[
+        {"Bitrate":500000,"BitrateFPS":30,"PlayAddr":{"Width":720,"Height":1280}},
+        {"Bitrate":900000,"BitrateFPS":59,"PlayAddr":{"Width":1080,"Height":1920}}
+      ]}
+    }}}}}
+    </script>'''
+
+    row = extract_public_video_detail_html(
+        html,
+        "7176222902134508827",
+        "https://www.tiktok.com/@target/video/7176222902134508827",
+    )
+
+    assert row is not None
+    assert row["max_quality"] == "1080p60"
+    assert row["region"] == "ID"
+    assert row["favorite_count"] == 4
+    assert row["repost_count"] == 5
+    assert row["download_count"] is None
+    assert row["shadow_ban"] == "YES"
+    assert row["index_enabled"] is None
+    assert "Thiếu indexEnabled" in row["shadow_ban_reason"]
+    assert row["detail_source"] == "Browser"
+
+
+def test_index_enabled_true_is_not_shadow_banned():
+    html = '''<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+    {"__DEFAULT_SCOPE__":{"webapp.video-detail":{"itemInfo":{"itemStruct":{
+      "id":"7176222902134508827","indexEnabled":true,
+      "stats":{"playCount":0},"video":{"width":720,"height":1280}
+    }}}}}
+    </script>'''
+
+    row = extract_public_video_detail_html(html, "7176222902134508827")
+
+    assert row is not None
+    assert row["shadow_ban"] == "NO"
+    assert row["index_enabled"] is True
+    assert row["max_quality"] == "720p"
+
+
+def test_self_only_video_status_is_preserved_as_shadow_ban_evidence():
+    html = '''<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+    {"__DEFAULT_SCOPE__":{"webapp.video-detail":{"statusCode":10204,"statusMsg":""}}}
+    </script>'''
+
+    row = extract_public_video_detail_html(
+        html,
+        "7176222902134508827",
+        "https://www.tiktok.com/@target/video/7176222902134508827",
+    )
+
+    assert row is not None
+    assert row["detail_available"] is False
+    assert row["shadow_ban"] == "YES"
+    assert "10204" in row["shadow_ban_reason"]
+
+
+def test_playwright_proxy_options_keep_auth_separate_from_server():
+    assert _playwright_proxy_options(
+        "socks5://user%40mail.test:p%40ss@127.0.0.1:1080"
+    ) == {
+        "server": "socks5://127.0.0.1:1080",
+        "username": "user@mail.test",
+        "password": "p@ss",
+    }
+
+
 def test_zero_video_profile_skips_browser_initialization():
     client = TikTokPublicVideoClient()
 
@@ -141,3 +286,179 @@ def test_zero_video_profile_skips_browser_initialization():
             expected_video_count=0,
         )
     ) == ([], True)
+
+
+def test_known_video_urls_refresh_without_opening_browser():
+    client = TikTokPublicVideoClient()
+    observed = {}
+
+    async def http_details(links, **kwargs):
+        observed["links"] = links
+        observed.update(kwargs)
+        return [
+            {
+                "video_id": link.rstrip("/").split("/")[-1].split("?")[0],
+                "create_time": index + 1,
+                "detail_available": True,
+            }
+            for index, link in enumerate(links)
+        ]
+
+    async def browser_must_not_open(*_args, **_kwargs):
+        raise AssertionError("known complete video URLs must stay on HTTP fast path")
+
+    client._fetch_video_details_http = http_details
+    client._ensure_page = browser_must_not_open
+    rows, complete = asyncio.run(client.fetch_videos(
+        "target_user",
+        "sec-target",
+        expected_video_count=2,
+        known_video_urls=[
+            "https://www.tiktok.com/@target_user/video/7176222902134508828",
+            "https://www.tiktok.com/@target_user/video/7176222902134508827",
+        ],
+        proxy_url="socks5://127.0.0.1:1080",
+        cookie_header="sessionid=secret",
+    ))
+
+    assert complete is True
+    assert [row["video_id"] for row in rows] == [
+        "7176222902134508827",
+        "7176222902134508828",
+    ]
+    assert observed["proxy_url"] == "socks5://127.0.0.1:1080"
+    assert observed["cookie_header"] == "sessionid=secret"
+
+
+def test_known_video_http_failure_opens_browser_for_missing_only():
+    client = TikTokPublicVideoClient()
+    page = object()
+    calls = {"browser": 0, "missing": []}
+
+    async def http_details(links, **_kwargs):
+        return [
+            {
+                "video_id": "7176222902134508828",
+                "create_time": 2,
+                "detail_available": True,
+            },
+            None,
+        ]
+
+    async def ensure_page(*_args, **_kwargs):
+        calls["browser"] += 1
+        return page
+
+    async def no_cookie_seed(*_args, **_kwargs):
+        return None
+
+    async def fill_missing(actual_page, links, results):
+        assert actual_page is page
+        calls["missing"] = [index for index, row in enumerate(results) if row is None]
+        results[1] = {
+            "video_id": "7176222902134508827",
+            "create_time": 1,
+            "detail_available": True,
+        }
+
+    client._fetch_video_details_http = http_details
+    client._ensure_page = ensure_page
+    client._apply_cookie_header = no_cookie_seed
+    client._fill_missing_details_with_browser = fill_missing
+    rows, complete = asyncio.run(client.fetch_videos(
+        "target_user",
+        "sec-target",
+        expected_video_count=2,
+        known_video_urls=[
+            "https://www.tiktok.com/@target_user/video/7176222902134508828",
+            "https://www.tiktok.com/@target_user/video/7176222902134508827",
+        ],
+    ))
+
+    assert complete is True
+    assert len(rows) == 2
+    assert calls == {"browser": 1, "missing": [1]}
+
+
+def test_browser_cookie_seed_clears_previous_account_first():
+    client = TikTokPublicVideoClient()
+    calls = []
+
+    class Context:
+        async def clear_cookies(self):
+            calls.append("clear")
+
+        async def add_cookies(self, cookies):
+            calls.append(cookies)
+
+    class Page:
+        context = Context()
+
+    asyncio.run(client._apply_cookie_header(
+        Page(), "sessionid=abc=123; msToken=xyz"
+    ))
+
+    assert calls[0] == "clear"
+    assert calls[1] == [
+        {
+            "name": "sessionid",
+            "value": "abc=123",
+            "url": "https://www.tiktok.com/",
+        },
+        {
+            "name": "msToken",
+            "value": "xyz",
+            "url": "https://www.tiktok.com/",
+        },
+    ]
+
+
+def test_video_http_retries_invalid_200_with_account_cookie(monkeypatch):
+    video_id = "7176222902134508827"
+    valid_html = '''<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+    {"__DEFAULT_SCOPE__":{"webapp.video-detail":{"itemInfo":{"itemStruct":{
+      "id":"7176222902134508827","createTime":1670844603,"indexEnabled":true,
+      "stats":{"playCount":8},"video":{"width":720,"height":1280}
+    }}}}}</script>'''
+    requests = []
+
+    class Response:
+        def __init__(self, text):
+            self.text = text
+            self.status_code = 200
+            self.headers = {}
+
+    class Client:
+        def __init__(self, **_kwargs):
+            self.responses = [Response("<html>WAF shell</html>"), Response(valid_html)]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, headers=None):
+            requests.append((url, headers))
+            return self.responses.pop(0)
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(video_client_module.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(video_client_module.asyncio, "sleep", no_sleep)
+    client = TikTokPublicVideoClient()
+
+    rows = asyncio.run(client._fetch_video_details_http(
+        [f"https://www.tiktok.com/@target/video/{video_id}"],
+        profile_url="https://www.tiktok.com/@target",
+        proxy_url=None,
+        cookie_header="sessionid=abc",
+    ))
+
+    assert rows[0]["video_id"] == video_id
+    assert rows[0]["detail_source"] == "HTTP"
+    assert requests[0][1] == {"Cookie": ""}
+    assert requests[1][1] == {"Cookie": "sessionid=abc"}
+    assert client.get_stats()["video_http_requests"] == 2
+    assert client.get_stats()["video_http_retries"] == 1

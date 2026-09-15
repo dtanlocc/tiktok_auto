@@ -34,6 +34,7 @@ from app.use_cases.auth.login_strategies import (
 )
 from app.use_cases.orchestration.task_dispatcher import _uuid_to_seed
 from app.core.exceptions import AccountBannedException
+from app.core.tiktok_cookies import has_tiktok_auth_cookies
 
 T0 = time.time()
 def _t() -> str:
@@ -141,7 +142,7 @@ async def main():
         # Luu cookie moi de lan sau dung lai (dung cookie -> khoi ton OTP).
         try:
             fresh = await browser.extract_cookies()
-            if fresh:
+            if has_tiktok_auth_cookies(fresh):
                 with Session(engine) as session:
                     repo = SQLiteAccountRepository(session)
                     acc2 = repo.get_by_id(account.id)
@@ -150,6 +151,11 @@ async def main():
                         acc2.health_status = "ALIVE"
                         repo.save(acc2)
                 print(f"[{_t()}]     Da luu {len(fresh)} cookie moi vao DB.")
+            else:
+                print(
+                    f"[{_t()}]     Tu choi luu snapshot thieu sessionid; "
+                    "giu nguyen cookie auth trong DB."
+                )
         except Exception as e:
             print(f"[{_t()}]     (Khong luu duoc cookie: {e})")
     else:

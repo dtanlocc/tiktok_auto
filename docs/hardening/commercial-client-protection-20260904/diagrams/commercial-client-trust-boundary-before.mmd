@@ -1,0 +1,15 @@
+flowchart LR
+    U[React UI] -->|Fixed HTTP/WS :9000| API[FastAPI routers]
+    X[Other same-host process] -->|Replay calls| API
+    API --> A[Python automation]
+    A --> T[TikTok and browser]
+    API <--> D[(SQLite, cookies, tokens)]
+    S[Source tree and config] --> API
+    subgraph Customer-controlled Windows host
+        U
+        X
+        API
+        A
+        D
+        S
+    end

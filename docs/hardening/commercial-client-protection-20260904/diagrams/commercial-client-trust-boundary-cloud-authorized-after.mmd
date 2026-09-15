@@ -1,0 +1,9 @@
+flowchart LR
+    U[React UI] --> R[Tauri launcher]
+    R -->|Authenticated session| B[Untrusted compiled executor]
+    B -->|Job intent and device proof| C[Cloud authorization and policy]
+    C -->|One-use execution plan| B
+    X[Patched local caller] -.->|Cannot mint server job| B
+    B --> A[Local browser executor]
+    A --> T[TikTok and browser]
+    C --> Q[(License, audit, release state)]

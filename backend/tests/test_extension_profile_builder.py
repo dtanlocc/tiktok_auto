@@ -148,6 +148,105 @@ def test_seeds_storage_local_without_rewriting_signed_xpi(tmp_path: Path) -> Non
     assert 'extensions.webextensions.ExtensionStorageIDB.enabled", false' in user_js
 
 
+def test_external_storage_seed_preserves_uuid_and_persists_refresh(tmp_path: Path) -> None:
+    addon_id = "stateful@example.test"
+    source = tmp_path / "stateful.xpi"
+    original = _write_xpi(source, addon_id=addon_id, version="5.0")
+    seed_root = tmp_path / "private-state"
+    seed_dir = seed_root / addon_id
+    seed_dir.mkdir(parents=True)
+    expected_uuid = "4130552c-02a3-4d7a-bccd-24411095cea1"
+    (seed_dir / "metadata.json").write_text(
+        json.dumps({"addon_id": addon_id, "extension_uuid": expected_uuid}),
+        encoding="utf-8",
+    )
+    (seed_dir / "storage.js").write_text(
+        json.dumps({"session": "private", "connected": False}),
+        encoding="utf-8",
+    )
+
+    profile = tmp_path / "profile"
+    builder = ExtensionProfileBuilder(
+        [source], storage_local_seed_directory=seed_root
+    )
+    installed = builder.prepare_profile(profile)
+
+    assert installed[0].xpi_path.read_bytes() == original
+    assert installed[0].extension_uuid == expected_uuid
+    seeded_path = profile / "browser-extension-data" / addon_id / "storage.js"
+    assert json.loads(seeded_path.read_text(encoding="utf-8")) == {
+        "session": "private",
+        "connected": False,
+    }
+
+    seeded_path.write_text(
+        json.dumps({"session": "refreshed", "connected": True}),
+        encoding="utf-8",
+    )
+    assert builder.persist_external_storage(profile) == [addon_id]
+    assert json.loads((seed_dir / "storage.js").read_text(encoding="utf-8")) == {
+        "session": "refreshed",
+        "connected": True,
+    }
+
+
+def test_external_storage_persistence_does_not_overwrite_newer_seed(tmp_path: Path) -> None:
+    addon_id = "stateful@example.test"
+    source = tmp_path / "stateful.xpi"
+    _write_xpi(source, addon_id=addon_id, version="5.0")
+    seed_root = tmp_path / "private-state"
+    seed_dir = seed_root / addon_id
+    seed_dir.mkdir(parents=True)
+    seed_path = seed_dir / "storage.js"
+    seed_path.write_text(json.dumps({"session": "initial"}), encoding="utf-8")
+
+    profile = tmp_path / "profile"
+    builder = ExtensionProfileBuilder(
+        [source], storage_local_seed_directory=seed_root
+    )
+    builder.prepare_profile(profile)
+    profile_storage = profile / "browser-extension-data" / addon_id / "storage.js"
+    profile_storage.write_text(
+        json.dumps({"session": "session-refresh"}), encoding="utf-8"
+    )
+    seed_path.write_text(json.dumps({"session": "newer-seed"}), encoding="utf-8")
+
+    assert builder.persist_external_storage(profile) == []
+    assert json.loads(seed_path.read_text(encoding="utf-8")) == {
+        "session": "newer-seed"
+    }
+
+
+def test_excluded_addon_is_not_installed_or_seeded(tmp_path: Path) -> None:
+    nord_id = "nordvpnproxy@nordvpn.com"
+    omo_id = "omocaptcha@gmail.com"
+    sources = tmp_path / "extensions"
+    sources.mkdir()
+    _write_xpi(sources / "nord.xpi", addon_id=nord_id, version="5.6.5")
+    _write_xpi(sources / "omo.xpi", addon_id=omo_id, version="1.7.8")
+    seed_root = tmp_path / "private-state"
+    nord_seed = seed_root / nord_id
+    nord_seed.mkdir(parents=True)
+    (nord_seed / "storage.js").write_text(
+        json.dumps({"session": "must-stay-private"}), encoding="utf-8"
+    )
+
+    profile = tmp_path / "profile"
+    installed = ExtensionProfileBuilder(
+        [sources],
+        storage_local_seed_directory=seed_root,
+        excluded_addon_ids={nord_id},
+    ).prepare_profile(profile)
+
+    assert [item.addon_id for item in installed] == [omo_id]
+    assert not (profile / "extensions" / f"{nord_id}.xpi").exists()
+    assert not (profile / "browser-extension-data" / nord_id).exists()
+    assert nord_id not in (profile / "user.js").read_text(encoding="utf-8")
+    assert json.loads((nord_seed / "storage.js").read_text(encoding="utf-8")) == {
+        "session": "must-stay-private"
+    }
+
+
 def test_container_discovers_multiple_extensions_and_keeps_newest_duplicate(
     tmp_path: Path,
 ) -> None:

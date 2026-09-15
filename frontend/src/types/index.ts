@@ -53,8 +53,21 @@ export interface TikTokVideoMetric {
   like_count: number;
   comment_count: number;
   share_count: number;
+  favorite_count: number | null;
+  repost_count: number | null;
+  download_count: number | null;
   cover_url: string;
   share_url: string;
+  duration_seconds: number | null;
+  max_quality: string;
+  detail_source: string;
+  region: string;
+  shadow_ban: 'YES' | 'NO' | 'UNKNOWN' | string;
+  shadow_ban_reason: string;
+  index_enabled: boolean | null;
+  is_reviewing: boolean;
+  is_private: boolean;
+  is_taken_down: boolean;
   synced_at: string;
 }
 

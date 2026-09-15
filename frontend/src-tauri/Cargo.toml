@@ -1,0 +1,43 @@
+[package]
+name = "tiktok-auto-desktop"
+version = "0.1.2"
+description = "Native licensed launcher for TikTok Auto"
+authors = ["TikTok Auto"]
+edition = "2021"
+
+[lib]
+name = "tiktok_auto_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "tiktok-auto-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["pkcs8", "pem", "rand_core"] }
+futures-util = "0.3"
+hex = "0.4"
+hmac = "0.12"
+keyring = { version = "3", features = ["windows-native"] }
+pkcs8 = { version = "0.10", features = ["pem"] }
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+tauri = { version = "2", features = [] }
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
+tokio = { version = "1", features = ["fs", "io-util", "net", "process", "sync", "time"] }
+tokio-tungstenite = "0.28"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }

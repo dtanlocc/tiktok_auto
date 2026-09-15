@@ -8,23 +8,38 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 class Settings(BaseSettings):
     # Cấu hình API và App chung
     APP_NAME: str = "TikTok Automation System"
+    APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
     API_V1_STR: str = "/api/v1"
+
+    # Release builds set production explicitly and fail closed when their
+    # signed device-bound lease is absent or invalid.
+    SECURITY_MODE: str = "development"
+    LICENSE_DEVICE_ID: str = ""
+    LICENSE_LEASE_PATH: str = ""
+    LICENSE_PUBLIC_KEYS_JSON: str = "{}"
+    LICENSE_CLOCK_SKEW_SECONDS: int = 30
+    LOCAL_SESSION_SECRET: str = ""
+    LOCAL_AUTH_MAX_SKEW_SECONDS: int = 30
+    LOCAL_AUTH_REPLAY_TTL_SECONDS: int = 120
+    LOCAL_AUTH_MAX_BODY_BYTES: int = 32 * 1024 * 1024
     
     # Cấu hình Database (Mặc định dùng SQLite lưu tại thư mục gốc của backend)
     # Tự động sinh đường dẫn độc lập hệ điều hành
     DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'database.db'}"
     
-    MAX_CONCURRENT_TABS: int = 4
+    # Tran an toan cho o "So luong" tren frontend. Frontend cho phep toi da 8;
+    # dispatcher resize gate tai cho va luon chay dung gia tri nguoi dung chon.
+    MAX_CONCURRENT_TABS: int = 8
 
-    # Gia tri khoi tao cua bo dieu khien UI: moi proxy khi USE_PROXY=True, hoac tong
-    # so phien khi USE_PROXY=False. Day khong phai hard cap; co the doi luc dang chay.
-    PROXY_MAX_CONCURRENT: int = 4
+    # Tong so task chay dong thoi mac dinh. Co proxy: moi host:port toi da 1 task
+    # va account giu nguyen proxy da gan. Mang that: day la tong task song song.
+    PROXY_MAX_CONCURRENT: int = 1
 
     # DUNG PROXY hay khong. False -> KHONG gan proxy, moi phien chay TRUC TIEP qua
     # mang that cua may (dung khi bat VPN TOAN MAY). True -> gan proxy can bang nhu
     # cu. (Du lieu proxy trong DB van GIU nguyen, chi khong dung.)
-    USE_PROXY: bool = False
+    USE_PROXY: bool = True
 
     # GIAN CACH (stagger) giua cac lan mo browser lien tiep - tranh mo 4 browser
     # cung luc (thrash dia/CPU + de bi TikTok phat hien nhieu nick 1 IP cung luc).
@@ -36,7 +51,7 @@ class Settings(BaseSettings):
     # Che do nay TRUOC DAY dung chung 30-60s -> moi luong bi NOI DUOI nhau (dat 4
     # luong nhung chay gan nhu tuan tu). Chi can giãn NGAN de khong mo dồn browser
     # cung luc; so luong song song da do o "số luồng" tren UI khong che.
-    STAGGER_DIRECT_MIN_SECONDS: float = 3.0
+    STAGGER_DIRECT_MIN_SECONDS: float = 4.0
     STAGGER_DIRECT_MAX_SECONDS: float = 8.0
 
     # Dung che do headed-cloaked CHINH THUC cua invisible_playwright: Firefox van
@@ -89,7 +104,9 @@ class Settings(BaseSettings):
     # Do thuc te khong tach bach ro giua 1 va 2; de 2 de van co song song o phan
     # cho I/O. Ha ve 1 neu muon do tre tung launch thap nhat.
     # Day CHI gioi han luc MO; mo xong roi ca 8 luong chay song song binh thuong.
-    BROWSER_LAUNCH_GATE: int = 2
+    # Chi khoi tao mot Firefox tai mot thoi diem; cong nay chi chan giai doan MO.
+    # Browser da mo xong van tiep tuc chay song song theo cac slot proxy rieng.
+    BROWSER_LAUNCH_GATE: int = 1
 
     # BUDGET (giay) cho 1 lan MO trinh duyet: qua han thi HUY + THU LAI thay vi cho
     # het 180s cua playwright. Phai LON HON HAN thoi gian mo that o muc GATE o tren
@@ -105,6 +122,10 @@ class Settings(BaseSettings):
     BROWSER_LAUNCH_TIMEOUT: int = 45
     # Chi la luoi an toan cho launch hi huu bi treo -> 2 la du.
     BROWSER_LAUNCH_MAX_TRIES: int = 2
+    # Dong driver loi co the treo vo han sau khi task da bao thanh cong/that bai,
+    # lam proxy + worker slot khong duoc tra. Qua han nay se reap dung cay process
+    # cua phien theo session token; khong anh huong cac browser account khac.
+    BROWSER_CLOSE_TIMEOUT: float = 15.0
 
     # Mot upload binh thuong (login + tai file + TikTok xu ly + xac minh Posts)
     # thuong xong trong 2-6 phut. Cat session qua 10 phut de browser/driver da
@@ -151,17 +172,48 @@ class Settings(BaseSettings):
     #   BROWSER_EXTENSION_JSON_OVERRIDES={"addon@example.com":{"config.json":{"key":"value"}}}
     BROWSER_EXTENSION_UUIDS_JSON: str = "{}"
     BROWSER_EXTENSION_JSON_OVERRIDES: str = "{}"
+    # Private, untracked storage.local snapshots keyed by Firefox add-on ID:
+    #   <dir>/<addon-id>/storage.js
+    # Optional metadata.json beside storage.js preserves the source profile's
+    # internal moz-extension UUID.  Refreshed state is written back on close.
+    BROWSER_EXTENSION_STORAGE_DIR: str = str(
+        BASE_DIR.parent / ".runtime" / "extension-storage"
+    )
+    BROWSER_EXTENSION_SETTINGS_PATH: str = str(
+        BASE_DIR.parent / ".runtime" / "browser-extension-settings.json"
+    )
+    NORDVPN_EXTENSION_ENABLED: bool = False
     # NGUON LAY OTP: 'graph' = tu goi Microsoft OAuth2 + Graph API (mac dinh, khong
     # phu thuoc ben thu 3); 'dongvan' = quay lai API trung gian dongvanfb.
     OTP_PROVIDER: str = "graph"
 
-    # Public-profile analytics does not launch a browser. Repeated clicks inside
-    # this window reuse the last successful snapshot instead of hammering TikTok.
+    # Public-profile analytics uses HTTP first and launches a browser only for
+    # unresolved data. Repeated clicks inside this window reuse the last good
+    # snapshot instead of hammering TikTok.
     FAST_ANALYTICS_CACHE_TTL_SECONDS: int = 120
     FAST_ANALYTICS_FETCH_VIDEOS: bool = True
     FAST_ANALYTICS_MAX_VIDEOS_PER_ACCOUNT: int = 60
+    # Profile metrics remain fresh on every sync. A complete video-detail set
+    # may be reused briefly; a changed video_count immediately bypasses it.
+    FAST_ANALYTICS_VIDEO_CACHE_TTL_SECONDS: int = 300
+    # Browser is a recovery path, not the primary crawler. Two isolated slots
+    # keep large first-time syncs moving without launching Firefox in a burst.
+    FAST_ANALYTICS_BROWSER_CONCURRENCY: int = 2
+    # Total direct video-page requests in flight across the fast-sync batch.
+    # Each route is additionally limited to 2 (3 in direct/VPN mode) so a large
+    # selection cannot create a TikTok request burst.
+    FAST_ANALYTICS_DETAIL_REQUEST_CONCURRENCY: int = 6
+    # Public guest checks may try other configured proxies when an account's
+    # assigned route is dead. No login cookie is moved to the fallback route.
+    FAST_ANALYTICS_PROXY_ROUTE_ATTEMPTS: int = 2
+    # After every cheap HTTP route is exhausted, open a browser on at most this
+    # many routes. One route is normally enough and prevents Firefox churn.
+    FAST_ANALYTICS_BROWSER_ROUTE_ATTEMPTS: int = 1
 
-    OMOCAPTCHA_KEY: str = "OMO_PRPNYKMWZKGSOXG4WE5UITKTPE6NN5LVNDXWZ5YVB2WW7WTZXXDNAEFIJMTIJY1764562155"
+    # Never place service secrets in distributable source defaults. Rotate the
+    # previous value because it remains in Git history, then inject it from an
+    # operator-controlled secret store or the ignored local .env file.
+    OMOCAPTCHA_KEY: str = ""
     # Backward-compatible OmoCaptcha convenience. The generic extension loader
     # injects this key into configs.json when the OmoCaptcha addon is present.
     # Keep secrets in .env in production.
