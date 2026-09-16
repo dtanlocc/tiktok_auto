@@ -8,7 +8,6 @@ import os
 import uuid
 import tempfile
 import json
-import zipfile
 import unicodedata
 import weakref
 from pathlib import Path
@@ -28,9 +27,9 @@ from invisible_playwright import (
 )
 from app.domain.ports.browser import IBrowserService
 from app.core.config import settings
-from app.core.extension_settings import (
-    NORDVPN_ADDON_ID,
-    is_nordvpn_extension_enabled,
+from app.infrastructure.automation.configured_extensions import (
+    configured_extension_builder,
+    validate_configured_extensions,
 )
 from app.core.exceptions import (
     AccountBannedException,
@@ -42,8 +41,6 @@ from app.infrastructure.automation.extension_profile_builder import (
     ExtensionProfileBuilder,
     InstalledExtension,
     firefox_prefs_for_extensions,
-    parse_extension_paths,
-    parse_json_object,
 )
 from app.use_cases.upload.caption_hashtags import (
     choose_stable_hashtag_suggestion,
@@ -559,51 +556,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             self._temp_profile_path = os.path.join(temp_root, f"temp_{uuid.uuid4()}")
             # Build profile MOI tu cac extension ngoai. Khong copy profile master,
             # khong mang cookie/cache/site-storage cua phien khac sang phien nay.
-            source_paths = parse_extension_paths(
-                getattr(settings, "BROWSER_EXTENSION_PATHS", "")
-            )
-            if not source_paths:
-                source_paths = [getattr(settings, "BROWSER_EXTENSIONS_DIR")]
-
-            json_overrides = parse_json_object(
-                getattr(settings, "BROWSER_EXTENSION_JSON_OVERRIDES", "{}"),
-                "BROWSER_EXTENSION_JSON_OVERRIDES",
-            )
-            uuid_overrides = parse_json_object(
-                getattr(settings, "BROWSER_EXTENSION_UUIDS_JSON", "{}"),
-                "BROWSER_EXTENSION_UUIDS_JSON",
-            )
-
-            # OmoCaptcha must keep its Mozilla signature intact.  Its API key
-            # is written to browser.storage.local after Firefox activates the
-            # signed XPI; rewriting configs.json would invalidate the signature.
-            omo_uuid = getattr(settings, "OMOCAPTCHA_EXTENSION_UUID", "")
-            if omo_uuid:
-                uuid_overrides.setdefault("omocaptcha@gmail.com", omo_uuid)
-
-            excluded_addon_ids: set[str] = set()
-            if not is_nordvpn_extension_enabled():
-                excluded_addon_ids.add(NORDVPN_ADDON_ID)
-
-            extension_builder = ExtensionProfileBuilder(
-                source_paths,
-                json_resource_overrides=json_overrides,
-                uuid_overrides=uuid_overrides,
-                storage_local_seed_resources={
-                    "omocaptcha@gmail.com": "configs.json",
-                },
-                storage_local_overrides={
-                    "omocaptcha@gmail.com": {
-                        "api_key": getattr(settings, "OMOCAPTCHA_KEY", ""),
-                        "initialized": True,
-                    },
-                },
-                storage_local_seed_directory=getattr(
-                    settings, "BROWSER_EXTENSION_STORAGE_DIR", ""
-                ),
-                excluded_addon_ids=excluded_addon_ids,
-                fail_if_empty=getattr(settings, "BROWSER_EXTENSIONS_REQUIRED", True),
-            )
+            # Cung mot cach dung voi trinh duyet dong bo nhanh (gan key OmoCaptcha).
+            extension_builder, excluded_addon_ids = configured_extension_builder()
             self._extension_profile_builder = extension_builder
             installed_extensions = await asyncio.to_thread(
                 extension_builder.prepare_profile, self._temp_profile_path
@@ -895,40 +849,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         installed_extensions: List[InstalledExtension],
     ) -> None:
         """Validate sensitive bundled config without changing signed XPIs."""
-
-        expected_key = getattr(settings, "OMOCAPTCHA_KEY", "")
-        for item in installed_extensions:
-            if item.addon_id != "omocaptcha@gmail.com":
-                continue
-            try:
-                with zipfile.ZipFile(item.xpi_path) as archive:
-                    json.loads(archive.read("configs.json").decode("utf-8-sig"))
-                    has_signature = any(
-                        name.casefold().startswith("meta-inf/")
-                        for name in archive.namelist()
-                    )
-            except (KeyError, UnicodeDecodeError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
-                raise RuntimeError("OmoCaptcha 1.7.7 package/config is invalid") from exc
-            if not has_signature:
-                raise RuntimeError("OmoCaptcha XPI signature was not preserved")
-            storage_path = (
-                item.xpi_path.parents[1]
-                / "browser-extension-data"
-                / item.addon_id
-                / "storage.js"
-            )
-            try:
-                storage = json.loads(storage_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                raise RuntimeError("OmoCaptcha storage seed is invalid") from exc
-            if (
-                expected_key
-                and storage.get("api_key") != expected_key
-                or storage.get("initialized") is not True
-            ):
-                raise RuntimeError(
-                    "OmoCaptcha storage does not contain the configured API key"
-                )
+        validate_configured_extensions(installed_extensions)
 
     async def _verify_loaded_extensions(
         self, installed_extensions: List[InstalledExtension]

@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 import re
+import shutil
+import tempfile
+import uuid
 import weakref
 from typing import Any, Dict, Optional
 from urllib.parse import unquote, urlparse
@@ -22,6 +26,13 @@ from invisible_playwright.async_api import InvisiblePlaywright
 
 from app.core.config import settings
 from app.core.tiktok_urls import ensure_tiktok_english_url
+from app.infrastructure.automation.configured_extensions import (
+    configured_extension_builder,
+    validate_configured_extensions,
+)
+from app.infrastructure.automation.extension_profile_builder import (
+    firefox_prefs_for_extensions,
+)
 from app.use_cases.health_check.quick_check_use_case import (
     QuickCheckResult,
     _HTTP_HEADERS,
@@ -45,6 +56,25 @@ _PAGE_DATA_READY_JS = (
 _PROFILE_GRID_READY_JS = (
     "() => document.querySelectorAll('a[href*=\"/video/\"]').length > 0"
 )
+def _prepare_extension_profile() -> tuple[str, list[Any], set[str]]:
+    """A fresh profile carrying the configured extensions, OmoCaptcha keyed.
+
+    Built exactly as the account sessions build theirs. Kept outside the
+    project tree, like theirs, so a dev-server file watcher never trips on it.
+    """
+    temp_root = os.path.join(tempfile.gettempdir(), "tiktok_auto_profiles")
+    os.makedirs(temp_root, exist_ok=True)
+    profile_dir = os.path.join(temp_root, f"analytics_{uuid.uuid4()}")
+    builder, excluded = configured_extension_builder()
+    try:
+        installed = builder.prepare_profile(profile_dir)
+        validate_configured_extensions(installed)
+    except BaseException:
+        shutil.rmtree(profile_dir, ignore_errors=True)
+        raise
+    return profile_dir, installed, excluded
+
+
 #: How long to stay on a page while TikTok's challenge resolves itself.
 #: Measured 2026-09-16 over 16 loads: the slowest resolved in 3.6s.
 _CHALLENGE_SETTLE_SECONDS = 12.0
@@ -398,6 +428,7 @@ class TikTokPublicVideoClient:
         self._browser = None
         self._page = None
         self._route_key: Optional[str] = None
+        self._profile_dir: Optional[str] = None
         self._lock = asyncio.Lock()
         self._start_lock = asyncio.Lock()
         configured_detail_concurrency = (
@@ -641,6 +672,12 @@ class TikTokPublicVideoClient:
             self._browser = None
             self._invisible_pw = None
             self._route_key = None
+            profile_dir, self._profile_dir = self._profile_dir, None
+            # Deliberately NOT persist_external_storage: this browser only reads
+            # the shared extension state. Writing its guest session back would
+            # overwrite what the account sessions saved (NordVPN login, etc).
+            if profile_dir:
+                await asyncio.to_thread(shutil.rmtree, profile_dir, ignore_errors=True)
 
     async def _ensure_page(self, proxy_url: Optional[str] = None):
         route_key = proxy_url or "__DIRECT__"
@@ -660,6 +697,15 @@ class TikTokPublicVideoClient:
             async with _browser_launch_lock():
                 if self._invisible_pw is not None:
                     await self._close_session_unlocked()
+                # Same extension profile as the account sessions, so OmoCaptcha
+                # starts with its API key instead of "Invalid or missing API KEY".
+                profile_dir, installed, excluded = await asyncio.to_thread(
+                    _prepare_extension_profile
+                )
+                self._profile_dir = profile_dir
+                os.environ["INVPW_TRUE_HEADLESS"] = (
+                    "1" if getattr(settings, "BROWSER_TRUE_HEADLESS", True) else "0"
+                )
                 self._invisible_pw = InvisiblePlaywright(
                     proxy=_playwright_proxy_options(proxy_url),
                     headless=True,
@@ -667,19 +713,30 @@ class TikTokPublicVideoClient:
                     seed=731,
                     locale=getattr(settings, "TIKTOK_WEB_LOCALE", "en-US"),
                     timezone="auto",
+                    profile_dir=profile_dir,
                     extra_prefs={
+                        **firefox_prefs_for_extensions(installed),
                         "dom.webdriver.enabled": False,
                         "intl.accept_languages": "en-US, en",
                         "intl.locale.requested": "en-US",
                         "media.autoplay.default": 0,
                     },
                 )
+                self._invisible_pw.set_firefox_extensions(
+                    item.xpi_path for item in installed
+                )
+                self._invisible_pw.set_firefox_extension_exclusions(excluded)
                 try:
-                    self._browser = await self._invisible_pw.__aenter__()
+                    # A persistent profile can hang Firefox at startup; the
+                    # account sessions bound it the same way.
+                    self._browser = await asyncio.wait_for(
+                        self._invisible_pw.__aenter__(),
+                        timeout=max(15, int(getattr(settings, "BROWSER_LAUNCH_TIMEOUT", 45))),
+                    )
                     self._page = await self._browser.new_page()
                     self._route_key = route_key
                     return self._page
-                except Exception:
+                except BaseException:
                     await self._close_session_unlocked()
                     raise
 
