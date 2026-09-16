@@ -572,3 +572,147 @@ def test_an_unpainted_page_with_no_refusals_is_not_blamed_on_the_proxy(monkeypat
     assert "CDN" not in message
     # It waits out the budget rather than convicting a working proxy.
     assert len(slept) >= 40
+
+
+def test_the_upload_gate_reuses_the_page_login_just_verified(monkeypatch):
+    """Verifying login already loads a settled For You; loading it again cost
+    10s per account, measured on a live batch."""
+    clock = [100.0]
+    adapter = InvisiblePlaywrightAdapter()
+    navigations = []
+
+    class Page:
+        url = "https://www.tiktok.com/foryou?lang=en"
+
+        def __init__(self):
+            self.observations = 0
+
+        async def wait_for_load_state(self, *_args, **_kwargs):
+            return None
+
+        def on(self, *_args, **_kwargs):
+            return None
+
+        def remove_listener(self, *_args, **_kwargs):
+            return None
+
+        async def evaluate(self, _script):
+            self.observations += 1
+            return _ready_state(
+                fingerprint=f"/foryou|item-{self.observations}"
+            )
+
+    adapter._page = Page()
+    adapter._foryou_verified_at = clock[0]
+    adapter._foryou_verified_url = Page.url
+
+    async def navigate(url):
+        navigations.append(url)
+
+    async def no_gate():
+        return None
+
+    async def no_captcha():
+        return False
+
+    async def advance(seconds):
+        clock[0] += seconds
+
+    monkeypatch.setattr(adapter_module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(adapter_module.asyncio, "sleep", advance)
+    monkeypatch.setattr(adapter, "navigate_to", navigate)
+    monkeypatch.setattr(adapter, "_wait_automation_gate", no_gate)
+    monkeypatch.setattr(adapter, "is_captcha_present", no_captcha)
+
+    assert asyncio.run(adapter.prepare_foryou_home()) is True
+    # The gate still ran; it just did not reload what it was handed.
+    assert navigations == []
+
+
+def test_the_upload_gate_reloads_when_the_page_moved_on(monkeypatch):
+    """Reuse is only safe while the tab still shows the verified page."""
+    adapter = InvisiblePlaywrightAdapter()
+    navigations = []
+
+    class Page:
+        url = "https://www.tiktok.com/tiktokstudio/upload"
+
+        async def wait_for_load_state(self, *_args, **_kwargs):
+            return None
+
+        def on(self, *_args, **_kwargs):
+            return None
+
+        def remove_listener(self, *_args, **_kwargs):
+            return None
+
+        async def evaluate(self, _script):
+            return _ready_state()
+
+    adapter._page = Page()
+    adapter._foryou_verified_at = adapter_module.time.monotonic()
+    adapter._foryou_verified_url = "https://www.tiktok.com/foryou?lang=en"
+
+    async def navigate(url):
+        navigations.append(url)
+
+    async def no_gate():
+        return None
+
+    async def no_captcha():
+        return False
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(adapter, "navigate_to", navigate)
+    monkeypatch.setattr(adapter, "_wait_automation_gate", no_gate)
+    monkeypatch.setattr(adapter, "is_captcha_present", no_captcha)
+    monkeypatch.setattr(adapter_module.asyncio, "sleep", no_sleep)
+
+    asyncio.run(adapter.prepare_foryou_home())
+    assert navigations == ["https://www.tiktok.com/foryou?lang=en"]
+
+
+def test_a_stale_verification_is_not_reused(monkeypatch):
+    adapter = InvisiblePlaywrightAdapter()
+    navigations = []
+
+    class Page:
+        url = "https://www.tiktok.com/foryou?lang=en"
+
+        async def wait_for_load_state(self, *_args, **_kwargs):
+            return None
+
+        def on(self, *_args, **_kwargs):
+            return None
+
+        def remove_listener(self, *_args, **_kwargs):
+            return None
+
+        async def evaluate(self, _script):
+            return _ready_state()
+
+    adapter._page = Page()
+    adapter._foryou_verified_at = adapter_module.time.monotonic() - 600
+    adapter._foryou_verified_url = Page.url
+
+    async def navigate(url):
+        navigations.append(url)
+
+    async def no_gate():
+        return None
+
+    async def no_captcha():
+        return False
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(adapter, "navigate_to", navigate)
+    monkeypatch.setattr(adapter, "_wait_automation_gate", no_gate)
+    monkeypatch.setattr(adapter, "is_captcha_present", no_captcha)
+    monkeypatch.setattr(adapter_module.asyncio, "sleep", no_sleep)
+
+    asyncio.run(adapter.prepare_foryou_home())
+    assert navigations == ["https://www.tiktok.com/foryou?lang=en"]

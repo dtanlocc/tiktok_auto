@@ -189,6 +189,11 @@ def _foryou_state_ready(state: Dict[str, Any], network_idle: bool) -> bool:
     )
 
 
+#: How long a For You page verified by ``check_login_status`` may be reused by
+#: the upload gate instead of being loaded again. Long enough to cover the hand
+#: -off, short enough that a page left sitting is reloaded rather than trusted.
+_FORYOU_REUSE_SECONDS = 25.0
+
 #: Hosts that serve the script bundles and static assets the SPA needs. The
 #: document itself comes from ``www.tiktok.com`` and can arrive perfectly while
 #: every one of these is refused.
@@ -463,6 +468,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         #: Refused CDN requests for the tab in ``_blocked_assets_page``.
         self._blocked_assets: Dict[str, int] = {}
         self._blocked_assets_page = None
+        #: When and where check_login_status last saw a signed-in For You.
+        self._foryou_verified_at: Optional[float] = None
+        self._foryou_verified_url: Optional[str] = None
         self._extension_profile_builder: Optional[ExtensionProfileBuilder] = None
         self._native_upload_staging_dirs: set[str] = set()
         self._last_native_upload_error: Optional[str] = None
@@ -1566,6 +1574,12 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                             f"[+] Xac minh THANH CONG sau {i+1} giay "
                             "(Phat hien profile/messages cua account va khong co nut Log in)."
                         )
+                        # This page IS a settled, signed-in For You. Record it
+                        # so the upload gate can finish its own checks on it
+                        # instead of throwing it away and loading the same URL
+                        # again - measured at 10s per account.
+                        self._foryou_verified_at = time.monotonic()
+                        self._foryou_verified_url = current_url
                         return True
                 else:
                     visible_account_streak = 0
@@ -1643,8 +1657,30 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 await step_logger(message)
 
         self._foryou_ready_at = None
-        await log("Đang mở trang For You và chờ tải hoàn toàn...")
-        await self.navigate_to("https://www.tiktok.com/foryou?lang=en")
+        # ⛔ THE GATE BELOW STILL RUNS IN FULL. What is skipped is only the
+        # RELOAD: check_login_status just verified a signed-in For You on this
+        # very URL, and navigating to it again threw that page away and paid
+        # for it twice - 13s to verify, then 10s to load the same thing,
+        # measured on a live batch 2026-09-16. If anything about that is not
+        # true any more - different tab, different URL, or long enough ago
+        # that the feed may have moved - load it properly.
+        current = ""
+        try:
+            current = str(self._page.url or "")
+        except Exception:
+            current = ""
+        verified_at = getattr(self, "_foryou_verified_at", None)
+        reuse = (
+            verified_at is not None
+            and (time.monotonic() - verified_at) <= _FORYOU_REUSE_SECONDS
+            and "/foryou" in current
+            and current == getattr(self, "_foryou_verified_url", None)
+        )
+        if reuse:
+            await log("Đang dùng lại trang For You vừa xác minh đăng nhập...")
+        else:
+            await log("Đang mở trang For You và chờ tải hoàn toàn...")
+            await self.navigate_to("https://www.tiktok.com/foryou?lang=en")
         try:
             await self._page.wait_for_load_state("load", timeout=30000)
         except Exception as exc:
