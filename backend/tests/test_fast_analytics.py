@@ -462,3 +462,95 @@ def test_video_http_retries_invalid_200_with_account_cookie(monkeypatch):
     assert requests[1][1] == {"Cookie": "sessionid=abc"}
     assert client.get_stats()["video_http_requests"] == 2
     assert client.get_stats()["video_http_retries"] == 1
+
+
+# ---------------------------------------------------------------------------
+# TikTok's "Please wait..." challenge, and what the sync reports around it.
+# ---------------------------------------------------------------------------
+
+class _ChallengePage:
+    """A tab that shows the challenge, navigates itself, then shows the page.
+
+    Evaluate raises while the challenge replaces the document, which is what
+    made `locator.wait_for` give up at once in the real browser.
+    """
+
+    def __init__(self, ready_after=3, raise_on=(1,)):
+        self.ready_after = ready_after
+        self.raise_on = set(raise_on)
+        self.polls = 0
+        self.gotos = 0
+
+    async def evaluate(self, _script):
+        self.polls += 1
+        if self.polls in self.raise_on:
+            raise RuntimeError("Execution context was destroyed")
+        return self.polls >= self.ready_after
+
+    async def goto(self, *_args, **_kwargs):
+        self.gotos += 1
+
+    async def content(self):
+        ready = self.polls >= self.ready_after
+        return "<html>" + ("x" * 500) + (
+            '<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">{}</script>' if ready else ""
+        ) + "</html>"
+
+
+def _no_sleep(monkeypatch):
+    async def instant(_seconds):
+        return None
+    monkeypatch.setattr(video_client_module.asyncio, "sleep", instant)
+
+
+def test_the_challenge_is_waited_out_in_place_not_reopened(monkeypatch):
+    """Re-opening restarts the challenge (recovered 1 of 3 grids); waiting in
+    place recovered 4 of 4. A navigation mid-challenge is a reason to look
+    again, not a verdict."""
+    _no_sleep(monkeypatch)
+    page = _ChallengePage(ready_after=4, raise_on=(1, 2))
+
+    html, ready = asyncio.run(TikTokPublicVideoClient._open_until_ready(
+        page, "https://www.tiktok.com/@user", "() => true"))
+
+    assert ready is True
+    assert page.gotos == 1
+    assert "__UNIVERSAL_DATA_FOR_REHYDRATION__" in html
+
+
+def test_a_page_that_never_settles_is_opened_again_then_reported(monkeypatch):
+    _no_sleep(monkeypatch)
+    page = _ChallengePage(ready_after=10**9, raise_on=())
+    clock = [0.0]
+
+    class Loop:
+        def time(self):
+            clock[0] += 1.0
+            return clock[0]
+
+    monkeypatch.setattr(video_client_module.asyncio, "get_running_loop", lambda: Loop())
+
+    html, ready = asyncio.run(TikTokPublicVideoClient._open_until_ready(
+        page, "https://www.tiktok.com/@user", "() => true",
+        navigations=2, settle_seconds=5))
+
+    assert ready is False
+    assert page.gotos == 2
+    assert html  # the caller still gets the last HTML to judge for itself
+
+
+def test_a_counted_but_unshown_video_is_named_as_such_not_as_a_crawl_gap():
+    """All videos the profile showed were read; TikTok still counts one more."""
+    status, error = _merge_video_completeness("SUCCESS", "", 4, 3, False, rows=3)
+
+    assert status == "PARTIAL"
+    assert "không hiện công khai" in error
+    assert "chưa đủ" not in error
+
+
+def test_a_real_crawl_gap_keeps_the_crawl_gap_message():
+    # 4 counted, 3 found, only 2 of those read: that IS the crawler.
+    status, error = _merge_video_completeness("SUCCESS", "", 4, 2, False, rows=3)
+
+    assert status == "PARTIAL"
+    assert "chưa đủ (2/4)" in error

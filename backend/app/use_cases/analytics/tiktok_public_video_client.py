@@ -36,6 +36,46 @@ _BROWSER_LAUNCH_LOCKS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asy
     weakref.WeakKeyDictionary()
 )
 
+#: A page TikTok actually rendered carries its server state in this script.
+#: Its "Please wait..." challenge interstitial does not.
+_PAGE_DATA_READY_JS = (
+    "() => !!document.getElementById('__UNIVERSAL_DATA_FOR_REHYDRATION__')"
+)
+#: The profile grid is rendered client-side; the data script alone is not enough.
+_PROFILE_GRID_READY_JS = (
+    "() => document.querySelectorAll('a[href*=\"/video/\"]').length > 0"
+)
+#: How long to stay on a page while TikTok's challenge resolves itself.
+#: Measured 2026-09-16 over 16 loads: the slowest resolved in 3.6s.
+_CHALLENGE_SETTLE_SECONDS = 12.0
+
+
+async def _wait_in_place(page, ready_js: str, timeout_seconds: float) -> bool:
+    """Poll the SAME tab until ``ready_js`` holds, tolerating its navigations.
+
+    ⛔ NOT page.goto AGAIN, AND NOT locator.wait_for. TikTok answers a real
+    browser with a "Please wait..." interstitial that runs a script and then
+    navigates the tab to the real page. Re-opening the URL starts that script
+    over - measured: it recovered 1 of 3 grids and 2 of 3 detail pages -
+    while waiting in place recovered 4 of 4 and 11 of 12. `wait_for` is no
+    better: the challenge's own navigation destroys the execution context, the
+    call throws at once, and the old `except Exception: pass` then read an
+    empty grid 1.5s later and reported "profile_video_links_missing".
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max(0.5, float(timeout_seconds))
+    while True:
+        try:
+            if await page.evaluate(ready_js):
+                return True
+        except Exception:
+            # The challenge navigates the tab; evaluate can race that. It is
+            # a reason to look again, not a verdict.
+            pass
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(0.5)
+
 
 def _browser_launch_lock() -> asyncio.Lock:
     loop = asyncio.get_running_loop()
@@ -520,6 +560,45 @@ class TikTokPublicVideoClient:
         )
         return rows[:max_videos], complete
 
+    @classmethod
+    async def _open_until_ready(
+        cls,
+        page,
+        url: str,
+        ready_js: str,
+        *,
+        navigations: int = 2,
+        settle_seconds: float = _CHALLENGE_SETTLE_SECONDS,
+    ) -> tuple[str, bool]:
+        """Open ``url`` and return its HTML once TikTok really rendered it.
+
+        Waits in place through the challenge first; only if the page still is
+        not ready does it open the URL again. Returns the last HTML and whether
+        ``ready_js`` ever held, so callers keep their own verdict on a page
+        that never finished.
+        """
+        html = ""
+        last_error: Optional[BaseException] = None
+        for attempt in range(max(1, navigations)):
+            try:
+                html = await cls._navigate_html(page, url, attempts=1)
+            except Exception as exc:
+                last_error = exc
+            if await _wait_in_place(page, ready_js, settle_seconds):
+                try:
+                    return await page.content(), True
+                except Exception as exc:
+                    last_error = exc
+            if attempt + 1 < navigations:
+                await asyncio.sleep(1.0)
+        try:
+            html = await page.content()
+        except Exception:
+            pass
+        if not html and last_error is not None:
+            raise last_error
+        return html, False
+
     async def _fill_missing_details_with_browser(
         self,
         page,
@@ -535,7 +614,12 @@ class TikTokPublicVideoClient:
             url = links[index]
             video_id = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
             try:
-                html = await self._navigate_html(page, url, attempts=2)
+                # ≥300 characters used to count as loaded, and TikTok's
+                # "Please wait..." interstitial is 1.6KB: the challenge page
+                # was extracted, yielded nothing, and was never retried.
+                html, _ready = await self._open_until_ready(
+                    page, url, _PAGE_DATA_READY_JS
+                )
                 results[index] = extract_public_video_detail_html(
                     html, video_id, share_url=url
                 )
@@ -680,7 +764,11 @@ class TikTokPublicVideoClient:
                     # shell. The second browser read is deliberately guest-only.
                     await self._apply_cookie_header(page, "")
                 try:
-                    html = await self._navigate_html(page, profile_url, attempts=2)
+                    # The same challenge interstitial reached this step too and
+                    # was classified as "browser_tiktok_challenge".
+                    html, _ready = await self._open_until_ready(
+                        page, profile_url, _PAGE_DATA_READY_JS
+                    )
                 except Exception as exc:
                     last = QuickCheckResult(
                         None,
@@ -772,13 +860,13 @@ class TikTokPublicVideoClient:
             page = await self._ensure_page(proxy_url)
             await self._apply_cookie_header(page, cookie_header)
             try:
-                await self._navigate_html(page, profile_url, attempts=3)
-                try:
-                    await page.locator('a[href*="/video/"]').first.wait_for(
-                        state="attached", timeout=15000
+                _html, grid_ready = await self._open_until_ready(
+                    page, profile_url, _PROFILE_GRID_READY_JS
+                )
+                if not grid_ready:
+                    logger.warning(
+                        "Profile grid for @%s never rendered a video link", username
                     )
-                except Exception:
-                    pass
             except Exception:
                 # Known direct video URLs remain useful if the profile grid is
                 # temporarily withheld by TikTok or a route-specific WAF.

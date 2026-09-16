@@ -33,7 +33,6 @@ from app.use_cases.analytics.tiktok_public_video_client import TikTokPublicVideo
 from app.use_cases.health_check.quick_check_use_case import (
     QuickCheckResult,
     _HTTP_HEADERS,
-    _build_tiktok_cookie_header,
     _classify_profile_response,
 )
 
@@ -120,10 +119,29 @@ def _merge_video_completeness(
     expected: int,
     collected: int,
     complete: bool,
+    rows: Optional[int] = None,
 ) -> tuple[str, str]:
-    """Do not report SUCCESS when only part of the public video list was read."""
+    """Do not report SUCCESS when only part of the public video list was read.
+
+    ``rows`` is how many videos the crawl found on the profile. When every one
+    of them was read in full and the total is still short of TikTok's own
+    count, nothing failed: TikTok counts videos the public profile does not
+    show - private, under review, restricted. Measured on the 'test 16/9'
+    batch: two accounts counted 4, showed 3 after scrolling, and all 3 read
+    cleanly, on every one of four runs. Saying "chưa đủ" sent the reader after
+    the crawler. It stays PARTIAL - a counted video nobody can see is worth
+    noticing - but the message says what it is.
+    """
     if status != "SUCCESS" or expected <= 0 or complete:
         return status, error
+    if rows is not None and 0 < rows == collected < expected:
+        hidden = expected - collected
+        return (
+            "PARTIAL",
+            f"Đã đọc đủ {collected} video profile đang hiển thị; TikTok đếm "
+            f"{expected} — {hidden} video không hiện công khai (riêng tư / "
+            "đang xét duyệt / bị hạn chế) hoặc chưa tải được.",
+        )
     return (
         "PARTIAL",
         f"Profile đã đồng bộ; chi tiết video chưa đủ ({collected}/{expected}).",
@@ -380,11 +398,17 @@ class TikTokFastAnalyticsSyncService:
                     account.analytics_sync_status == "SUCCESS"
                     and account.analytics_sync_source == "TIKTOK_PUBLIC_WEB"
                 )
-                assigned_proxy_url = self._build_proxy_url(session, account.proxy_id)
                 route_candidates = self._build_public_route_candidates(
                     session, account.proxy_id
                 )
-                cookie_header = _build_tiktok_cookie_header(account.cookies)
+                # ⛔ GUEST ONLY. Everything this sync reads is public, and the
+                # account's own session is actively harmful here: with it,
+                # TikTok serves the owner's "Edit profile" view, whose video
+                # grid rendered 0 links where the guest view of the same
+                # profile rendered all 3 (@dar_8101_ciip, 2026-09-16) - the
+                # source of "profile_video_links_missing". It also sent a live
+                # session cookie through plain HTTP with a non-browser
+                # fingerprint, which risks the session for no gain.
                 known_video_rows = session.exec(
                     select(TikTokVideoMetricDbTable).where(
                         TikTokVideoMetricDbTable.account_email == account_id
@@ -453,15 +477,8 @@ class TikTokFastAnalyticsSyncService:
                             await asyncio.sleep(random.uniform(0.10, 0.30))
                             return await factory()
 
-                # Never send an account's authenticated cookie through a
-                # different fallback proxy. Browser/profile fallback is guest.
-                route_cookie = (
-                    cookie_header
-                    if not settings.USE_PROXY or proxy_url == assigned_proxy_url
-                    else ""
-                )
                 route_result = await self._fetch_with_fallback(
-                    client, username, route_cookie, run_limited
+                    client, username, "", run_limited
                 )
                 result = route_result
                 if route_result.classification == "DIE":
@@ -502,12 +519,6 @@ class TikTokFastAnalyticsSyncService:
                     browser_result = await video_client.fetch_profile(
                         username,
                         proxy_url=browser_proxy_url,
-                        cookie_header=(
-                            cookie_header
-                            if not settings.USE_PROXY
-                            or browser_proxy_url == assigned_proxy_url
-                            else ""
-                        ),
                     )
                     result = browser_result
                     proxy_url = browser_proxy_url
@@ -564,12 +575,6 @@ class TikTokFastAnalyticsSyncService:
                             expected_video_count=profile_video_count,
                             known_video_urls=known_video_urls,
                             proxy_url=proxy_url,
-                            cookie_header=(
-                                cookie_header
-                                if not settings.USE_PROXY
-                                or proxy_url == assigned_proxy_url
-                                else ""
-                            ),
                         )
                     except Exception as exc:
                         video_error = f"video_detail_{type(exc).__name__}: {str(exc)[:160]}"
@@ -592,6 +597,7 @@ class TikTokFastAnalyticsSyncService:
                         if video.get("detail_available") is True
                     ),
                     videos_complete,
+                    rows=len(videos),
                 )
 
             with Session(engine) as session:
