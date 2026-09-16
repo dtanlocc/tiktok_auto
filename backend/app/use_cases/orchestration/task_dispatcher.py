@@ -772,6 +772,15 @@ class ConcurrentTaskDispatcher:
                         "USE_PROXY=True nhưng không có proxy cho account này; "
                         "dừng để không đăng bài bằng IP thật của máy."
                     )
+                # Say which network this session actually uses, in the account's
+                # own log. The table still shows each account's bound proxy in
+                # "Mạng thật" mode, so without this line nothing distinguishes
+                # a run that went through it from one that did not.
+                await log_step(
+                    f"🌐 Mạng: PROXY {proxy_key}"
+                    if proxy_config
+                    else "🌐 Mạng: MẠNG THẬT (không proxy) — đi qua mạng/VPN của máy"
+                )
 
                 # =========================================================
                 # GIÃN CÁCH THEO PROXY: không mở 2 phiên liên tiếp trên CÙNG 1

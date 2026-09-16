@@ -15,6 +15,7 @@ logger = logging.getLogger("ExtensionSettings")
 
 NORDVPN_ADDON_ID = "nordvpnproxy@nordvpn.com"
 _NORDVPN_ENABLED_KEY = "nordvpn_extension_enabled"
+_USE_PROXY_KEY = "use_proxy"
 _SETTINGS_LOCK = threading.Lock()
 
 
@@ -41,12 +42,12 @@ def is_nordvpn_extension_enabled() -> bool:
     return bool(getattr(settings, "NORDVPN_EXTENSION_ENABLED", False))
 
 
-def set_nordvpn_extension_enabled(enabled: bool) -> bool:
-    value = bool(enabled)
+def _write_setting(key: str, value: Any) -> None:
+    """Replace one key of the settings document atomically."""
     path = _settings_path()
     with _SETTINGS_LOCK:
         document = _read_document(path)
-        document[_NORDVPN_ENABLED_KEY] = value
+        document[key] = value
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         try:
@@ -57,7 +58,38 @@ def set_nordvpn_extension_enabled(enabled: bool) -> bool:
             os.replace(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
+
+
+def set_nordvpn_extension_enabled(enabled: bool) -> bool:
+    value = bool(enabled)
+    _write_setting(_NORDVPN_ENABLED_KEY, value)
     settings.NORDVPN_EXTENSION_ENABLED = value
+    return value
+
+
+def load_proxy_mode() -> bool:
+    """The network mode the operator last chose, surviving a restart.
+
+    True routes every session through the account's own proxy; False sends it
+    straight out through this machine's network, for a machine-wide VPN.
+
+    ⛔ WHY THIS IS PERSISTED AND NOT JUST `settings.USE_PROXY = ...`. The switch
+    used to live only in memory. Restarting the backend - which operators do
+    routinely - put it back on proxy without a word, while the page that was
+    left open still said "Mạng thật". Sessions then ran through the proxy the
+    operator believed was off, and nothing on screen disagreed.
+    """
+    with _SETTINGS_LOCK:
+        value = _read_document(_settings_path()).get(_USE_PROXY_KEY)
+    if isinstance(value, bool):
+        return value
+    return bool(getattr(settings, "USE_PROXY", True))
+
+
+def set_proxy_mode(use_proxy: bool) -> bool:
+    value = bool(use_proxy)
+    _write_setting(_USE_PROXY_KEY, value)
+    settings.USE_PROXY = value
     return value
 
 

@@ -106,6 +106,14 @@ export default function App() {
         if (typeof data.proxy_max_concurrent === 'number') setConcurrency(data.proxy_max_concurrent);
       })
       .catch((err) => console.error('Lỗi tải trạng thái dispatcher:', err));
+
+    // Chế độ mạng (proxy / mạng thật). Nạp lại mỗi khi backend kết nối lại: nạp
+    // một lần lúc mở trang thì sau khi backend khởi động lại, trang vẫn hiện
+    // chế độ cũ dù backend đang chạy chế độ khác.
+    fetch('http://127.0.0.1:9000/api/v1/tasks/proxy-mode')
+      .then((res) => res.json())
+      .then((data) => { if (typeof data?.use_proxy === 'boolean') setProxyMode(data.use_proxy); })
+      .catch(() => {});
   }, [setAccounts, setProxies]);
 
   // 1. Khởi động WebSockets, tải dữ liệu ban đầu và lắng nghe sự kiện đóng menu chuột phải
@@ -262,14 +270,6 @@ export default function App() {
     refreshManualSessions();
     const t = setInterval(refreshManualSessions, 4000);
     return () => clearInterval(t);
-  }, []);
-
-  // Nạp chế độ proxy hiện tại (proxy / mạng thật) để menu chuột phải hiện đúng.
-  useEffect(() => {
-    fetch('http://127.0.0.1:9000/api/v1/tasks/proxy-mode')
-      .then((r) => r.json())
-      .then((d) => { if (typeof d?.use_proxy === 'boolean') setProxyMode(d.use_proxy); })
-      .catch(() => {});
   }, []);
 
   // Lưu ngay tổng số luồng tối đa xuống backend khi user chỉnh.
@@ -554,8 +554,9 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
+        // Công tắc ở thanh điều khiển và cột proxy trong bảng đổi theo ngay,
+        // nên không cần hộp thoại chặn màn hình cho trường hợp thành công.
         setProxyMode(data.use_proxy);
-        alert(data.message || (useProxy ? 'Đã bật proxy.' : 'Đã chuyển sang mạng thật.'));
       } else {
         alert(data.detail || 'Lỗi đổi chế độ proxy.');
       }
@@ -838,6 +839,7 @@ export default function App() {
       {/* CONTROL PANEL COMPONENT (Chứa nút chọn thư mục ảnh cao cấp) */}
       {activeTab !== 'videos' && <ControlPanel
         proxyMode={proxyMode}
+        onSetProxyMode={handleSetProxyMode}
         concurrency={concurrency}
         setConcurrency={handleSetProxyConcurrency}
         avatarFolder={avatarFolder}
@@ -990,9 +992,10 @@ export default function App() {
               </div>
 
               {/* BẢNG TÀI KHOẢN - LUÔN HIỂN THỊ (toàn bộ DB hoặc đã lọc theo Lô) */}
-              <AccountsTable 
+              <AccountsTable
                 accounts={filteredAccounts}
-                proxies={proxies} 
+                proxies={proxies}
+                proxyMode={proxyMode}
                 selectedAccountIds={selectedAccountIds}
                 setSelectedAccountIds={setSelectedAccountIds}
                 toggleSelectAll={toggleSelectAll}

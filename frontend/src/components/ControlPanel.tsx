@@ -1,10 +1,11 @@
 // File: frontend/src/components/ControlPanel.tsx
 import React, { useState, useEffect } from 'react';
-import { FolderOpen, Play, Pause, Square, RotateCcw, RadioTower, Gauge, Image, FlaskConical } from 'lucide-react';
+import { FolderOpen, Play, Pause, Square, RotateCcw, RadioTower, Gauge, Image, FlaskConical, Globe, Wifi } from 'lucide-react';
 
 interface ControlPanelProps {
   concurrency: number;
   proxyMode?: boolean;   // true = dùng proxy; false = mạng thật (không proxy)
+  onSetProxyMode?: (useProxy: boolean) => void;
   setConcurrency: (val: number) => void;
   avatarFolder: string;
   setAvatarFolder: (val: string) => void;
@@ -32,6 +33,7 @@ const TASKS_API = 'http://127.0.0.1:9000/api/v1/tasks';
 export const ControlPanel: React.FC<ControlPanelProps> = ({
   concurrency,
   proxyMode = true,
+  onSetProxyMode,
   setConcurrency,
   avatarFolder,
   setAvatarFolder,
@@ -241,6 +243,41 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             ))}
           </select>
         )}
+
+        {divider}
+
+        {/* CHẾ ĐỘ MẠNG - luôn hiển thị. Trước đây chỉ nằm trong menu chuột phải,
+            nên chọn "Mạng thật" xong nhìn màn hình không biết đang chạy kiểu nào. */}
+        <div
+          role="radiogroup"
+          aria-label="Chế độ mạng"
+          className="inline-flex items-center rounded-lg border border-line bg-surface-2 p-0.5"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={proxyMode}
+            onClick={() => { if (!proxyMode) onSetProxyMode?.(true); }}
+            title="Mỗi account đi qua proxy đã gán cho nó"
+            className={`inline-flex min-h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
+              proxyMode ? 'bg-brand/15 text-brand' : 'text-fg-subtle hover:text-fg'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" /> Proxy
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!proxyMode}
+            onClick={() => { if (proxyMode) onSetProxyMode?.(false); }}
+            title="Không dùng proxy: mọi account đi thẳng qua mạng của máy (bật VPN toàn máy)"
+            className={`inline-flex min-h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+              !proxyMode ? 'bg-amber-500/15 text-amber-300' : 'text-fg-subtle hover:text-fg'
+            }`}
+          >
+            <Wifi className="w-3.5 h-3.5" /> Mạng thật
+          </button>
+        </div>
 
         {divider}
 

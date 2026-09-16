@@ -70,6 +70,15 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("[+] Khởi tạo Cơ sở dữ liệu thành công.")
 
+    # 1b. Chế độ mạng người dùng đã chọn lần trước (proxy / mạng thật).
+    from app.core.extension_settings import load_proxy_mode
+    settings.USE_PROXY = load_proxy_mode()
+    logger.info(
+        "[+] Chế độ mạng: %s",
+        "PROXY (theo proxy gán cho từng account)" if settings.USE_PROXY
+        else "MẠNG THẬT (không proxy, đi qua mạng/VPN của máy)",
+    )
+
     # 2. Khởi tạo Task Dispatcher và lưu vào app state
     dispatcher = ConcurrentTaskDispatcher(
         max_tabs=settings.MAX_CONCURRENT_TABS,

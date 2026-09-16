@@ -26,6 +26,7 @@ from app.core.extension_settings import (
     nordvpn_authenticated_state_available,
     nordvpn_package_available,
     set_nordvpn_extension_enabled,
+    set_proxy_mode as persist_proxy_mode,
 )
 from app.use_cases.upload.media_selection import select_preferred_media
 from app.use_cases.upload.video_library import scan_video_paths
@@ -90,8 +91,9 @@ async def get_proxy_mode():
 @router.post("/proxy-mode")
 async def set_proxy_mode(payload: ProxyModeRequest):
     """Doi che do proxy NGAY (khong can restart backend). Dispatcher + debug-login
-    doc settings.USE_PROXY luc chay nen co hieu luc cho cac phien MO SAU do."""
-    settings.USE_PROXY = payload.use_proxy
+    doc settings.USE_PROXY luc chay nen co hieu luc cho cac phien MO SAU do.
+    Lua chon duoc luu lai, nen restart backend van giu dung che do."""
+    persist_proxy_mode(payload.use_proxy)
     return {
         "status": "SUCCESS",
         "use_proxy": settings.USE_PROXY,

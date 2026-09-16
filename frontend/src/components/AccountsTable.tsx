@@ -8,6 +8,8 @@ import { AccountAnalyticsModal } from './AccountAnalyticsModal';
 interface AccountsTableProps {
   accounts: Account[];
   proxies: Proxy[];
+  // true = phiên chạy qua proxy đã gán; false = mạng thật, proxy gán KHÔNG được dùng.
+  proxyMode?: boolean;
   selectedAccountIds: string[];
   toggleSelectAll: () => void;
   toggleSelectAccount: (id: string) => void;
@@ -45,6 +47,7 @@ const formatDateTime = (value: string) => value ? new Date(value).toLocaleString
 export const AccountsTable: React.FC<AccountsTableProps> = ({
   accounts,
   proxies,
+  proxyMode = true,
   selectedAccountIds,
   toggleSelectAll,
   toggleSelectAccount,
@@ -289,7 +292,19 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
               ))}
               <th className="px-3 py-2">Khả năng đăng</th>
               <th className="px-3 py-2">Hiệu suất TikTok</th>
-              <th className="px-3 py-2">Liên kết IP Proxy</th>
+              <th className="px-3 py-2">
+                <span className="inline-flex items-center gap-1.5">
+                  Liên kết IP Proxy
+                  {!proxyMode && (
+                    <span
+                      className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold normal-case text-amber-300"
+                      title="Đang ở chế độ Mạng thật: proxy gán cho account được giữ lại nhưng KHÔNG dùng khi chạy"
+                    >
+                      Đang tắt
+                    </span>
+                  )}
+                </span>
+              </th>
               <th className="px-3 py-2">Ghi chú</th>
               <th className="px-3 py-2 text-center">Điều khiển</th>
             </tr>
@@ -447,12 +462,25 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                     </td>
 
                     <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      {/* Ở chế độ Mạng thật proxy vẫn được giữ (để bật lại là dùng
+                          tiếp), nhưng phải nhìn ra ngay là nó không có hiệu lực. */}
+                      {!proxyMode && (
+                        <div className="mb-1 inline-flex items-center gap-1 text-[10px] font-semibold text-amber-300">
+                          <span aria-hidden="true">📶</span> Mạng thật · proxy không dùng
+                        </div>
+                      )}
                       <select
                         value={acc.proxy_id || 'none'}
                         disabled={acc.is_sold}
                         onChange={(e) => handleBindProxy(acc.id, e.target.value)}
-                        title={acc.is_sold ? 'Account ĐÃ BÁN chỉ lưu trữ, không đổi proxy' : 'Đổi proxy cho account'}
-                        className="bg-surface-2 border border-line rounded-lg p-1.5 text-xs text-brand font-medium focus:outline-none focus:ring-1 focus:ring-teal-400 disabled:cursor-not-allowed disabled:opacity-45"
+                        title={acc.is_sold
+                          ? 'Account ĐÃ BÁN chỉ lưu trữ, không đổi proxy'
+                          : proxyMode
+                            ? 'Đổi proxy cho account'
+                            : 'Proxy đã gán (đang KHÔNG dùng vì chế độ Mạng thật). Vẫn đổi được để dùng khi bật lại Proxy.'}
+                        className={`block bg-surface-2 border border-line rounded-lg p-1.5 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-teal-400 disabled:cursor-not-allowed disabled:opacity-45 ${
+                          proxyMode ? 'text-brand' : 'text-fg-subtle line-through opacity-60'
+                        }`}
                       >
                         <option value="none">Mạng LAN (Không Proxy)</option>
                         {proxies.map((p) => (
