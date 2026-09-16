@@ -2462,11 +2462,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         if missing:
             raise FileNotFoundError(f"Khong tim thay file: {missing[0]}")
 
-        # Prefer the ordinary Playwright channel when the handle belongs to a
-        # runtime that implements it. Our vendored invisible_playwright
-        # firefox-21 handle is the known B178 exception: invoking its missing
-        # ElementHandle.setInputFiles dispatcher also arms chooser interception,
-        # which then swallows the trusted click needed by the native fallback.
+        # Prefer the ordinary Playwright channel. B178 (invisible_playwright
+        # lacking a safe ElementHandle.setInputFiles dispatcher, so the attempt
+        # armed chooser interception and swallowed the trusted click the native
+        # fallback needs) was fixed upstream in 0.16.1; the native dialog stays
+        # as the fallback below.
         last_error = None
         for attempt in range(1, 2):
             try:
@@ -2497,11 +2497,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 )
                 if handle is None:
                     raise RuntimeError("Input file da bien mat.")
-                if type(handle).__module__.startswith("invisible_playwright."):
-                    raise RuntimeError(
-                        "B178: invisible_playwright firefox-21 lacks the safe "
-                        "ElementHandle.setInputFiles dispatcher"
-                    )
                 await handle.set_input_files(abs_paths, timeout=15000)
                 self._last_attached_media_names = [
                     os.path.basename(path) for path in abs_paths

@@ -35,6 +35,7 @@ Thumbs.db
 .runtime/
 .test-tmp/
 .tmp/
+.tmp_shadow_all/
 .pytest_cache/
 build/
 backend/.pytest*/
