@@ -13,6 +13,7 @@ import unicodedata
 import weakref
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
+from urllib.parse import urlsplit
 
 # =============================================================================
 # CHE DO AN VA STREAM CHI XEM
@@ -186,6 +187,24 @@ def _foryou_state_ready(state: Dict[str, Any], network_idle: bool) -> bool:
         and residual_busy <= 2
         and state.get("fontsLoaded")
     )
+
+
+#: Hosts that serve the script bundles and static assets the SPA needs. The
+#: document itself comes from ``www.tiktok.com`` and can arrive perfectly while
+#: every one of these is refused.
+_TIKTOK_ASSET_HOST_MARKS = ("tiktokcdn", "ibytedtos", "byteoversea")
+
+#: How many refused asset requests are enough to say the page will never paint.
+#: A healthy load refuses none; the measured broken case refused 69 in 20s.
+_BLOCKED_ASSET_VERDICT = 5
+
+
+def _is_tiktok_asset_host(url: str) -> bool:
+    try:
+        host = urlsplit(url).netloc.casefold()
+    except Exception:
+        return False
+    return any(mark in host for mark in _TIKTOK_ASSET_HOST_MARKS)
 
 
 def _auth_shell_state_ready(state: Dict[str, Any]) -> bool:
@@ -441,6 +460,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         self._browser = None
         self._page = None
         self._temp_profile_path: Optional[str] = None
+        #: Refused CDN requests for the tab in ``_blocked_assets_page``.
+        self._blocked_assets: Dict[str, int] = {}
+        self._blocked_assets_page = None
         self._extension_profile_builder: Optional[ExtensionProfileBuilder] = None
         self._native_upload_staging_dirs: set[str] = set()
         self._last_native_upload_error: Optional[str] = None
@@ -1132,6 +1154,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         relaunched = False
         for attempt in range(4):
             page = await self._ensure_page()
+            # Arm the refused-asset listener BEFORE the navigation, and start
+            # it from zero: the requests that decide whether this page can
+            # paint all fail during the goto, long before anyone asks how the
+            # login check went. Arming it inside that check counted nothing.
+            self._blocked_asset_counter().clear()
             if page is None:
                 last_err = RuntimeError("Khong lay duoc page de dieu huong.")
                 if not relaunched and hasattr(self, "_init_seed"):
@@ -1302,6 +1329,45 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             pass
         await self._page.context.clear_cookies()
 
+    def _blocked_asset_counter(self) -> Dict[str, int]:
+        """Refused CDN requests for the CURRENT tab, by host.
+
+        ⛔ WHY A NETWORK LISTENER AND NOT JUST A TIMER. The document comes from
+        `www.tiktok.com`; every script that paints it comes from the CDN. A
+        proxy can serve the first and refuse the second, and the page then
+        reaches readyState=complete with 317KB of markup, 69 script tags and
+        not one character of text - forever, through reloads. Measured
+        2026-09-16: 67 refusals of `lf16-tiktok-web.tiktokcdn-us.com` in 20s
+        while `www.tiktok.com` answered 200. Waiting does not change that and
+        the DOM never says why, so the refusals themselves are the evidence.
+
+        The listener is attached ONCE PER TAB. Attaching it per call would pile
+        a new one on the same page for every login check of the session.
+        """
+        page = self._page
+        if page is None:
+            return {}
+        if getattr(self, "_blocked_assets_page", None) is page:
+            return self._blocked_assets
+        counter: Dict[str, int] = {}
+
+        def _note(request) -> None:
+            try:
+                if not _is_tiktok_asset_host(request.url):
+                    return
+                host = urlsplit(request.url).netloc
+                counter[host] = counter.get(host, 0) + 1
+            except Exception:
+                pass
+
+        try:
+            page.on("requestfailed", _note)
+        except Exception:
+            return {}
+        self._blocked_assets_page = page
+        self._blocked_assets = counter
+        return counter
+
     async def check_login_status(self) -> bool:
         await self._wait_automation_gate()
         if not self._page:
@@ -1348,6 +1414,10 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         stable_shell_streak = 0
         blank_streak = 0
         last_url = ""
+
+        # Counted since the navigation that produced this page, which is where
+        # the refusals happen; navigate_to resets it.
+        blocked_assets = self._blocked_asset_counter()
         last_state: Dict[str, Any] = {}
         saw_settled_shell = False
         for i in range(45):
@@ -1388,6 +1458,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     // whatever readyState says.
                     textLen: (document.body && document.body.innerText
                               ? document.body.innerText.trim().length : 0),
+                    // How much markup arrived. Separates "React has not
+                    // painted yet" (lots of markup, no text) from "nothing
+                    // was fetched" (no markup either).
+                    htmlLen: (document.body && document.body.innerHTML
+                              ? document.body.innerHTML.length : 0),
                     href: location.href
                   };
                 }""")
@@ -1403,26 +1478,46 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     visible_login_streak = 0
                     visible_account_streak = 0
 
-                # A document that finished loading and still renders nothing is
-                # not slow, it is empty: waiting out the full budget only
-                # delays a verdict that will not change, and reports it as
-                # instability. Name it as soon as it is certain.
+                # ⛔ TEXT ALONE DOES NOT MEAN EMPTY. TikTok is a single-page
+                # app: `readyState=complete` fires when the document is done,
+                # while React has not painted, so a body with no text for the
+                # first seconds is the ORDINARY shape of a healthy load. A
+                # 6-observation verdict on text alone stopped accounts 8s in,
+                # before they had a chance to render, and reported a working
+                # proxy as a dead one. Measured on a live batch, 2026-09-16.
+                #
+                # The document TikTok serves - even mid-hydration - carries its
+                # shell and script tags, tens of kilobytes of it. A page that
+                # failed to fetch anything has almost no markup at all, so the
+                # two cases separate on HTML SIZE, which is present from the
+                # first observation, rather than on time.
+                blocked_total = sum(blocked_assets.values())
                 if (
                     state.get("ready") == "complete"
                     and int(state.get("textLen") or 0) == 0
+                    and blocked_total >= _BLOCKED_ASSET_VERDICT
                 ):
                     blank_streak += 1
-                    if blank_streak >= 6:
+                    # Two observations, because one can land in the instant
+                    # between a refusal and the retry that succeeds.
+                    if blank_streak >= 2:
+                        worst = sorted(
+                            blocked_assets.items(), key=lambda kv: -kv[1]
+                        )[:2]
+                        named = ", ".join(f"{h} x{n}" for h, n in worst)
                         logger.warning(
-                            "[-] TikTok tra ve trang TRANG (readyState=complete, "
-                            "body khong co chu nao) sau %ds tai %s",
+                            "[-] TikTok khong render duoc: %d request CDN bi tu "
+                            "choi sau %ds (%s)",
+                            blocked_total,
                             i + 1,
-                            current_url,
+                            named,
                         )
                         raise AuthenticationPageNotReady(
-                            "TikTok trả về trang trắng (tải xong nhưng không có "
-                            "nội dung) — thường là proxy/mạng của account này "
-                            "không lấy được nội dung, không phải cookies hỏng."
+                            "Proxy của account này vào được www.tiktok.com "
+                            f"nhưng bị từ chối {blocked_total} request tới CDN "
+                            f"({named}) — không tải được JS nên trang không "
+                            "render. Cookies không liên quan. Lỗi này đến "
+                            "theo đợt: thử lại sau hoặc đổi proxy."
                         )
                 else:
                     blank_streak = 0
@@ -1513,11 +1608,14 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         except Exception:
             pass
         logger.warning(
-            "[-] Khong ket luan duoc dang nhap; settled=%s, url=%s, state=%s, nav=%s",
+            "[-] Khong ket luan duoc dang nhap; settled=%s, url=%s, state=%s, "
+            "nav=%s, cdn_refused=%s",
             saw_settled_shell,
             last_url,
             last_state,
             nav,
+            {h: n for h, n in sorted(
+                blocked_assets.items(), key=lambda kv: -kv[1])[:3]},
         )
         if saw_settled_shell:
             raise AuthenticationPageNotReady(

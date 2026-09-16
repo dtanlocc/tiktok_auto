@@ -484,41 +484,56 @@ def test_authenticated_identity_requires_expected_nav_username():
     ) is False
 
 
-def test_blank_page_is_named_as_blank_not_as_unstable(monkeypatch):
-    """A body with no text is a verdict, not a slow load.
+class _NoMatch:
+    @property
+    def first(self):
+        return self
 
-    Measured on the 'reg web' batch: one broken proxy answered every request
-    with a document that reached readyState=complete over an empty body. The
-    old gate called that settled, then spent the whole 45s budget failing to
-    find either the Log in control or the signed-in marker, and reported an
-    unstable page - sending the reader after TikTok instead of the proxy.
+    async def count(self):
+        return 0
+
+    async def is_visible(self):
+        return False
+
+
+class _UnpaintedPage:
+    """readyState=complete, markup present, not one character of text.
+
+    Measured 2026-09-16: the proxy served `www.tiktok.com` and refused every
+    request to `lf16-tiktok-web.tiktokcdn-us.com`, so the document arrived
+    (317KB, 69 script tags) and no script that paints it ever did. The page
+    stayed like this through three reloads.
     """
-    class Locator:
-        @property
-        def first(self):
-            return self
 
-        async def count(self):
-            return 0
+    url = "https://www.tiktok.com/foryou?lang=en"
 
-        async def is_visible(self):
-            return False
+    def __init__(self, refusals):
+        self._refusals = refusals
+        self._handlers = []
 
-    class BlankPage:
-        url = "https://www.tiktok.com/foryou?lang=en"
+    async def wait_for_load_state(self, *_args, **_kwargs):
+        return None
 
-        async def wait_for_load_state(self, *_args, **_kwargs):
-            return None
+    def locator(self, _selector):
+        return _NoMatch()
 
-        def locator(self, _selector):
-            return Locator()
+    def on(self, event, handler):
+        if event == "requestfailed":
+            self._handlers.append(handler)
 
-        async def evaluate(self, _script):
-            return _settled_auth_state(textLen=0)
+    async def evaluate(self, _script):
+        # Deliver the refusals the way the browser would: as they happen,
+        # while the caller is observing the DOM.
+        for url in self._refusals:
+            for handler in self._handlers:
+                handler(SimpleNamespace(url=url))
+        self._refusals = []
+        return _settled_auth_state(textLen=0, htmlLen=317506)
 
+
+def _run_login_check(monkeypatch, page):
     adapter = InvisiblePlaywrightAdapter()
-    adapter._page = BlankPage()
-
+    adapter._page = page
     slept = []
 
     async def no_sleep(seconds):
@@ -532,7 +547,28 @@ def test_blank_page_is_named_as_blank_not_as_unstable(monkeypatch):
 
     with pytest.raises(AuthenticationPageNotReady) as excinfo:
         asyncio.run(adapter.check_login_status())
+    return str(excinfo.value), slept
 
-    assert "trang trắng" in str(excinfo.value)
-    # It gives up as soon as the blank page is certain, not after the full budget.
-    assert len(slept) < 20
+
+def test_refused_cdn_requests_are_named_instead_of_blamed_on_cookies(monkeypatch):
+    """The refusals are the evidence; the DOM never says why it is empty."""
+    refusals = [
+        "https://lf16-tiktok-web.tiktokcdn-us.com/obj/tiktok-web-tx/a.js"
+    ] * 8
+    message, slept = _run_login_check(monkeypatch, _UnpaintedPage(refusals))
+
+    assert "CDN" in message
+    assert "lf16-tiktok-web.tiktokcdn-us.com" in message
+    assert "Cookies không liên quan" in message
+    # Certain within seconds, not after the full 45s budget.
+    assert len(slept) < 10
+
+
+def test_an_unpainted_page_with_no_refusals_is_not_blamed_on_the_proxy(monkeypatch):
+    """TikTok is an SPA: complete-but-unpainted is the ordinary first seconds
+    of a healthy load, and calling that a dead proxy stopped accounts 8s in."""
+    message, slept = _run_login_check(monkeypatch, _UnpaintedPage([]))
+
+    assert "CDN" not in message
+    # It waits out the budget rather than convicting a working proxy.
+    assert len(slept) >= 40
