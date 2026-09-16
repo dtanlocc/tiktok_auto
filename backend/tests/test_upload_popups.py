@@ -997,7 +997,15 @@ def test_missing_toast_still_checks_studio_posts(monkeypatch):
     assert adapter.last_publish_acknowledged is True
 
 
-def test_missing_video_in_posts_is_marked_swallowed_without_reload(monkeypatch):
+def test_the_posts_list_is_reloaded_before_calling_a_video_swallowed(monkeypatch):
+    """Studio renders Posts from what it fetched on entry.
+
+    A video that finishes processing after that is not in the DOM, and polling
+    the same DOM cannot find it. Five seconds without a reload called two
+    videos swallowed at 10:22:41 that Studio itself lists as posted at 10:22,
+    with views on them (@merced3_mint49, 2026-09-16). The budget now covers a
+    couple of the loop's 18s reload cycles.
+    """
     adapter = InvisiblePlaywrightAdapter()
     observed = {}
     logs = []
@@ -1024,8 +1032,9 @@ def test_missing_video_in_posts_is_marked_swallowed_without_reload(monkeypatch):
     assert result is False
     assert adapter.last_publish_failure_code == "VIDEO_SWALLOWED"
     assert observed["require_auto_redirect"] is True
-    assert observed["allow_reload"] is False
-    assert observed["timeout_seconds"] == 5
+    assert observed["allow_reload"] is True
+    # Long enough for the loop to reload the list at least twice.
+    assert observed["timeout_seconds"] >= 40
     assert observed["auto_redirect_timeout_seconds"] == 20.0
     assert observed["poll_seconds"] <= 0.2
     assert any("VIDEO_BI_NUOT" in message for message in logs)

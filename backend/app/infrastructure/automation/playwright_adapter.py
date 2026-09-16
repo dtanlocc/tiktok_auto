@@ -189,6 +189,13 @@ def _foryou_state_ready(state: Dict[str, Any], network_idle: bool) -> bool:
     )
 
 
+#: Per-query budget while scanning Studio Posts. It was 0.35s, which only made
+#: sense while the whole verification lasted five seconds: on a loaded Studio
+#: page a single `locator.count()` can take longer than that, and the timeout
+#: was swallowed by the loop's `except Exception: pass` - so a post that WAS
+#: on screen could be missed and reported as swallowed.
+_STUDIO_OP_TIMEOUT = 2.0
+
 #: How long a For You page verified by ``check_login_status`` may be reused by
 #: the upload gate instead of being loaded again. Long enough to cover the hand
 #: -off, short enough that a page left sitting is reloaded rather than trusted.
@@ -4339,13 +4346,27 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # For video, only the redirected Studio Posts list is accepted. A
         # filename receipt/toast is not enough because TikTok can acknowledge
         # Post now and still swallow the video before it reaches Posts.
+        #
+        # ⛔ THE LIST DOES NOT CONTAIN THE POST THE INSTANT IT REDIRECTS, AND
+        # IT DOES NOT FILL ITSELF IN. Studio renders Posts from what it fetched
+        # when the page was entered; a video that finished processing after
+        # that is simply not in the DOM, and no amount of polling the same DOM
+        # will find it. Five seconds without a reload called two videos
+        # swallowed at 10:22:41 that Studio itself lists as posted at 10:22,
+        # with views on them - measured 2026-09-16 on @merced3_mint49.
+        #
+        # So the budget covers a couple of reload cycles (the loop reloads
+        # every 18s) instead of one impatient look. A video TikTok really
+        # swallowed still fails, it just takes longer to say so - which is the
+        # right way round: a false "swallowed" throws away a published video
+        # and re-posts it, a slow verdict costs seconds.
         verified = await self._verify_post_in_studio(
             caption,
             media_name=os.path.basename(video_path),
             step_logger=step_logger,
-            timeout_seconds=5,
+            timeout_seconds=45,
             require_auto_redirect=True,
-            allow_reload=False,
+            allow_reload=True,
             auto_redirect_timeout_seconds=20.0,
             poll_seconds=0.2,
         )
@@ -4383,8 +4404,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         )
         if step_logger:
             await step_logger(
-                "❌ VIDEO_BI_NUOT: Không thấy video trong Studio Posts; "
-                "kết thúc ngay, không reload trang."
+                "❌ VIDEO_BI_NUOT: Không thấy video trong Studio Posts sau "
+                "khi chờ và tải lại danh sách."
             )
         return False
 
@@ -4613,7 +4634,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         break
                     match = self._page.get_by_text(locator_needle, exact=False)
                     operation_timeout = (
-                        min(0.35, remaining) if require_auto_redirect else 6
+                        min(_STUDIO_OP_TIMEOUT, remaining) if require_auto_redirect else 6
                     )
                     match_count = await asyncio.wait_for(
                         match.count(), timeout=max(0.05, operation_timeout)
@@ -4624,7 +4645,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                             break
                         candidate = match.nth(index)
                         operation_timeout = (
-                            min(0.35, remaining) if require_auto_redirect else 6
+                            min(_STUDIO_OP_TIMEOUT, remaining) if require_auto_redirect else 6
                         )
                         if await asyncio.wait_for(
                             candidate.is_visible(),
@@ -4656,7 +4677,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                             if remaining > 0:
                                 nearby_text = await asyncio.wait_for(
                                     evaluate_operation,
-                                    timeout=max(0.05, min(0.5, remaining)),
+                                    timeout=max(0.05, min(_STUDIO_OP_TIMEOUT, remaining)),
                                 )
                             else:
                                 evaluate_operation.close()
@@ -4677,7 +4698,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
-                body_timeout = min(0.5, remaining) if require_auto_redirect else 7
+                body_timeout = min(_STUDIO_OP_TIMEOUT, remaining) if require_auto_redirect else 7
                 body_text = await asyncio.wait_for(
                     self._page.locator("body").inner_text(
                         timeout=max(50, int(body_timeout * 1000))
