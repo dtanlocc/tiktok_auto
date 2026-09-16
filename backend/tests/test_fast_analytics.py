@@ -554,3 +554,129 @@ def test_a_real_crawl_gap_keeps_the_crawl_gap_message():
 
     assert status == "PARTIAL"
     assert "chưa đủ (2/4)" in error
+
+
+# ---------------------------------------------------------------------------
+# One profile load: counts from the grid, pages only for what the grid lacks.
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace as _NS
+
+from app.use_cases.analytics.tiktok_fast_analytics_sync import _page_fresh_video_ids
+from app.use_cases.analytics.tiktok_public_video_client import (
+    PAGE_ONLY_ROW_FIELDS,
+    grid_video_row_from_item,
+)
+
+
+def _item(video_id, plays=10, **extra):
+    item = {
+        "id": video_id,
+        "desc": f"video {video_id}",
+        "createTime": int(video_id[-3:]),
+        "stats": {"playCount": plays, "diggCount": 2, "commentCount": 1,
+                  "shareCount": 0, "collectCount": 0},
+        "video": {"duration": 30, "bitrateInfo": []},
+    }
+    item.update(extra)
+    return item
+
+
+def test_a_grid_row_carries_counts_but_never_the_page_only_fields():
+    """Writing "" / None / "YES" for fields the grid cannot know would erase
+    the region and shadow-ban last read from the video's own page."""
+    row = grid_video_row_from_item(_item("7000000000000000123", plays=99,
+                                         locationCreated="ID", indexEnabled=True))
+
+    assert row["view_count"] == 99
+    assert row["detail_available"] is True
+    for name in PAGE_ONLY_ROW_FIELDS:
+        assert name not in row
+    assert "detail_source" not in row
+
+
+def test_page_fields_are_fresh_only_when_known_and_recent():
+    now = datetime.now()
+    recent = (now - timedelta(hours=1)).isoformat(timespec="seconds")
+    old = (now - timedelta(hours=48)).isoformat(timespec="seconds")
+    rows = [
+        _NS(video_id="1", region="ID", detail_synced_at=recent, synced_at=recent),
+        _NS(video_id="2", region="", detail_synced_at=recent, synced_at=recent),
+        _NS(video_id="3", region="ID", detail_synced_at=old, synced_at=recent),
+        # Written before detail_synced_at existed: dated by synced_at.
+        _NS(video_id="4", region="VN", detail_synced_at="", synced_at=recent),
+    ]
+    assert _page_fresh_video_ids(rows, 24 * 3600) == {"1", "4"}
+
+
+def _grid_client(monkeypatch, ids, items, page_rows):
+    client = TikTokPublicVideoClient()
+    calls = {"http_links": [], "profile_loads": 0}
+
+    async def http_details(links, **_kw):
+        calls["http_links"] = list(links)
+        return [page_rows.get(link.split("/video/")[1].split("?")[0]) for link in links]
+
+    async def must_not_launch(*_a, **_kw):
+        calls["profile_loads"] += 1
+        raise AssertionError("a cached grid must not load the profile again")
+
+    client._fetch_video_details_http = http_details
+    client._ensure_page = must_not_launch
+    # Read "in the future": always within the cache window.
+    client._grid_cache[client._grid_key("user")] = (float("inf"), ids, items)
+    return client, calls
+
+
+def test_grid_sync_opens_no_page_for_videos_already_known(monkeypatch):
+    ids = ["7000000000000000001", "7000000000000000002"]
+    items = {vid: _item(vid) for vid in ids}
+    client, calls = _grid_client(monkeypatch, ids, items, {})
+
+    rows, complete = asyncio.run(client.fetch_videos(
+        "user", "", max_videos=60, expected_video_count=2,
+        known_video_urls=[], page_fresh_video_ids=set(ids)))
+
+    assert complete is True
+    assert len(rows) == 2
+    assert calls["http_links"] == []
+
+
+def test_grid_sync_reads_the_page_only_for_a_new_video(monkeypatch):
+    ids = ["7000000000000000001", "7000000000000000002"]
+    items = {vid: _item(vid) for vid in ids}
+    page_row = {"video_id": ids[1], "view_count": 5, "region": "ID",
+                "shadow_ban": "NO", "index_enabled": True, "detail_available": True,
+                "create_time": 2}
+    client, calls = _grid_client(monkeypatch, ids, items, {ids[1]: page_row})
+
+    rows, complete = asyncio.run(client.fetch_videos(
+        "user", "", max_videos=60, expected_video_count=2,
+        known_video_urls=[], page_fresh_video_ids={ids[0]}))
+
+    assert [link.split("/video/")[1].split("?")[0] for link in calls["http_links"]] == [ids[1]]
+    by_id = {row["video_id"]: row for row in rows}
+    assert by_id[ids[1]]["region"] == "ID"          # the page row replaced the grid row
+    assert "region" not in by_id[ids[0]]            # the known video kept its stored region
+    assert complete is True
+
+
+def test_an_unreadable_grid_falls_back_to_the_page_crawl(monkeypatch):
+    client = TikTokPublicVideoClient()
+
+    async def grid_unreadable(*_a, **_kw):
+        return None
+
+    async def page_crawl_http(links, **_kw):
+        return [{"video_id": "7000000000000000001", "create_time": 1,
+                 "detail_available": True}]
+
+    client._fetch_videos_via_grid = grid_unreadable
+    client._fetch_video_details_http = page_crawl_http
+    rows, complete = asyncio.run(client.fetch_videos(
+        "user", "", max_videos=60, expected_video_count=1,
+        known_video_urls=["https://www.tiktok.com/@user/video/7000000000000000001"],
+        page_fresh_video_ids=set()))
+
+    assert complete is True
+    assert rows[0]["video_id"] == "7000000000000000001"

@@ -99,6 +99,25 @@ def _is_video_cache_usable(
     )
 
 
+def _page_fresh_video_ids(rows: Iterable[Any], ttl_seconds: int) -> set[str]:
+    """Videos whose page-only fields (region, shadow-ban) are known and recent.
+
+    A row predating detail_synced_at is dated by synced_at: before the grid
+    sync existed, every stored row was written from the video's own page.
+    """
+    fresh: set[str] = set()
+    for row in rows:
+        video_id = str(getattr(row, "video_id", "") or "")
+        if not video_id or not str(getattr(row, "region", "") or ""):
+            continue
+        stamp = str(getattr(row, "detail_synced_at", "") or "") or str(
+            getattr(row, "synced_at", "") or ""
+        )
+        if _is_cache_fresh(stamp, ttl_seconds):
+            fresh.add(video_id)
+    return fresh
+
+
 def _stale_video_ids_to_remove(
     existing_ids: set[str],
     current_ids: set[str],
@@ -426,6 +445,11 @@ class TikTokFastAnalyticsSyncService:
                     for row in known_video_rows
                     if str(row.video_id or "").isdigit()
                 ]
+                page_fresh_video_ids = _page_fresh_video_ids(
+                    known_video_rows,
+                    max(0, int(getattr(settings, "FAST_ANALYTICS_PAGE_DETAIL_TTL_HOURS", 24)))
+                    * 3600,
+                )
 
             result = QuickCheckResult(None, "public_routes_unavailable", retryable=True)
             proxy_url = route_candidates[0]
@@ -575,6 +599,7 @@ class TikTokFastAnalyticsSyncService:
                             expected_video_count=profile_video_count,
                             known_video_urls=known_video_urls,
                             proxy_url=proxy_url,
+                            page_fresh_video_ids=page_fresh_video_ids,
                         )
                     except Exception as exc:
                         video_error = f"video_detail_{type(exc).__name__}: {str(exc)[:160]}"
@@ -680,6 +705,14 @@ class TikTokFastAnalyticsSyncService:
                         ):
                             if field_name in video:
                                 setattr(row, field_name, video[field_name])
+                        if "region" in video:
+                            # This row came from the video's own page.
+                            row.detail_synced_at = synced_at
+                        elif not row.detail_synced_at and row.synced_at:
+                            # Rows written before detail_synced_at existed were
+                            # page reads; date them before synced_at moves on,
+                            # or a grid sync would make them look fresh forever.
+                            row.detail_synced_at = row.synced_at
                         row.synced_at = synced_at
                         session.add(row)
                     stale_video_ids = _stale_video_ids_to_remove(

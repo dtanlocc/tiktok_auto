@@ -220,6 +220,7 @@ def init_db() -> None:
                 "is_reviewing": "BOOLEAN NOT NULL DEFAULT 0",
                 "is_private": "BOOLEAN NOT NULL DEFAULT 0",
                 "is_taken_down": "BOOLEAN NOT NULL DEFAULT 0",
+                "detail_synced_at": "VARCHAR NOT NULL DEFAULT ''",
             }
             added_video_details = []
             for column_name, column_sql in video_detail_columns.items():

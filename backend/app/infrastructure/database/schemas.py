@@ -95,3 +95,6 @@ class TikTokVideoMetricDbTable(SQLModel, table=True):
     is_private: bool = Field(default=False)
     is_taken_down: bool = Field(default=False)
     synced_at: str = Field(default="")
+    # When region / index_enabled / shadow_ban were last read from the video's
+    # own page. synced_at moves on every sync; these fields only on a page read.
+    detail_synced_at: str = Field(default="")

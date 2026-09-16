@@ -209,6 +209,10 @@ class Settings(BaseSettings):
     # After every cheap HTTP route is exhausted, open a browser on at most this
     # many routes. One route is normally enough and prevents Firefox churn.
     FAST_ANALYTICS_BROWSER_ROUTE_ATTEMPTS: int = 1
+    # Every video's counts come from ONE profile load (the grid's own data).
+    # Only region / shadow-ban live on the video's own page alone; re-read a
+    # video's page when those are missing or older than this many hours.
+    FAST_ANALYTICS_PAGE_DETAIL_TTL_HOURS: int = 24
 
     # Never place service secrets in distributable source defaults. Rotate the
     # previous value because it remains in Git history, then inject it from an

@@ -1,10 +1,9 @@
 """Collect public TikTok video metrics without logging into an account.
 
-TikTok currently renders public video cards on the profile while its old
-``/api/post/item_list/`` request can return HTTP 200 with an empty body.  Keep
-one hidden page only to render/cursor the profile, then read each public video
-page concurrently through ordinary HTTP.  This avoids treating the unstable
-internal list endpoint as the source of truth.
+One hidden browser page renders the profile; every video's counts come from
+the items that page's grid already holds. A video's own page is opened only for
+what the grid does not carry (region, shadow-ban) and only when that is missing
+or stale - over HTTP first, the browser for what HTTP misses.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ import shutil
 import tempfile
 import uuid
 import weakref
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 from urllib.parse import unquote, urlparse
 
 import httpx
@@ -56,6 +55,8 @@ _PAGE_DATA_READY_JS = (
 _PROFILE_GRID_READY_JS = (
     "() => document.querySelectorAll('a[href*=\"/video/\"]').length > 0"
 )
+
+
 def _prepare_extension_profile() -> tuple[str, list[Any], set[str]]:
     """A fresh profile carrying the configured extensions, OmoCaptcha keyed.
 
@@ -74,6 +75,49 @@ def _prepare_extension_profile() -> tuple[str, list[Any], set[str]]:
         raise
     return profile_dir, installed, excluded
 
+
+#: Each grid card's full item struct, read from React's hook state.
+#: ⛔ READ-ONLY ON PURPOSE. The item_list responses cannot be read here -
+#: Juggler's Network.getResponseBody fails on them (NS_ERROR_FAILURE) - and
+#: wrapping window.fetch to copy them would be a patch TikTok can detect. The
+#: page already holds every item it rendered; reading what is there changes
+#: nothing on the page. Measured: 17/17, 15/15 and 3/3 cards read, and 13 row
+#: fields identical to each video's own page across 33 videos.
+_READ_GRID_ITEMS_JS = r"""() => {
+  const idOf = h => (String(h).match(/\/video\/(\d+)/) || [])[1];
+  const anchors = [...document.querySelectorAll('a[href*="/video/"]')];
+  const want = new Set(anchors.map(a => idOf(a.href)).filter(Boolean));
+  const items = {};
+  const seen = new Set();
+  const visit = (v, depth) => {
+    if (!v || typeof v !== 'object' || depth > 6 || seen.has(v)) return;
+    seen.add(v);
+    if (!Array.isArray(v) && want.has(String(v.id)) && (v.stats || v.statsV2) && v.video) {
+      items[String(v.id)] = v; return;
+    }
+    if (v.$$typeof || (typeof Node !== 'undefined' && v instanceof Node)) return;
+    let keys; try { keys = Object.keys(v); } catch (e) { return; }
+    if (keys.length > 500) return;
+    for (const k of keys) {
+      let c; try { c = v[k]; } catch (e) { continue; }
+      if (c && typeof c === 'object') visit(c, depth + 1);
+    }
+  };
+  for (const a of anchors) {
+    if (Object.keys(items).length >= want.size) break;
+    const key = Object.keys(a).find(k => k.startsWith('__reactFiber$'));
+    let f = key && a[key];
+    for (let d = 0; d < 20 && f; d++, f = f.return) {
+      let h = f.memoizedState, hi = 0;
+      while (h && hi < 30) { visit(h.memoizedState, 0); h = h.next; hi++; }
+    }
+  }
+  return {hrefs: anchors.map(a => a.href), items: JSON.parse(JSON.stringify(items))};
+}"""
+
+#: A grid read by fetch_profile is reused by the fetch_videos call that follows
+#: for the same account, instead of loading the same profile a second time.
+_GRID_CACHE_SECONDS = 120.0
 
 #: How long to stay on a page while TikTok's challenge resolves itself.
 #: Measured 2026-09-16 over 16 loads: the slowest resolved in 3.6s.
@@ -241,61 +285,7 @@ def extract_public_video_detail_html(
             video_id = str(item.get("id") or item.get("itemId") or "")
             if video_id != str(expected_video_id):
                 continue
-            stats: Dict[str, Any] = {}
-            for key in ("stats", "statsV2"):
-                value = item.get(key)
-                if isinstance(value, dict):
-                    stats.update(value)
-            video = item.get("video") if isinstance(item.get("video"), dict) else {}
-            if "indexEnabled" not in item:
-                shadow_ban = "YES"
-                shadow_reason = "Thiếu indexEnabled: video không được TikTok lập chỉ mục"
-                index_enabled = None
-            elif item.get("indexEnabled") is False:
-                shadow_ban = "YES"
-                shadow_reason = "indexEnabled=false: video không được TikTok lập chỉ mục"
-                index_enabled = False
-            else:
-                shadow_ban = "NO"
-                shadow_reason = "indexEnabled=true"
-                index_enabled = True
-            restrictions = _restriction_summary(item)
-            if restrictions:
-                shadow_reason = f"{shadow_reason}; {restrictions}"
-            cover_url = ""
-            for cover_key in ("dynamicCover", "cover", "originCover"):
-                cover_url = _first_media_url(video.get(cover_key))
-                if cover_url:
-                    break
-            return {
-                "video_id": video_id,
-                "title": str(item.get("desc") or item.get("title") or ""),
-                "create_time": _nonnegative_int(item.get("createTime")),
-                "view_count": _nonnegative_int(stats.get("playCount")),
-                "like_count": _nonnegative_int(stats.get("diggCount")),
-                "comment_count": _nonnegative_int(stats.get("commentCount")),
-                "share_count": _nonnegative_int(stats.get("shareCount")),
-                "favorite_count": _nonnegative_int(stats.get("collectCount")),
-                "repost_count": _nonnegative_int(stats.get("repostCount")),
-                "download_count": _nonnegative_int(stats.get("downloadCount")),
-                "cover_url": cover_url,
-                "share_url": share_url,
-                "duration_seconds": _nonnegative_int(video.get("duration")),
-                "max_quality": _max_video_quality(video),
-                "detail_source": "Browser",
-                "region": str(item.get("locationCreated") or "").upper(),
-                "shadow_ban": shadow_ban,
-                "shadow_ban_reason": shadow_reason,
-                "index_enabled": index_enabled,
-                "is_reviewing": bool(item.get("isReviewing") is True),
-                "is_private": bool(
-                    item.get("privateItem") is True or item.get("secret") is True
-                ),
-                "is_taken_down": bool(
-                    item.get("takeDown") not in (None, False, 0, "0")
-                ),
-                "detail_available": True,
-            }
+            return public_video_row_from_item(item, share_url)
 
     if restricted_status in _VIDEO_STATUS_MEANINGS:
         shadow_ban, reason = _VIDEO_STATUS_MEANINGS[restricted_status]
@@ -311,6 +301,87 @@ def extract_public_video_detail_html(
             "detail_available": False,
         }
     return None
+
+
+#: Row fields that only a video's OWN page carries. The profile grid's item has
+#: every count, the quality ladder and the moderation flags, but not
+#: ``locationCreated`` or ``indexEnabled`` - measured across 33 videos, 13
+#: fields identical to the page, these absent.
+PAGE_ONLY_ROW_FIELDS = ("region", "shadow_ban", "shadow_ban_reason", "index_enabled")
+
+
+def grid_video_row_from_item(item: Dict[str, Any], share_url: str = "") -> Dict[str, Any]:
+    """A row from a profile-grid item, WITHOUT the fields the grid cannot know.
+
+    Leaving them out - rather than writing "" / None / "YES" - is what keeps
+    the values last read from the video's page in the database: the sync's
+    writer only sets fields a row actually carries.
+    """
+    row = public_video_row_from_item(item, share_url)
+    for name in PAGE_ONLY_ROW_FIELDS:
+        row.pop(name, None)
+    row.pop("detail_source", None)
+    return row
+
+
+def public_video_row_from_item(item: Dict[str, Any], share_url: str = "") -> Dict[str, Any]:
+    """The stored row for one TikTok item struct (video page shape)."""
+    video_id = str(item.get("id") or item.get("itemId") or "")
+    stats: Dict[str, Any] = {}
+    for key in ("stats", "statsV2"):
+        value = item.get(key)
+        if isinstance(value, dict):
+            stats.update(value)
+    video = item.get("video") if isinstance(item.get("video"), dict) else {}
+    if "indexEnabled" not in item:
+        shadow_ban = "YES"
+        shadow_reason = "Thiếu indexEnabled: video không được TikTok lập chỉ mục"
+        index_enabled = None
+    elif item.get("indexEnabled") is False:
+        shadow_ban = "YES"
+        shadow_reason = "indexEnabled=false: video không được TikTok lập chỉ mục"
+        index_enabled = False
+    else:
+        shadow_ban = "NO"
+        shadow_reason = "indexEnabled=true"
+        index_enabled = True
+    restrictions = _restriction_summary(item)
+    if restrictions:
+        shadow_reason = f"{shadow_reason}; {restrictions}"
+    cover_url = ""
+    for cover_key in ("dynamicCover", "cover", "originCover"):
+        cover_url = _first_media_url(video.get(cover_key))
+        if cover_url:
+            break
+    return {
+        "video_id": video_id,
+        "title": str(item.get("desc") or item.get("title") or ""),
+        "create_time": _nonnegative_int(item.get("createTime")),
+        "view_count": _nonnegative_int(stats.get("playCount")),
+        "like_count": _nonnegative_int(stats.get("diggCount")),
+        "comment_count": _nonnegative_int(stats.get("commentCount")),
+        "share_count": _nonnegative_int(stats.get("shareCount")),
+        "favorite_count": _nonnegative_int(stats.get("collectCount")),
+        "repost_count": _nonnegative_int(stats.get("repostCount")),
+        "download_count": _nonnegative_int(stats.get("downloadCount")),
+        "cover_url": cover_url,
+        "share_url": share_url,
+        "duration_seconds": _nonnegative_int(video.get("duration")),
+        "max_quality": _max_video_quality(video),
+        "detail_source": "Browser",
+        "region": str(item.get("locationCreated") or "").upper(),
+        "shadow_ban": shadow_ban,
+        "shadow_ban_reason": shadow_reason,
+        "index_enabled": index_enabled,
+        "is_reviewing": bool(item.get("isReviewing") is True),
+        "is_private": bool(
+            item.get("privateItem") is True or item.get("secret") is True
+        ),
+        "is_taken_down": bool(
+            item.get("takeDown") not in (None, False, 0, "0")
+        ),
+        "detail_available": True,
+    }
 
 
 def _playwright_proxy_options(proxy_url: Optional[str]) -> Optional[Dict[str, str]]:
@@ -429,6 +500,8 @@ class TikTokPublicVideoClient:
         self._page = None
         self._route_key: Optional[str] = None
         self._profile_dir: Optional[str] = None
+        # username -> (read at, grid video ids in order, item structs by id)
+        self._grid_cache: Dict[str, tuple[float, list[str], Dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
         self._start_lock = asyncio.Lock()
         configured_detail_concurrency = (
@@ -794,6 +867,66 @@ class TikTokPublicVideoClient:
             + (f": {type(last_error).__name__}" if last_error else "")
         )
 
+    @staticmethod
+    def _grid_key(username: str) -> str:
+        return username.lstrip("@").casefold()
+
+    async def _read_profile_grid(
+        self, page, username: str, max_videos: int
+    ) -> tuple[list[str], Dict[str, Any]]:
+        """Scroll the open profile until its cards stop growing, then read them.
+
+        Returns the owner's video ids in grid order and each card's item struct.
+        """
+        previous = -1
+        stable = 0
+        for _ in range(10):
+            try:
+                count = await page.evaluate(
+                    "() => document.querySelectorAll('a[href*=\"/video/\"]').length"
+                )
+            except Exception:
+                count = previous
+            if count >= max_videos:
+                break
+            stable = stable + 1 if count == previous else 0
+            if stable >= 2:
+                break
+            previous = count
+            try:
+                await page.evaluate(
+                    "() => window.scrollTo(0, document.documentElement.scrollHeight)"
+                )
+            except Exception:
+                break
+            await asyncio.sleep(0.6)
+        data = await page.evaluate(_READ_GRID_ITEMS_JS)
+        links = normalize_profile_video_links(
+            list(data.get("hrefs") or []), username, max_videos
+        )
+        ids = [urlparse(link).path.rstrip("/").rsplit("/", 1)[-1] for link in links]
+        raw_items = data.get("items") or {}
+        items = {vid: raw_items[vid] for vid in ids if isinstance(raw_items.get(vid), dict)}
+        return ids, items
+
+    async def _cache_grid_from_open_page(
+        self, page, username: str, profile_metrics: Dict[str, Any]
+    ) -> None:
+        """Best effort: never turns a good profile read into a failure."""
+        if int(profile_metrics.get("video_count") or 0) <= 0:
+            return
+        try:
+            if not await _wait_in_place(page, _PROFILE_GRID_READY_JS, 8.0):
+                return
+            max_videos = max(1, int(getattr(settings, "FAST_ANALYTICS_MAX_VIDEOS_PER_ACCOUNT", 60)))
+            ids, items = await self._read_profile_grid(page, username, max_videos)
+            if items:
+                self._grid_cache[self._grid_key(username)] = (
+                    asyncio.get_running_loop().time(), ids, items
+                )
+        except Exception as exc:
+            logger.debug("Grid read after profile failed for @%s: %s", username, type(exc).__name__)
+
     async def fetch_profile(
         self,
         username: str,
@@ -834,6 +967,12 @@ class TikTokPublicVideoClient:
                     )
                 else:
                     result = _classify_profile_response(html, username, 200)
+                    if result.profile_metrics:
+                        # The page that answered the profile also renders the
+                        # video grid; read it now rather than load it again.
+                        await self._cache_grid_from_open_page(
+                            page, username, result.profile_metrics
+                        )
                     if result.classification is not None or result.profile_metrics:
                         return result
                     last = QuickCheckResult(
@@ -849,6 +988,95 @@ class TikTokPublicVideoClient:
                     await asyncio.sleep(1.0)
             return last
 
+    async def _fetch_videos_via_grid(
+        self,
+        username: str,
+        max_videos: int,
+        expected_video_count: Optional[int],
+        known_video_urls: list[str],
+        proxy_url: Optional[str],
+        page_fresh_video_ids: set[str],
+    ) -> Optional[tuple[list[Dict[str, Any]], bool]]:
+        """Every video's counts from ONE profile load; pages only where needed.
+
+        ⛔ WHY. The page-by-page crawl opened one browser page per video, in
+        series, behind a browser shared by the whole batch: 37 pages x 4.4s
+        were 162s of a 198s run for 6 accounts - 33s an account, ~80 minutes
+        for 144. The profile grid already holds each video's full item, so a
+        page is opened only for what the grid cannot say (region, shadow-ban)
+        and only when that is missing or stale. Returns None when the grid
+        could not be read, so the caller falls back to the page crawl.
+        """
+        profile_url = ensure_tiktok_english_url(
+            f"https://www.tiktok.com/@{username.lstrip('@')}"
+        )
+        loop = asyncio.get_running_loop()
+        cached = self._grid_cache.pop(self._grid_key(username), None)
+        if cached and loop.time() - cached[0] <= _GRID_CACHE_SECONDS:
+            ids, items = cached[1], cached[2]
+        else:
+            async with self._lock:
+                page = await self._ensure_page(proxy_url)
+                await self._apply_cookie_header(page, "")
+                try:
+                    _html, ready = await self._open_until_ready(
+                        page, profile_url, _PROFILE_GRID_READY_JS
+                    )
+                except Exception:
+                    ready = False
+                if not ready:
+                    return None
+                try:
+                    ids, items = await self._read_profile_grid(page, username, max_videos)
+                except Exception as exc:
+                    logger.warning("Grid read failed for @%s: %s", username, type(exc).__name__)
+                    return None
+        if not items:
+            return None
+
+        def video_url(video_id: str) -> str:
+            return ensure_tiktok_english_url(
+                f"https://www.tiktok.com/@{username.lstrip('@')}/video/{video_id}"
+            )
+
+        rows: Dict[str, Dict[str, Any]] = {
+            vid: grid_video_row_from_item(items[vid], share_url=video_url(vid))
+            for vid in ids
+            if vid in items
+        }
+        known_ids = [
+            urlparse(link).path.rstrip("/").rsplit("/", 1)[-1]
+            for link in resolve_profile_video_links([], known_video_urls, username, max_videos)
+        ]
+        need = [vid for vid in ids if vid not in rows or vid not in page_fresh_video_ids]
+        # Known videos the grid no longer shows (hidden, under review): their
+        # own page is the only place that can say what happened to them.
+        need += [vid for vid in known_ids if vid not in ids and vid not in need]
+        if need:
+            links = [video_url(vid) for vid in need]
+            results = await self._fetch_video_details_http(
+                links, profile_url=profile_url, proxy_url=proxy_url, cookie_header=""
+            )
+            if any(row is None for row in results):
+                async with self._lock:
+                    page = await self._ensure_page(proxy_url)
+                    await self._apply_cookie_header(page, "")
+                    await self._fill_missing_details_with_browser(page, links, results)
+            for vid, page_row in zip(need, results):
+                if page_row is not None:
+                    rows[vid] = page_row   # the full page row supersedes the grid row
+
+        expected = (
+            min(max_videos, max(0, expected_video_count))
+            if expected_video_count is not None
+            else len(ids)
+        )
+        complete = len(ids) >= expected and all(
+            rows.get(vid, {}).get("detail_available") is True for vid in ids
+        )
+        ordered = sorted(rows.values(), key=lambda row: row.get("create_time") or 0, reverse=True)
+        return ordered[:max_videos], complete
+
     async def fetch_videos(
         self,
         username: str,
@@ -858,6 +1086,7 @@ class TikTokPublicVideoClient:
         known_video_urls: Optional[list[str]] = None,
         proxy_url: Optional[str] = None,
         cookie_header: str = "",
+        page_fresh_video_ids: Optional[Iterable[str]] = None,
     ) -> tuple[list[Dict[str, Any]], bool]:
         # sec_uid is retained for API compatibility but the robust source is the
         # exact /@username URL and its direct /video/{id} links.
@@ -865,6 +1094,18 @@ class TikTokPublicVideoClient:
             return [], False
         if expected_video_count is not None and expected_video_count <= 0:
             return [], True
+        if page_fresh_video_ids is not None:
+            via_grid = await self._fetch_videos_via_grid(
+                username,
+                max_videos,
+                expected_video_count,
+                list(known_video_urls or []),
+                proxy_url,
+                {str(value) for value in page_fresh_video_ids},
+            )
+            if via_grid is not None:
+                return via_grid
+            logger.warning("Grid unreadable for @%s; falling back to per-video pages", username)
         profile_url = ensure_tiktok_english_url(
             f"https://www.tiktok.com/@{username.lstrip('@')}"
         )
