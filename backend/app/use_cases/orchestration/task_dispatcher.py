@@ -266,7 +266,20 @@ class ConcurrentTaskDispatcher:
         """Giu dung proxy da gan; account cung proxy phai cho nhau."""
         proxies = self._load_all_proxies()
         if not proxies:
-            return None, None
+            # ⛔ NEVER FALL THROUGH TO A DIRECT CONNECTION. The caller only
+            # builds proxy_config when this returns an entity, so returning
+            # nothing here launched the browser with no proxy at all - while
+            # USE_PROXY was True and nothing was logged. The session then
+            # publishes from whatever this machine's own egress happens to be,
+            # and TikTok records that country on the video for good. Measured
+            # 2026-09-16: seven videos stamped VN on two accounts whose every
+            # earlier upload was ID. An empty proxy store is a configuration
+            # error, and it is refused the same way an unassigned account is.
+            raise RuntimeError(
+                "Kho Proxy đang trống nhưng USE_PROXY=True. Dừng để tránh "
+                "đăng bài bằng IP thật của máy. Hãy nhập proxy, hoặc đặt "
+                "USE_PROXY=False nếu thật sự muốn chạy trực tiếp."
+            )
 
         if not proxy_id:
             raise RuntimeError(
@@ -750,6 +763,15 @@ class ConcurrentTaskDispatcher:
                         "username": proxy_entity.username,
                         "password": proxy_entity.password,
                     }
+                # Second lock on the same door. Whatever path got us here, a
+                # run that asked for a proxy does not open a browser without
+                # one: the cost of the mistake is a published video carrying
+                # the wrong country, which cannot be taken back.
+                if use_proxy and not proxy_config:
+                    raise RuntimeError(
+                        "USE_PROXY=True nhưng không có proxy cho account này; "
+                        "dừng để không đăng bài bằng IP thật của máy."
+                    )
 
                 # =========================================================
                 # GIÃN CÁCH THEO PROXY: không mở 2 phiên liên tiếp trên CÙNG 1

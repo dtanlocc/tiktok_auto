@@ -1,3 +1,5 @@
+import pytest
+
 from types import SimpleNamespace
 
 from app.core.proxy_allocation import (
@@ -103,3 +105,38 @@ def test_explicit_selected_redistribution_does_not_include_unselected_accounts()
         selected[1].id: "proxy-2",
     }
     assert unselected.id not in plan
+
+
+def test_an_empty_proxy_store_is_refused_not_run_direct():
+    """Returning nothing here launched the browser with no proxy at all.
+
+    The caller only builds proxy_config when an entity comes back, so an empty
+    store meant a direct connection while USE_PROXY was True, silently. The
+    session then publishes from this machine's own egress and TikTok stamps
+    that country on the video permanently - measured 2026-09-16 as seven
+    videos marked VN on accounts whose every earlier upload was ID.
+    """
+    import asyncio
+
+    from app.use_cases.orchestration.task_dispatcher import ConcurrentTaskDispatcher
+
+    dispatcher = ConcurrentTaskDispatcher.__new__(ConcurrentTaskDispatcher)
+    dispatcher._load_all_proxies = lambda: []
+
+    with pytest.raises(RuntimeError, match="Kho Proxy"):
+        asyncio.run(
+            dispatcher._acquire_assigned_proxy("account", "some-proxy-id", None)
+        )
+
+
+def test_an_unassigned_account_is_still_refused():
+    """The pre-existing guard must survive the new one."""
+    import asyncio
+
+    from app.use_cases.orchestration.task_dispatcher import ConcurrentTaskDispatcher
+
+    dispatcher = ConcurrentTaskDispatcher.__new__(ConcurrentTaskDispatcher)
+    dispatcher._load_all_proxies = lambda: [object()]
+
+    with pytest.raises(RuntimeError, match="chua duoc gan proxy"):
+        asyncio.run(dispatcher._acquire_assigned_proxy("account", None, None))
