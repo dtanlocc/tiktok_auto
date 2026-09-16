@@ -17,6 +17,58 @@ from app.use_cases.upload.media_selection import select_preferred_media
 
 logger = logging.getLogger("UploadMediaUseCase")
 
+#: Everything after this marker in ``note`` belongs to the uploader and is
+#: rewritten on every batch. Everything before it was typed by a person -
+#: five accounts carry hand-written notes like "video đăng tay" - so the
+#: uploader appends, never replaces the whole field.
+_AUTO_NOTE_MARK = "[auto]"
+
+#: How much of a filename survives into the note. Long enough to recognise the
+#: clip, short enough that two failed slots still fit next to a human note.
+_NOTE_NAME_CHARS = 26
+
+
+def _short_media_name(name: str) -> str:
+    """The head of a filename, without its extension."""
+    stem = Path(name).stem.strip()
+    if len(stem) <= _NOTE_NAME_CHARS:
+        return stem
+    return stem[:_NOTE_NAME_CHARS].rstrip() + "…"
+
+
+def _failed_slot_summary(slots: list[dict[str, Any]]) -> str:
+    """``2/2 "01. Cabai dicampur andal…"`` - the slot first, then the clip.
+
+    The slot is what distinguishes a partial batch from a total loss, so it
+    leads. Without it a reader sees a filename and cannot tell whether the
+    account published anything at all.
+    """
+    parts = []
+    for slot in slots:
+        label = f"{slot.get('index')}/{slot.get('total')}"
+        name = _short_media_name(str(slot.get("name") or ""))
+        parts.append(f'{label} "{name}"' if name else label)
+    return ", ".join(parts)
+
+
+def _merge_upload_note(existing: Any, auto_text: str) -> str:
+    """Put ``auto_text`` in the uploader's half of ``note``, keep the rest.
+
+    An empty ``auto_text`` clears only the uploader's half, so an account that
+    publishes everything on the next run stops advertising a stale failure
+    while the operator's own note stays where they left it.
+    """
+    manual = str(existing or "")
+    marker_at = manual.find(_AUTO_NOTE_MARK)
+    if marker_at != -1:
+        manual = manual[:marker_at]
+    manual = manual.strip().rstrip("|").strip()
+    if not auto_text:
+        return manual
+    auto = f"{_AUTO_NOTE_MARK} {auto_text}"
+    return f"{manual} | {auto}"[:500] if manual else auto[:500]
+
+
 def _normalize_public_caption(value: Any) -> str:
     return " ".join(str(value or "").split()).casefold()
 
@@ -410,6 +462,7 @@ class TikTokUploadMediaUseCase:
         total = len(resolved_paths)
         successes = 0
         failures: list[str] = []
+        failed_slots: list[dict[str, Any]] = []
         failure_codes: list[str] = []
         for index, (path, caption) in enumerate(
             zip(resolved_paths, resolved_captions), start=1
@@ -502,6 +555,15 @@ class TikTokUploadMediaUseCase:
             else:
                 failure_reason = error or "không xác nhận được"
                 failures.append(f"{Path(path).name}: {failure_reason}")
+                # Which SLOT failed, not just which file. "2/2" is what tells a
+                # reader that one video of the pair got through; the filename
+                # alone cannot say that.
+                failed_slots.append({
+                    "index": index,
+                    "total": total,
+                    "name": Path(path).name,
+                    "code": failure_code,
+                })
                 if failure_code:
                     failure_codes.append(failure_code)
                 if failure_code == "VIDEO_DUPLICATE":
@@ -531,10 +593,32 @@ class TikTokUploadMediaUseCase:
 
         account = self.account_repo.get_by_id(account_id)
         if account:
-            if failures:
+            if failures and successes:
+                # PARTIAL. One video of the batch reached Studio Posts, so the
+                # account is not broken and must not be dragged to ERROR with
+                # the accounts that published nothing: the operator retries
+                # those two cases differently. The failure is still reported -
+                # in the step line, in last_upload_error, and in the note -
+                # it just no longer decides the account's state.
+                account.status = "SUCCESS"
+                account.last_upload_status = "SUCCESS"
+                account.last_upload_error = "; ".join(failures)[:500]
+                account.current_step = (
+                    f"⚠️ Đăng được {successes}/{total} · lỗi "
+                    f"{_failed_slot_summary(failed_slots)}"
+                )
+                account.note = _merge_upload_note(
+                    getattr(account, "note", ""),
+                    f"lỗi {_failed_slot_summary(failed_slots)}",
+                )
+            elif failures:
                 account.status = "ERROR"
                 account.last_upload_status = "FAILED"
                 account.last_upload_error = "; ".join(failures)[:500]
+                account.note = _merge_upload_note(
+                    getattr(account, "note", ""),
+                    f"hỏng toàn bộ {total}/{total} video",
+                )
                 if "VIDEO_SWALLOWED" in failure_codes:
                     account.current_step = (
                         f"❌ VIDEO_BI_NUOT · Đã đăng {successes}/{total}; "
@@ -559,8 +643,12 @@ class TikTokUploadMediaUseCase:
                 account.last_upload_status = "SUCCESS"
                 account.last_upload_error = ""
                 account.current_step = f"✅ Đã đăng {successes}/{total} video trong cùng phiên"
+                account.note = _merge_upload_note(getattr(account, "note", ""), "")
             self.account_repo.save(account)
-        return not failures
+        # One published video is a published account. Returning False for a
+        # partial batch sent the dispatcher down its failure branch, which
+        # overwrites the step line and reports the whole account as failed.
+        return successes > 0
 
     async def _execute_impl(
         self,

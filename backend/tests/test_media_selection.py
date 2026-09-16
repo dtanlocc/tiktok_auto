@@ -829,3 +829,164 @@ def test_photo_execute_forces_otp_once_when_studio_rejects_cookie(tmp_path: Path
     assert len(browser.publish_calls) == 2
     assert all(call["image_paths"] for call in browser.publish_calls)
     assert account.cookies == [{"name": "sessionid", "value": "fresh"}]
+
+
+def _partial_batch_account(note=""):
+    return SimpleNamespace(
+        id="account",
+        username="nick",
+        cookies=[],
+        health_status="UNKNOWN",
+        status="IDLE",
+        current_step="",
+        note=note,
+        upload_success_count=0,
+        upload_failure_count=0,
+        last_upload_status="NEVER",
+        last_upload_error="",
+        last_upload_at="",
+    )
+
+
+def _run_two_video_batch(account, tmp_path, fail_index):
+    """Publish two videos where exactly one of them fails."""
+    first = tmp_path / "01. Cabai dicampur andaliman pedas.mp4"
+    second = tmp_path / "02. Mak Nong ngatur dompet kosong.mp4"
+    for path in (first, second):
+        path.write_bytes(b"video")
+
+    class Repo:
+        def get_by_id(self, _account_id):
+            return account
+
+        def save(self, _account):
+            return None
+
+    class Login:
+        async def login(self, *_args, **_kwargs):
+            return True
+
+    class Browser:
+        last_publish_failure_code = ""
+        last_publish_failure_detail = ""
+        last_publish_acknowledged = False
+
+        def __init__(self):
+            self.calls = 0
+
+        async def prepare_foryou_home(self, **_kwargs):
+            return True
+
+        async def extract_cookies(self):
+            return [{"name": "sessionid", "value": "v", "domain": ".tiktok.com"}]
+
+        async def publish_media(self, **_kwargs):
+            self.calls += 1
+            return self.calls != fail_index
+
+    use_case = TikTokUploadMediaUseCase(
+        Repo(), Browser(), Login(), email_service=None
+    )
+    sink = []
+    result = asyncio.run(use_case.execute_video_batch(
+        "account", video_paths=[str(first), str(second)], result_sink=sink
+    ))
+    return result, sink
+
+
+def test_one_published_video_keeps_the_account_successful(tmp_path: Path):
+    """A batch that published something is not the same as one that published
+    nothing, and the operator retries the two cases differently."""
+    account = _partial_batch_account()
+
+    result, sink = _run_two_video_batch(account, tmp_path, fail_index=2)
+
+    assert result is True
+    assert account.status == "SUCCESS"
+    assert account.last_upload_status == "SUCCESS"
+    # The failure is still reported, it just no longer decides the state.
+    assert "2/2" in account.current_step
+    assert account.last_upload_error
+    assert sink[0]["success"] is True
+    assert sink[1]["success"] is False
+
+
+def test_partial_batch_note_names_the_failed_slot(tmp_path: Path):
+    account = _partial_batch_account()
+
+    _run_two_video_batch(account, tmp_path, fail_index=1)
+
+    # The slot leads: a filename alone cannot say whether anything published.
+    assert "1/2" in account.note
+    assert "Cabai dicampur" in account.note
+    assert "toàn bộ" not in account.note
+
+
+def test_total_failure_note_is_distinguishable_from_a_partial_one(tmp_path: Path):
+    video = tmp_path / "only.mp4"
+    video.write_bytes(b"video")
+    account = _partial_batch_account()
+
+    class Repo:
+        def get_by_id(self, _account_id):
+            return account
+
+        def save(self, _account):
+            return None
+
+    class Login:
+        async def login(self, *_args, **_kwargs):
+            return True
+
+    class Browser:
+        last_publish_failure_code = ""
+        last_publish_failure_detail = ""
+        last_publish_acknowledged = False
+
+        async def prepare_foryou_home(self, **_kwargs):
+            return True
+
+        async def extract_cookies(self):
+            return []
+
+        async def publish_media(self, **_kwargs):
+            return False
+
+    use_case = TikTokUploadMediaUseCase(
+        Repo(), Browser(), Login(), email_service=None
+    )
+    result = asyncio.run(use_case.execute_video_batch(
+        "account", video_paths=[str(video)]
+    ))
+
+    assert result is False
+    assert account.status == "ERROR"
+    assert account.last_upload_status == "FAILED"
+    assert "toàn bộ" in account.note
+
+
+def test_the_uploader_note_never_eats_a_hand_written_one(tmp_path: Path):
+    """Five accounts carry notes a person typed; the uploader appends."""
+    account = _partial_batch_account(note="video đăng tay")
+
+    _run_two_video_batch(account, tmp_path, fail_index=2)
+    assert account.note.startswith("video đăng tay")
+    assert "2/2" in account.note
+
+    # A second run replaces only the uploader's half.
+    account.status = "IDLE"
+    _run_two_video_batch(account, tmp_path, fail_index=1)
+    assert account.note.startswith("video đăng tay")
+    assert account.note.count("[auto]") == 1
+    assert "1/2" in account.note
+    assert "2/2" not in account.note
+
+
+def test_a_clean_rerun_clears_the_stale_failure_note(tmp_path: Path):
+    account = _partial_batch_account(note="nick VIP")
+    _run_two_video_batch(account, tmp_path, fail_index=2)
+    assert "[auto]" in account.note
+
+    account.status = "IDLE"
+    _run_two_video_batch(account, tmp_path, fail_index=0)   # nothing fails
+    assert account.note == "nick VIP"
