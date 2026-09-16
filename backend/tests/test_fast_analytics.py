@@ -680,3 +680,26 @@ def test_an_unreadable_grid_falls_back_to_the_page_crawl(monkeypatch):
 
     assert complete is True
     assert rows[0]["video_id"] == "7000000000000000001"
+
+
+def test_a_video_refused_by_moderation_is_named_not_counted_as_a_gap():
+    """All six 'chưa đủ (n-1/n)' accounts in the full reg web batch were a
+    video TikTok answered with statusCode 10231 - there was nothing to read."""
+    reason = "Video không vượt qua kiểm duyệt (statusCode 10231)"
+    status, error = _merge_video_completeness(
+        "SUCCESS", "", 4, 3, False, rows=4, restricted=[reason])
+
+    assert status == "PARTIAL"
+    assert "chưa đủ" not in error
+    assert "10231" in error
+    assert "Đã đọc đủ 3 video" in error
+
+
+def test_restricted_and_hidden_videos_are_both_reported():
+    reason = "Video không vượt qua kiểm duyệt (statusCode 10231)"
+    status, error = _merge_video_completeness(
+        "SUCCESS", "", 6, 3, False, rows=4, restricted=[reason])
+
+    assert status == "PARTIAL"
+    assert "1 video bị TikTok hạn chế" in error
+    assert "thêm 2 video không hiện công khai" in error

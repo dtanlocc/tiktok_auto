@@ -139,6 +139,7 @@ def _merge_video_completeness(
     collected: int,
     complete: bool,
     rows: Optional[int] = None,
+    restricted: Optional[Iterable[str]] = None,
 ) -> tuple[str, str]:
     """Do not report SUCCESS when only part of the public video list was read.
 
@@ -153,6 +154,25 @@ def _merge_video_completeness(
     """
     if status != "SUCCESS" or expected <= 0 or complete:
         return status, error
+    restricted = [reason for reason in (restricted or []) if reason]
+    if rows is not None and restricted and rows == collected + len(restricted):
+        # Every row was either read in full or refused by TikTok with a stated
+        # reason on the video's own page. Measured on the full 'reg web' batch:
+        # all six "chưa đủ (n-1/n)" accounts were a video answered with
+        # statusCode 10231, "không vượt qua kiểm duyệt" - nothing left to read.
+        counts: Dict[str, int] = {}
+        for reason in restricted:
+            counts[reason] = counts.get(reason, 0) + 1
+        summary = "; ".join(f"{n} video: {reason}" for reason, n in counts.items())
+        message = (
+            f"Đã đọc đủ {collected} video công khai; {len(restricted)} video bị "
+            f"TikTok hạn chế ({summary})."
+        )
+        if expected > rows:
+            message += (
+                f" TikTok còn đếm thêm {expected - rows} video không hiện công khai."
+            )
+        return "PARTIAL", message[:500]
     if rows is not None and 0 < rows == collected < expected:
         hidden = expected - collected
         return (
@@ -623,6 +643,11 @@ class TikTokFastAnalyticsSyncService:
                     ),
                     videos_complete,
                     rows=len(videos),
+                    restricted=[
+                        str(video.get("shadow_ban_reason") or "")
+                        for video in videos
+                        if video.get("detail_available") is False
+                    ],
                 )
 
             with Session(engine) as session:
