@@ -194,12 +194,24 @@ def _auth_shell_state_ready(state: Dict[str, Any]) -> bool:
     This is intentionally lighter than the upload gate because a logged-out
     page has no usable For You media. It is still strict enough that a temporary
     guest navbar shown during SPA hydration cannot invalidate a live cookie.
+
+    ``textLen`` is part of "rendered" and not a nicety. ``rootReady`` only asks
+    whether ``document.body`` has a child, which a page that rendered NOTHING
+    still satisfies - a stylesheet link and an empty mount div are children.
+    Behind a proxy that accepts the connection and then delivers no content,
+    TikTok reached ``readyState=complete`` with ``busy=0`` on a blank body:
+    the shell was declared settled, neither the Log in control nor the
+    signed-in marker could exist to be found, and the caller spent 45s
+    concluding nothing before reporting an unstable page. Measured on the
+    'reg web' batch, 2026-09-16: 34 accounts, all on one broken proxy, zero
+    successes ever, every one of them this shape.
     """
     return bool(
         state.get("ready") == "complete"
         and state.get("rootReady")
         and state.get("fontsLoaded")
         and int(state.get("busy") or 0) <= 2
+        and int(state.get("textLen") or 0) > 0
     )
 
 
@@ -1334,6 +1346,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         visible_login_streak = 0
         visible_account_streak = 0
         stable_shell_streak = 0
+        blank_streak = 0
         last_url = ""
         last_state: Dict[str, Any] = {}
         saw_settled_shell = False
@@ -1371,6 +1384,10 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     busy: Array.from(document.querySelectorAll(
                       busySelectors.join(',')
                     )).filter(visible).length,
+                    // A body that renders no text at all has not finished,
+                    // whatever readyState says.
+                    textLen: (document.body && document.body.innerText
+                              ? document.body.innerText.trim().length : 0),
                     href: location.href
                   };
                 }""")
@@ -1385,6 +1402,30 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     stable_shell_streak = 1
                     visible_login_streak = 0
                     visible_account_streak = 0
+
+                # A document that finished loading and still renders nothing is
+                # not slow, it is empty: waiting out the full budget only
+                # delays a verdict that will not change, and reports it as
+                # instability. Name it as soon as it is certain.
+                if (
+                    state.get("ready") == "complete"
+                    and int(state.get("textLen") or 0) == 0
+                ):
+                    blank_streak += 1
+                    if blank_streak >= 6:
+                        logger.warning(
+                            "[-] TikTok tra ve trang TRANG (readyState=complete, "
+                            "body khong co chu nao) sau %ds tai %s",
+                            i + 1,
+                            current_url,
+                        )
+                        raise AuthenticationPageNotReady(
+                            "TikTok trả về trang trắng (tải xong nhưng không có "
+                            "nội dung) — thường là proxy/mạng của account này "
+                            "không lấy được nội dung, không phải cookies hỏng."
+                        )
+                else:
+                    blank_streak = 0
 
                 shell_settled = bool(
                     stable_shell_streak >= 3 and _auth_shell_state_ready(state)
@@ -1436,17 +1477,54 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
             except AccountBannedException as e_ban:
                 raise e_ban
+            except AuthenticationPageNotReady:
+                # The blank-page verdict above is a conclusion, not a hiccup
+                # this loop should absorb and retry.
+                raise
             except Exception:
                 pass
 
             await asyncio.sleep(1)
 
+        # The loop can also exhaust on a page that settled perfectly: neither
+        # the Log in control nor the signed-in marker was ever visible, so
+        # there was nothing to conclude from. That is a different fact from an
+        # unstable page, and reporting it as instability sent every reader
+        # after the network instead of the markup. Record which one it was.
+        nav = {}
+        try:
+            nav = await self._page.evaluate(
+                """() => {
+                  const vis = el => !!(el && (
+                    el.offsetParent !== null || el.getClientRects().length));
+                  return {
+                    e2e: [...new Set(Array.from(
+                      document.querySelectorAll('[data-e2e]'))
+                      .filter(vis).map(e => e.getAttribute('data-e2e')))]
+                      .slice(0, 40),
+                    profile_hrefs: Array.from(
+                      document.querySelectorAll('a[href^="/@"]'))
+                      .filter(vis).slice(0, 3).map(a => a.getAttribute('href')),
+                    text: document.body.innerText.slice(0, 200)
+                      .replace(/\\s+/g, ' '),
+                  };
+                }"""
+            )
+        except Exception:
+            pass
         logger.warning(
-            "[-] TikTok khong on dinh de xac minh dang nhap; settled=%s, url=%s, state=%s",
+            "[-] Khong ket luan duoc dang nhap; settled=%s, url=%s, state=%s, nav=%s",
             saw_settled_shell,
             last_url,
             last_state,
+            nav,
         )
+        if saw_settled_shell:
+            raise AuthenticationPageNotReady(
+                "Trang TikTok đã tải xong nhưng không thấy cả nút Đăng nhập "
+                "lẫn dấu hiệu đã đăng nhập; không kết luận được cookies. "
+                f"nav={nav.get('e2e')}"
+            )
         raise AuthenticationPageNotReady(
             "Trang TikTok chưa tải ổn định nên chưa thể kết luận cookies hết hạn."
         )

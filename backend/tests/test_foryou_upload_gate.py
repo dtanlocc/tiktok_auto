@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.exceptions import AuthenticationPageNotReady
 from app.infrastructure.automation import playwright_adapter as adapter_module
 from app.infrastructure.automation.playwright_adapter import (
     InvisiblePlaywrightAdapter,
@@ -34,6 +35,9 @@ def _settled_auth_state(**overrides):
         "rootReady": True,
         "fontsLoaded": True,
         "busy": 0,
+        # A settled page has rendered text. A blank body that merely reached
+        # readyState=complete is the shape a broken proxy produces.
+        "textLen": 1200,
         "href": "https://www.tiktok.com/foryou?lang=en",
     }
     state.update(overrides)
@@ -57,6 +61,8 @@ def test_auth_shell_requires_complete_document_and_finished_rendering():
     assert _auth_shell_state_ready(_settled_auth_state(rootReady=False)) is False
     assert _auth_shell_state_ready(_settled_auth_state(fontsLoaded=False)) is False
     assert _auth_shell_state_ready(_settled_auth_state(busy=3)) is False
+    # A body with no text has not finished rendering, whatever readyState says.
+    assert _auth_shell_state_ready(_settled_auth_state(textLen=0)) is False
 
 
 def test_upload_ticket_is_valid_once_and_only_while_still_on_foryou():
@@ -476,3 +482,57 @@ def test_authenticated_identity_requires_expected_nav_username():
     assert asyncio.run(
         adapter.validate_authenticated_identity("another_account")
     ) is False
+
+
+def test_blank_page_is_named_as_blank_not_as_unstable(monkeypatch):
+    """A body with no text is a verdict, not a slow load.
+
+    Measured on the 'reg web' batch: one broken proxy answered every request
+    with a document that reached readyState=complete over an empty body. The
+    old gate called that settled, then spent the whole 45s budget failing to
+    find either the Log in control or the signed-in marker, and reported an
+    unstable page - sending the reader after TikTok instead of the proxy.
+    """
+    class Locator:
+        @property
+        def first(self):
+            return self
+
+        async def count(self):
+            return 0
+
+        async def is_visible(self):
+            return False
+
+    class BlankPage:
+        url = "https://www.tiktok.com/foryou?lang=en"
+
+        async def wait_for_load_state(self, *_args, **_kwargs):
+            return None
+
+        def locator(self, _selector):
+            return Locator()
+
+        async def evaluate(self, _script):
+            return _settled_auth_state(textLen=0)
+
+    adapter = InvisiblePlaywrightAdapter()
+    adapter._page = BlankPage()
+
+    slept = []
+
+    async def no_sleep(seconds):
+        slept.append(seconds)
+
+    async def no_captcha():
+        return False
+
+    monkeypatch.setattr(adapter_module.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(adapter, "is_captcha_present", no_captcha)
+
+    with pytest.raises(AuthenticationPageNotReady) as excinfo:
+        asyncio.run(adapter.check_login_status())
+
+    assert "trang trắng" in str(excinfo.value)
+    # It gives up as soon as the blank page is certain, not after the full budget.
+    assert len(slept) < 20
