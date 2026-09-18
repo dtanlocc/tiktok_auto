@@ -1,6 +1,7 @@
 import os
 import asyncio
 import random
+import re
 import tempfile
 import logging
 from abc import ABC, abstractmethod
@@ -94,6 +95,180 @@ async def _open_email_login_form(
     email_input = page.locator(email_selector)
     await email_input.first.wait_for(state="visible", timeout=20000)
     return page, email_input
+
+_LOGIN_SUBMIT_SELECTOR = (
+    '[data-e2e="login-button"]:visible, '
+    '[data-e2e="continue-button"]:visible, '
+    'div[class*="StyledLoginButton"] button:visible, '
+    'div[class*="ContinueButtonWrapper"] button:visible, '
+    'form button:has-text("Log in"):visible, '
+    'form button:has-text("Continue"):visible, '
+    'form button:has-text("Dang nhap"):visible, '
+    'form button:has-text("Tiep tuc"):visible'
+)
+
+
+async def _type_login_field(page, field, text: str, label: str, attempts: int = 3) -> None:
+    """Type into a login field with real key presses and check TikTok kept it.
+
+    ⛔ NOT fill(). On TikTok's email form (2026-09-18, 5 accounts on
+    209.145.57.39) fill() left the "Email or username" field EMPTY while the
+    password kept its value, so "Log in" stayed disabled and every OTP login
+    died on "not actionable ... missing enabled". The same text typed key by
+    key filled both fields and enabled the button.
+    """
+    for attempt in range(1, attempts + 1):
+        await field.first.click()
+        await asyncio.sleep(0.4)
+        await page.keyboard.press("Control+A")
+        await page.keyboard.press("Backspace")
+        await field.first.press_sequentially(text, delay=random.randint(60, 130))
+        await asyncio.sleep(0.6)
+        try:
+            if await field.first.input_value() == text:
+                return
+        except Exception:
+            pass
+        logger.warning("[Login] O %s chua giu dung noi dung sau lan go %d; go lai.", label, attempt)
+    raise RuntimeError(f"TikTok khong giu noi dung o {label} sau {attempts} lan go.")
+
+
+async def _fill_login_form(
+    page, email_input, pass_input, identifier: str, password: str,
+    step_logger=None, rounds: int = 3, hold_seconds: float = 3.0,
+) -> None:
+    """Type both fields, then make sure the form still holds them once settled.
+
+    ⛔ THE FORM IS REBUILT AFTER IT APPEARS. On the direct email login page
+    (2026-09-18, treft21664) both fields were typed and read back correctly,
+    then 1.5-3s later TikTok re-mounted the form and BOTH were empty again -
+    "Log in" stayed disabled. The original "email empty, password kept" was
+    the same thing: the email was typed before the rebuild, the password after.
+    """
+    for round_no in range(1, rounds + 1):
+        await _type_login_field(page, email_input, identifier, "Email")
+        await asyncio.sleep(0.5)
+        await _type_login_field(page, pass_input, password, "Password")
+        kept = True
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + hold_seconds
+        while loop.time() < deadline:
+            await asyncio.sleep(0.5)
+            try:
+                kept = (
+                    await email_input.first.input_value() == identifier
+                    and await pass_input.first.input_value() == password
+                )
+            except Exception:
+                kept = False
+            if not kept:
+                break
+        if kept:
+            return
+        logger.warning("[Login] TikTok xoa noi dung form dang nhap (lan %d); go lai.", round_no)
+        if step_logger:
+            await step_logger("[!] TikTok vua tai lai form dang nhap va xoa noi dung; dang go lai...")
+    raise RuntimeError(
+        f"TikTok xoa noi dung form dang nhap {rounds} lan lien tiep; khong gui duoc Email/Password."
+    )
+
+
+_MASKED_EMAIL = re.compile(r"([A-Za-z0-9._%+-]*\*+[A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+
+
+def masked_email_matches(masked: str, email: str) -> bool:
+    """Could TikTok's "g***1@hotmail.com" be this mailbox?"""
+    try:
+        masked_local, masked_domain = masked.lower().rsplit("@", 1)
+        local, domain = email.lower().strip().rsplit("@", 1)
+    except ValueError:
+        return True   # cannot tell: do not block the login on it
+    prefix = masked_local.split("*", 1)[0]
+    suffix = masked_local.rsplit("*", 1)[-1]
+    return domain == masked_domain and local.startswith(prefix) and local.endswith(suffix)
+
+
+async def _otp_destination(page) -> str:
+    """The masked address TikTok says it sent the code to, or ""."""
+    try:
+        text = await page.evaluate("() => document.body.innerText.slice(0, 4000)")
+    except Exception:
+        return ""
+    match = _MASKED_EMAIL.search(str(text or ""))
+    return match.group(1) if match else ""
+
+
+#: The red line TikTok prints under the login form when it refuses a login.
+_ACCOUNT_MISSING = re.compile(r"account doesn.?t exist|t[aà]i kho[aả]n kh[oô]ng t[oồ]n t[aạ]i", re.I)
+_LOGIN_FORM_ERRORS = re.compile(
+    r"account doesn.?t exist|incorrect (account|username|email|password)|"
+    r"maximum number of attempts|too many attempts|try again later|"
+    r"t[aà]i kho[aả]n kh[oô]ng t[oồ]n t[aạ]i|sai (m[aậ]t kh[aẩ]u|t[aà]i kho[aả]n)",
+    re.I,
+)
+
+
+async def _login_form_error(page) -> str:
+    """TikTok's refusal message on the login page, or "".
+
+    The whole page, not <form>: on the email login page the <form> element
+    holds only "Forgot password? / Log in"; the fields and the red error line
+    sit outside it (bren49_ki63, 2026-09-18 - the error was missed).
+    """
+    try:
+        text = await page.evaluate("() => document.body.innerText.slice(0, 4000)")
+    except Exception:
+        return ""
+    for line in str(text or "").splitlines():
+        if _LOGIN_FORM_ERRORS.search(line):
+            return line.strip()
+    return ""
+
+
+_NEXT_SCREEN_JS = r"""() => {
+  if (!/\/login/.test(location.pathname)) return true;
+  const text = document.body.innerText || '';
+  return /verify identity|enter 6-digit code|verification code|x[aá]c minh/i.test(text)
+      || !!document.querySelector('[class*="pc-home-item"], input[placeholder*="code" i]');
+}"""
+
+
+async def _await_login_response(page, timeout_seconds: float = 12.0) -> str:
+    """After submit: TikTok's refusal message, or "" once it moved on (or time ran out).
+
+    ⛔ NOT A SINGLE LOOK. Through a slow proxy (CDN refused 69 requests,
+    2026-09-18) "Incorrect account or password. 3 attempts remaining" appeared
+    after the one-off check at 3s had already found nothing.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+    while True:
+        error = await _login_form_error(page)
+        if error:
+            return error
+        try:
+            if await page.evaluate(_NEXT_SCREEN_JS):
+                return ""
+        except Exception:
+            pass
+        if loop.time() >= deadline:
+            return ""
+        await asyncio.sleep(0.8)
+
+
+async def _wait_submit_enabled(button, timeout_seconds: float = 8.0) -> bool:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+    while True:
+        try:
+            if await button.first.is_enabled():
+                return True
+        except Exception:
+            pass
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(0.4)
+
 
 class ITikTokLoginStrategy(ABC):
     """Lop co so truu tuong cho moi chien luoc dang nhap TikTok"""
@@ -228,26 +403,16 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             if step_logger:
                 await step_logger(f"Dang tu dong go Email dang nhap: {login_identifier}...")
             await email_input.first.wait_for(state="visible", timeout=10000)
-            await email_input.first.click()
-            await asyncio.sleep(1.2)
 
-            # TikTok's current React form occasionally drops characters while
-            # the For You feed re-renders behind the modal. ``fill`` emits the
-            # input/change events atomically and, unlike a partially delivered
-            # key sequence, reliably enables the submit button.
-            await email_input.first.fill(login_identifier)
-            await asyncio.sleep(1.5)
-
-            # Buoc 6: Dien Password tu tu tung phim mot (delay 140ms)
+            # Buoc 6: Dien Password tu tu tung phim mot
             if step_logger:
                 await step_logger("Dang nhap Password tu tu...")
             pass_input = page.locator('input[type="password"], [placeholder="Password"]')
             await pass_input.first.wait_for(state="visible", timeout=10000)
-            await pass_input.first.click()
-            await asyncio.sleep(1.0)
-
-            await pass_input.first.fill(account.password)
-            await asyncio.sleep(2.0)
+            await _fill_login_form(
+                page, email_input, pass_input, login_identifier, account.password,
+                step_logger=step_logger,
+            )
 
             # =================================================================
             # Buoc 7: Bam nut Log in de gui thong tin (Da co lap chong trung voi Search)
@@ -255,23 +420,49 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             if step_logger:
                 await step_logger("Dang gui lenh Dang nhap...")
 
-            login_btn = page.locator(
-                '[data-e2e="login-button"]:visible, '
-                '[data-e2e="continue-button"]:visible, '
-                'div[class*="StyledLoginButton"] button:visible, '
-                'div[class*="ContinueButtonWrapper"] button:visible, '
-                'form button:has-text("Log in"):visible, '
-                'form button:has-text("Continue"):visible, '
-                'form button:has-text("Dang nhap"):visible, '
-                'form button:has-text("Tiep tuc"):visible'
-            )
+            login_btn = page.locator(_LOGIN_SUBMIT_SELECTOR)
             await login_btn.first.wait_for(state="visible", timeout=15000)
+            if not await _wait_submit_enabled(login_btn):
+                raise RuntimeError(
+                    "Nut Log in van bi khoa sau khi go Email/Password: TikTok chua nhan "
+                    "thong tin dang nhap."
+                )
             await login_btn.first.click()
             await asyncio.sleep(3)  # cho trang phan hoi sau khi submit
 
             # ---- CAPTCHA sau submit: DUNG cho extension solver xu ly roi moi di tiep ----
             # Day la diem hay xuat hien captcha (geetest/slider) nhat trong luong login.
             await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
+
+            # TikTok refuses on the form itself. "Account doesn't exist" for the
+            # imported email while @username is alive (treft21664, 2026-09-18):
+            # the email is not a login for that account, the username may be.
+            form_error = await _await_login_response(page)
+            if (
+                form_error
+                and _ACCOUNT_MISSING.search(form_error)
+                and account.username
+                and login_identifier != account.username
+            ):
+                if step_logger:
+                    await step_logger(
+                        f"[!] TikTok bao '{form_error}' voi Email; thu dang nhap bang username @{account.username}..."
+                    )
+                await _fill_login_form(
+                    page, email_input, pass_input, account.username, account.password,
+                    step_logger=step_logger,
+                )
+                if not await _wait_submit_enabled(login_btn):
+                    raise RuntimeError("Nut Log in van bi khoa sau khi go username.")
+                await login_btn.first.click()
+                await asyncio.sleep(3)
+                await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
+                form_error = await _await_login_response(page)
+            if form_error:
+                if step_logger:
+                    await step_logger(f"[-] TikTok tu choi dang nhap: {form_error}")
+                logger.error("[-] TikTok tu choi dang nhap %s: %s", account.username, form_error)
+                return False
 
             # THOAT SOM neu nick da bi BAN (khong phi thoi gian qua cac buoc OTP).
             # Ngoai le se duoc use case bat -> ghi health_status=BANNED nhu thuong.
@@ -353,6 +544,22 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 if step_logger:
                     await step_logger(f"Dong ho dem nguoc da kich hoat. Dang quet hom thu {account.email} truc tiep qua Microsoft Graph...")
 
+                # TikTok names the mailbox it sent the code to. If that is not
+                # this account's mailbox, no amount of polling will find the code:
+                # treft21664 (2026-09-18) - code sent to g***1@hotmail.com while
+                # the account's saved email was garrikbilliob@hotmail.com.
+                destination = await _otp_destination(page)
+                if destination and not masked_email_matches(destination, account.email):
+                    message = (
+                        f"[-] TikTok gui ma toi {destination}, KHONG phai hom thu cua account "
+                        f"({account.email}). Email luu trong app khong phai email gan voi "
+                        "tai khoan TikTok nay - can cap nhat dung email/hom thu."
+                    )
+                    if step_logger:
+                        await step_logger(message)
+                    logger.error(message)
+                    return False
+
                 if otp_requested_at is None:
                     # Truong hop cuc hiem: khong roi vao Nhanh A lan Nhanh B nao ca
                     # nhung van toi duoc day (khong nen xay ra binh thuong).
@@ -392,16 +599,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
 
             try:
                 for _ in range(3):
-                    login_btn = page.locator(
-                        '[data-e2e="login-button"]:visible, '
-                        '[data-e2e="continue-button"]:visible, '
-                        'div[class*="StyledLoginButton"] button:visible, '
-                        'div[class*="ContinueButtonWrapper"] button:visible, '
-                        'form button:has-text("Log in"):visible, '
-                        'form button:has-text("Continue"):visible, '
-                        'form button:has-text("Dang nhap"):visible, '
-                        'form button:has-text("Tiep tuc"):visible'
-                    )
+                    login_btn = page.locator(_LOGIN_SUBMIT_SELECTOR)
                     await login_btn.first.wait_for(state="visible", timeout=1000)
                     await login_btn.first.click()
                     await asyncio.sleep(2)   # FIX: truoc day thieu 'await' -> lenh cho vo hieu
