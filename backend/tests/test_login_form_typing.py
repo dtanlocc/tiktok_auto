@@ -242,3 +242,168 @@ def _clock_only(monkeypatch):
 
     monkeypatch.setattr(login_strategies.asyncio, "sleep", tick)
     monkeypatch.setattr(login_strategies.asyncio, "get_running_loop", lambda: clock)
+
+
+class _LoadingPage:
+    """readyState / network quiet as a function of the fake clock."""
+
+    def __init__(self, clock, complete_at=None, quiet_from=None):
+        self.clock, self.complete_at, self.quiet_from = clock, complete_at, quiet_from
+
+    async def evaluate(self, _script):
+        now = self.clock.now
+        ready = "complete" if self.complete_at is not None and now >= self.complete_at else "interactive"
+        quiet = self.quiet_from is not None and now >= self.quiet_from
+        return {"ready": ready, "quietMs": 2000 if quiet else 0}
+
+
+def _load_clock(monkeypatch):
+    clock = _Clock()
+
+    async def tick(seconds):
+        clock.now += seconds
+
+    monkeypatch.setattr(login_strategies.asyncio, "sleep", tick)
+    monkeypatch.setattr(login_strategies.asyncio, "get_running_loop", lambda: clock)
+    return clock
+
+
+def test_typing_waits_for_the_load_event_not_the_first_visible_field(monkeypatch):
+    clock = _load_clock(monkeypatch)
+    page = _LoadingPage(clock, complete_at=18.4, quiet_from=18.4)   # measured on the login page
+
+    assert asyncio.run(login_strategies._wait_page_fully_loaded(page)) is True
+    assert 18.4 <= clock.now < 19.5
+
+
+def test_a_page_that_streams_video_is_ready_a_few_seconds_after_it_loaded(monkeypatch):
+    clock = _load_clock(monkeypatch)
+    page = _LoadingPage(clock, complete_at=5.0, quiet_from=None)     # For You never goes quiet
+
+    assert asyncio.run(login_strategies._wait_page_fully_loaded(page)) is True
+    assert 8.0 <= clock.now < 9.0
+
+
+def test_a_page_stuck_loading_is_given_up_on_at_the_cap(monkeypatch):
+    clock = _load_clock(monkeypatch)
+    page = _LoadingPage(clock)                                        # CDN blocked: never completes
+
+    assert asyncio.run(login_strategies._wait_page_fully_loaded(page, timeout_seconds=30)) is False
+    assert 30.0 <= clock.now < 31.0
+
+
+# --- TikTok server hiccups and pages that cannot paint after login ------------
+
+from app.core.exceptions import AuthenticationPageNotReady
+
+
+@pytest.mark.parametrize("message, transient", [
+    ("Internal server error. Please try again later.", True),          # mo91trow4_spau
+    ("Something went wrong", True),
+    ("Maximum number of attempts reached. Try again later.", False),   # pressing again = locked longer
+    ("Incorrect account or password. 3 attempts remaining. Try again.", False),
+    ("Account doesn't exist", False),
+    ("", False),
+])
+def test_only_tiktoks_own_hiccups_are_pressed_again(message, transient):
+    assert login_strategies.is_transient_login_error(message) is transient
+
+
+class _SubmitButton:
+    def __init__(self):
+        self.clicks = 0
+
+    @property
+    def first(self):
+        return self
+
+    async def click(self):
+        self.clicks += 1
+
+    async def is_enabled(self):
+        return True
+
+
+class _CaptchaFreeBrowser:
+    async def wait_captcha_cleared(self, **_kw):
+        return None
+
+
+def _answers(monkeypatch, answers):
+    replies = list(answers)
+
+    async def respond(_page, timeout_seconds=12.0):
+        return replies.pop(0)
+
+    monkeypatch.setattr(login_strategies, "_await_login_response", respond)
+
+
+def test_an_internal_server_error_is_pressed_again_until_tiktok_moves_on(monkeypatch):
+    _answers(monkeypatch, ["Internal server error. Please try again later.",
+                           "Internal server error. Please try again later.", ""])
+    button = _SubmitButton()
+
+    error = asyncio.run(login_strategies._submit_login(object(), _CaptchaFreeBrowser(), button))
+
+    assert error == "" and button.clicks == 3
+
+
+def test_a_wrong_password_is_never_pressed_again(monkeypatch):
+    _answers(monkeypatch, ["Incorrect account or password. 3 attempts remaining. Try again."])
+    button = _SubmitButton()
+
+    error = asyncio.run(login_strategies._submit_login(object(), _CaptchaFreeBrowser(), button))
+
+    assert error.startswith("Incorrect") and button.clicks == 1
+
+
+def test_a_server_error_that_never_clears_is_reported_after_the_retries(monkeypatch):
+    _answers(monkeypatch, ["Internal server error. Please try again later."] * 4)
+    button = _SubmitButton()
+
+    error = asyncio.run(login_strategies._submit_login(object(), _CaptchaFreeBrowser(), button))
+
+    assert error.startswith("Internal server error") and button.clicks == 4
+
+
+class _AfterLoginBrowser:
+    """check_login_status raises NotReady for the first `blank` looks."""
+
+    def __init__(self, blank, cookies=()):
+        self.blank = blank
+        self.cookies = list(cookies)
+        self.looks = 0
+        self.reloads = 0
+
+    async def check_login_status(self):
+        self.looks += 1
+        if self.looks <= self.blank:
+            raise AuthenticationPageNotReady("CDN refused")
+        return True
+
+    async def navigate_to(self, _url):
+        self.reloads += 1
+
+    async def extract_cookies(self):
+        return self.cookies
+
+
+def test_a_page_that_paints_after_a_reload_confirms_the_login(monkeypatch):
+    browser = _AfterLoginBrowser(blank=2)
+
+    assert asyncio.run(login_strategies._confirm_logged_in(browser)) == (True, True)
+    assert browser.reloads == 2
+
+
+def test_a_page_that_never_paints_falls_back_to_the_session_cookie(monkeypatch):
+    browser = _AfterLoginBrowser(blank=99, cookies=[{"name": "sessionid", "value": "abc"}])
+
+    assert asyncio.run(login_strategies._confirm_logged_in(browser)) == (True, False)
+    assert browser.reloads == 3
+
+
+def test_no_page_and_no_session_cookie_is_still_a_failure(monkeypatch):
+    browser = _AfterLoginBrowser(blank=99, cookies=[{"name": "ttwid", "value": "guest"}])
+
+    with pytest.raises(AuthenticationPageNotReady):
+        asyncio.run(login_strategies._confirm_logged_in(browser))

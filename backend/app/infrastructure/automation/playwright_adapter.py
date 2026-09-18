@@ -472,6 +472,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         #: Refused CDN requests for the tab in ``_blocked_assets_page``.
         self._blocked_assets: Dict[str, int] = {}
         self._blocked_assets_page = None
+        #: The @username the signed-in page showed at the last identity check.
+        self.last_observed_identity: str = ""
         #: When and where check_login_status last saw a signed-in For You.
         self._foryou_verified_at: Optional[float] = None
         self._foryou_verified_url: Optional[str] = None
@@ -1228,6 +1230,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     }"""
                 )
                 if observed:
+                    self.last_observed_identity = str(observed)
                     matched = str(observed).casefold() == expected
                     if matched:
                         logger.info(
