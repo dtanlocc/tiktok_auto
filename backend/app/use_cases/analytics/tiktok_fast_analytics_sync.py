@@ -1,7 +1,9 @@
 """Fast public TikTok profile/video metrics sync.
 
-The profile pass is plain HTTP. Known video URLs also stay on bounded HTTP;
-only unresolved profiles/pages enter a two-slot invisible_playwright fallback.
+An account with a stored secUid is read from TikTok's item_list API inside a
+hidden browser tab. Otherwise the profile pass is plain HTTP, then the browser.
+Known video URLs also stay on bounded HTTP; only unresolved profiles/pages
+enter a two-slot invisible_playwright fallback.
 It never opens TikTok Studio or authorizes a Developer application. Unavailable
 metrics remain untouched instead of being guessed as zero.
 """
@@ -9,6 +11,7 @@ metrics remain untouched instead of being guessed as zero.
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import random
 import time
@@ -40,6 +43,11 @@ from app.use_cases.health_check.quick_check_use_case import (
 logger = logging.getLogger("TikTokFastAnalyticsSync")
 
 PUBLIC_PROFILE_SOURCE = "TIKTOK_PUBLIC_PROFILE"
+_HTTP_PROFILE_WINDOW = 10
+_HTTP_PROFILE_MAX_HITS_TO_PAUSE = 1
+_HTTP_PROFILE_SKIP_SECONDS = 600.0
+#: What a plain-HTTP profile read "returns" while those reads are paused.
+_SKIPPED_HTTP_PROFILE = QuickCheckResult(None, "http_profile_skipped_challenge", retryable=True)
 _REQUIRED_PROFILE_METRICS = (
     "video_count",
     "follower_count",
@@ -99,11 +107,24 @@ def _is_video_cache_usable(
     )
 
 
-def _page_fresh_video_ids(rows: Iterable[Any], ttl_seconds: int) -> set[str]:
+def _page_fresh_video_ids(
+    rows: Iterable[Any],
+    ttl_seconds: int,
+    *,
+    settled_ttl_seconds: Optional[int] = None,
+    settled_age_seconds: int = 3 * 86400,
+) -> set[str]:
     """Videos whose page-only fields (region, shadow-ban) are known and recent.
 
     A row predating detail_synced_at is dated by synced_at: before the grid
     sync existed, every stored row was written from the video's own page.
+
+    ⛔ WHY TWO WINDOWS. A daily re-read of every video's page was what made
+    a batch not synced in the last day slow (THAITEST2: 120 of 120 videos
+    re-read). Region is fixed at posting, and a video read when already
+    ``settled_age_seconds`` old kept its shadow-ban in 30 of 30 re-reads, so
+    such a row stays fresh for ``settled_ttl_seconds``; a young video keeps
+    the short window, because that is when TikTok still decides.
     """
     fresh: set[str] = set()
     for row in rows:
@@ -113,7 +134,16 @@ def _page_fresh_video_ids(rows: Iterable[Any], ttl_seconds: int) -> set[str]:
         stamp = str(getattr(row, "detail_synced_at", "") or "") or str(
             getattr(row, "synced_at", "") or ""
         )
-        if _is_cache_fresh(stamp, ttl_seconds):
+        window = ttl_seconds
+        if settled_ttl_seconds is not None:
+            try:
+                read_at = datetime.fromisoformat(stamp).timestamp()
+                age_when_read = read_at - int(getattr(row, "create_time", None))
+            except (TypeError, ValueError):
+                age_when_read = None
+            if age_when_read is not None and age_when_read >= settled_age_seconds:
+                window = max(ttl_seconds, settled_ttl_seconds)
+        if _is_cache_fresh(stamp, window):
             fresh.add(video_id)
     return fresh
 
@@ -229,6 +259,30 @@ class TikTokFastAnalyticsSyncService:
         # single-client attribute. Runtime work is sharded deterministically.
         self._video_client = self._video_clients[0]
         self._route_reachability: Dict[str, tuple[float, bool]] = {}
+        self._http_profile_outcomes: "collections.deque[bool]" = collections.deque(
+            maxlen=_HTTP_PROFILE_WINDOW
+        )
+        self._http_profile_skip_until = 0.0
+
+    def _http_profile_paused(self) -> bool:
+        return time.monotonic() < self._http_profile_skip_until
+
+    def _note_http_profile_result(self, result: QuickCheckResult) -> None:
+        """Pause plain-HTTP profile reads when at most one of the last few worked.
+
+        30 of 30 in the 2026-09-16 run got TikTok's 1.5KB challenge page, and
+        every one of those accounts still went on to the browser. A rare hit
+        must not keep the rest paying for a request.
+        """
+        if result.reason == "http_profile_skipped_challenge":
+            return
+        self._http_profile_outcomes.append(bool(result.profile_metrics))
+        if (
+            len(self._http_profile_outcomes) == self._http_profile_outcomes.maxlen
+            and sum(self._http_profile_outcomes) <= _HTTP_PROFILE_MAX_HITS_TO_PAUSE
+        ):
+            self._http_profile_outcomes.clear()
+            self._http_profile_skip_until = time.monotonic() + _HTTP_PROFILE_SKIP_SECONDS
 
     def _video_client_for(self, account_id: str) -> TikTokPublicVideoClient:
         slot = sum(account_id.encode("utf-8")) % len(self._video_clients)
@@ -312,7 +366,8 @@ class TikTokFastAnalyticsSyncService:
         if not settings.USE_PROXY:
             return [None]
         proxy_repo = SQLiteProxyRepository(session)
-        proxies = proxy_repo.get_all()
+        # A switched-off proxy is not a route, not even for guest reads.
+        proxies = [proxy for proxy in proxy_repo.get_all() if proxy.enabled]
         ordered = sorted(
             proxies,
             key=lambda proxy: 0 if proxy.id == assigned_proxy_id else 1,
@@ -469,12 +524,37 @@ class TikTokFastAnalyticsSyncService:
                     known_video_rows,
                     max(0, int(getattr(settings, "FAST_ANALYTICS_PAGE_DETAIL_TTL_HOURS", 24)))
                     * 3600,
+                    settled_ttl_seconds=max(0, int(getattr(
+                        settings, "FAST_ANALYTICS_SETTLED_PAGE_DETAIL_TTL_HOURS", 168
+                    ))) * 3600,
+                    settled_age_seconds=max(0, int(getattr(
+                        settings, "FAST_ANALYTICS_SETTLED_VIDEO_DAYS", 3
+                    ))) * 86400,
                 )
+                stored_sec_uid = str(account.tiktok_sec_uid or "")
 
             result = QuickCheckResult(None, "public_routes_unavailable", retryable=True)
             proxy_url = route_candidates[0]
             reachable_routes: list[Optional[str]] = []
-            for candidate_index, candidate_proxy_url in enumerate(route_candidates):
+            http_routes = route_candidates
+            if (
+                stored_sec_uid
+                and getattr(settings, "FAST_ANALYTICS_API_FIRST", True)
+                and await self._proxy_endpoint_reachable(proxy_url)
+            ):
+                api_result = await video_client.fetch_profile_via_api(
+                    username,
+                    stored_sec_uid,
+                    proxy_url=proxy_url,
+                    max_videos=max(1, settings.FAST_ANALYTICS_MAX_VIDEOS_PER_ACCOUNT),
+                )
+                if api_result is not None and (
+                    api_result.classification == "DIE"
+                    or (api_result.profile_metrics and api_result.profile_identity)
+                ):
+                    result = api_result
+                    http_routes = []
+            for candidate_index, candidate_proxy_url in enumerate(http_routes):
                 proxy_url = candidate_proxy_url
                 if not await self._proxy_endpoint_reachable(proxy_url):
                     result = QuickCheckResult(
@@ -518,12 +598,21 @@ class TikTokFastAnalyticsSyncService:
                 ) -> QuickCheckResult:
                     async with global_gate:
                         async with proxy_gate:
+                            if self._http_profile_paused():
+                                # Paused while this account waited its turn.
+                                return _SKIPPED_HTTP_PROFILE
                             await asyncio.sleep(random.uniform(0.10, 0.30))
                             return await factory()
 
-                route_result = await self._fetch_with_fallback(
-                    client, username, "", run_limited
-                )
+                if self._http_profile_paused():
+                    # Plain HTTP has kept getting TikTok's challenge page: go
+                    # straight to the browser instead of adding one more miss.
+                    route_result = _SKIPPED_HTTP_PROFILE
+                else:
+                    route_result = await self._fetch_with_fallback(
+                        client, username, "", run_limited
+                    )
+                    self._note_http_profile_result(route_result)
                 result = route_result
                 if route_result.classification == "DIE":
                     break

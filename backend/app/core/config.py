@@ -213,6 +213,20 @@ class Settings(BaseSettings):
     # Only region / shadow-ban live on the video's own page alone; re-read a
     # video's page when those are missing or older than this many hours.
     FAST_ANALYTICS_PAGE_DETAIL_TTL_HOURS: int = 24
+    # A video whose page was read once it was this many days old has settled:
+    # 30 of 30 such re-reads (2026-09-16) returned the same region, shadow-ban
+    # and takedown, so its page is re-read weekly instead of daily.
+    FAST_ANALYTICS_SETTLED_VIDEO_DAYS: int = 3
+    FAST_ANALYTICS_SETTLED_PAGE_DETAIL_TTL_HOURS: int = 168
+    # Video pages still needed are read in their own tab(s), apart from the
+    # profile tab. Measured 2026-09-17 on the same 30 accounts / ~350 pages:
+    # 1 tab 391s (1.7s a page, 0 not ready), 2 tabs 678s, 3 tabs 582s (8.1s a
+    # page, 23 not ready). TikTok slows every load when more run at once.
+    FAST_ANALYTICS_DETAIL_TABS_PER_BROWSER: int = 1
+    # Read an account's videos AND profile counts from TikTok's own item_list
+    # API, called inside the already-open page (it signs the request), instead
+    # of loading the profile page. Falls back to the page load on any doubt.
+    FAST_ANALYTICS_API_FIRST: bool = True
 
     # Never place service secrets in distributable source defaults. Rotate the
     # previous value because it remains in Git history, then inject it from an

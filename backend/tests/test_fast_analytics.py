@@ -703,3 +703,273 @@ def test_restricted_and_hidden_videos_are_both_reported():
     assert status == "PARTIAL"
     assert "1 video bị TikTok hạn chế" in error
     assert "thêm 2 video không hiện công khai" in error
+
+
+# ---------------------------------------------------------------------------
+# Fewer page reads, and accounts read from item_list instead of a page load.
+# ---------------------------------------------------------------------------
+
+from app.use_cases.analytics.tiktok_fast_analytics_sync import TikTokFastAnalyticsSyncService
+from app.use_cases.analytics.tiktok_public_video_client import api_profile_result_from_items
+
+
+def _read_row(video_id, *, read_hours_ago, age_when_read_days, region="ID"):
+    read_at = datetime.now() - timedelta(hours=read_hours_ago)
+    return _NS(
+        video_id=video_id,
+        region=region,
+        detail_synced_at=read_at.isoformat(timespec="seconds"),
+        synced_at=read_at.isoformat(timespec="seconds"),
+        create_time=int(read_at.timestamp() - age_when_read_days * 86400),
+    )
+
+
+def test_a_settled_video_keeps_its_page_fields_for_a_week_a_young_one_for_a_day():
+    rows = [
+        _read_row("young", read_hours_ago=30, age_when_read_days=1),
+        _read_row("settled", read_hours_ago=72, age_when_read_days=5),
+        _read_row("settled_long_ago", read_hours_ago=8 * 24, age_when_read_days=5),
+        _read_row("no_region", read_hours_ago=1, age_when_read_days=5, region=""),
+        _NS(video_id="no_create_time", region="ID", create_time=None,
+            detail_synced_at=(datetime.now() - timedelta(hours=30)).isoformat(timespec="seconds"),
+            synced_at=""),
+    ]
+
+    fresh = _page_fresh_video_ids(
+        rows, 24 * 3600, settled_ttl_seconds=168 * 3600, settled_age_seconds=3 * 86400)
+
+    assert fresh == {"settled"}
+
+
+def test_a_guest_read_keeps_the_session_tiktok_gave_after_its_challenge():
+    client = TikTokPublicVideoClient()
+    calls = []
+
+    class Context:
+        async def clear_cookies(self):
+            calls.append("clear")
+
+        async def add_cookies(self, cookies):
+            calls.append("add")
+
+    class Page:
+        context = Context()
+
+    asyncio.run(client._apply_cookie_header(Page(), ""))
+    assert calls == []                              # nothing seeded: nothing to clear
+
+    asyncio.run(client._apply_cookie_header(Page(), "sessionid=abc"))
+    asyncio.run(client._apply_cookie_header(Page(), ""))
+    assert calls == ["clear", "add", "clear"]       # an account's session is still removed
+
+
+def _api_item(video_id, username="owner"):
+    item = _item(video_id)
+    item["author"] = {"id": "42", "uniqueId": username, "secUid": "sec-owner",
+                      "nickname": "Owner", "avatarLarger": "https://x/a.jpg"}
+    item["authorStats"] = {"videoCount": 2, "followerCount": 5, "followingCount": 0,
+                           "heartCount": 29}
+    return item
+
+
+def test_item_list_is_a_profile_only_when_every_item_is_this_users():
+    result = api_profile_result_from_items(
+        [_api_item("7000000000000000001"), _api_item("7000000000000000002")], "@Owner")
+
+    assert result.profile_metrics == {"video_count": 2, "follower_count": 5,
+                                      "following_count": 0, "likes_count": 29}
+    assert result.profile_identity == {"user_id": "42", "sec_uid": "sec-owner",
+                                       "username": "owner"}
+    assert result.profile_data["display_name"] == "Owner"
+
+    renamed = [_api_item("7000000000000000001", username="someone_else")]
+    assert api_profile_result_from_items(renamed, "owner") is None
+    assert api_profile_result_from_items([], "owner") is None
+    missing_count = _api_item("7000000000000000001")
+    del missing_count["authorStats"]["followerCount"]
+    assert api_profile_result_from_items([missing_count], "owner") is None
+
+
+def _api_client(pages):
+    client = TikTokPublicVideoClient()
+    sent = []
+
+    async def api_tab(_username, _proxy):
+        return object(), None
+
+    async def api_get(_page, _path, params):
+        sent.append(dict(params))
+        return pages.pop(0)
+
+    client._ensure_api_page = api_tab
+    client._api_get = api_get
+    return client, sent
+
+
+def test_an_api_read_caches_every_page_of_videos_for_fetch_videos():
+    first = [_api_item(f"70000000000000000{n:02d}") for n in range(1, 36)]
+    second = [_api_item("7000000000000000099")]
+    client, sent = _api_client([
+        {"statusCode": 0, "itemList": first, "hasMore": True, "cursor": "1700"},
+        {"statusCode": 0, "itemList": second, "hasMore": False, "cursor": "-1"},
+    ])
+
+    result = asyncio.run(client.fetch_profile_via_api("owner", "sec-owner", max_videos=60))
+
+    assert result.profile_metrics["follower_count"] == 5
+    assert [call["cursor"] for call in sent] == ["0", "1700"]
+    assert all(call["secUid"] == "sec-owner" for call in sent)
+    _read_at, ids, items = client._grid_cache[client._grid_key("owner")]
+    assert len(ids) == 36 and ids[-1] == "7000000000000000099"
+    assert set(items) == set(ids)
+    assert client.get_stats()["api_account_reads"] == 1
+
+
+def test_an_api_read_that_breaks_midway_leaves_the_account_to_the_page_load():
+    first = [_api_item(f"70000000000000000{n:02d}") for n in range(1, 36)]
+    client, _sent = _api_client([
+        {"statusCode": 0, "itemList": first, "hasMore": True, "cursor": "1700"},
+        None,
+    ])
+
+    assert asyncio.run(client.fetch_profile_via_api("owner", "sec-owner")) is None
+    assert client._grid_key("owner") not in client._grid_cache
+
+
+def test_the_api_template_never_replays_the_tokens_tiktok_signs_each_call_with():
+    client = TikTokPublicVideoClient()
+    handlers = []
+
+    class Page:
+        def on(self, event, handler):
+            handlers.append((event, handler))
+
+    client._watch_for_api_template(Page())
+    event, capture = handlers[0]
+    capture(_NS(url="https://www.tiktok.com/api/user/playlist/?aid=1988"))
+    assert client._api_params is None
+    capture(_NS(url="https://www.tiktok.com/api/post/item_list/?aid=1988&device_id=77"
+                    "&secUid=abc&cursor=0&count=35&msToken=t&X-Bogus=b&X-Gnarly=g&X-Dynosaur=d"))
+
+    assert event == "request"
+    assert client._api_params == {"aid": "1988", "device_id": "77"}
+
+
+def test_video_pages_http_missed_are_read_side_by_side_in_a_bounded_set_of_tabs(monkeypatch):
+    client = TikTokPublicVideoClient()
+    client._detail_tab_gate = asyncio.Semaphore(3)
+    state = {"open": 0, "most": 0, "tabs": 0}
+
+    class Tab:
+        def is_closed(self):
+            return False
+
+    class Browser:
+        async def new_page(self):
+            state["tabs"] += 1
+            return Tab()
+
+    async def browser_ready(_proxy=None):
+        client._browser = Browser()
+
+    async def open_page(cls, _page, url, _ready_js, **_kw):
+        state["open"] += 1
+        state["most"] = max(state["most"], state["open"])
+        await asyncio.sleep(0.01)
+        state["open"] -= 1
+        return url, True
+
+    async def http_missed_all(links, **_kw):
+        return [None] * len(links)
+
+    monkeypatch.setattr(TikTokPublicVideoClient, "_open_until_ready", classmethod(open_page))
+    monkeypatch.setattr(video_client_module, "extract_public_video_detail_html",
+                        lambda html, video_id, share_url="": {
+                            "video_id": video_id, "region": "ID", "detail_available": True,
+                            "create_time": 1})
+    client._ensure_page = browser_ready
+    client._fetch_video_details_http = http_missed_all
+    ids = [f"70000000000000000{n:02d}" for n in range(8)]
+    client._grid_cache[client._grid_key("user")] = (float("inf"), ids, {vid: _item(vid) for vid in ids})
+
+    rows, complete = asyncio.run(client.fetch_videos(
+        "user", "", max_videos=60, expected_video_count=8,
+        known_video_urls=[], page_fresh_video_ids=set()))
+
+    assert complete is True
+    assert all(row["region"] == "ID" for row in rows)
+    assert state["most"] == 3          # side by side, never past the tab limit
+    assert state["tabs"] == 3          # tabs are reused, not opened per video
+
+
+def test_plain_http_profile_reads_pause_when_almost_none_of_the_last_ones_worked():
+    service = TikTokFastAnalyticsSyncService()
+    challenge = video_client_module.QuickCheckResult(None, "tiktok_challenge")
+    success = video_client_module.QuickCheckResult(
+        "SONG_TRANG", "tiktok_user_info", profile_metrics={"video_count": 0})
+
+    service._note_http_profile_result(success)          # one rare hit...
+    for _ in range(8):
+        service._note_http_profile_result(challenge)
+    assert not service._http_profile_paused()           # ...window not yet full
+
+    service._note_http_profile_result(challenge)
+    assert service._http_profile_paused()               # 1 hit in 10: paused anyway
+
+
+def test_plain_http_profile_reads_keep_going_while_they_work():
+    service = TikTokFastAnalyticsSyncService()
+    challenge = video_client_module.QuickCheckResult(None, "tiktok_challenge")
+    success = video_client_module.QuickCheckResult(
+        "SONG_TRANG", "tiktok_user_info", profile_metrics={"video_count": 0})
+
+    for _ in range(4):
+        service._note_http_profile_result(success)
+        service._note_http_profile_result(challenge)
+        service._note_http_profile_result(challenge)
+    assert not service._http_profile_paused()
+
+
+def test_plain_http_video_reads_pause_after_a_run_of_misses(monkeypatch):
+    requests = []
+
+    class Response:
+        text = "<html>Please wait...</html>"
+        status_code = 200
+        headers = {}
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, headers=None):
+            requests.append(url)
+            return Response()
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(video_client_module.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(video_client_module.asyncio, "sleep", no_sleep)
+    client = TikTokPublicVideoClient()
+    # One rare hit already in the window must not keep plain HTTP going.
+    client._http_detail_outcomes.append(True)
+    links = [f"https://www.tiktok.com/@u/video/70000000000000000{n:02d}" for n in range(30)]
+
+    async def run_twice():
+        first = await client._fetch_video_details_http(links, profile_url="p", proxy_url=None)
+        sent = len(requests)
+        second = await client._fetch_video_details_http(links[:5], profile_url="p", proxy_url=None)
+        return first, sent, second
+
+    first, sent_first, second = asyncio.run(run_twice())
+
+    assert first == [None] * 30
+    assert sent_first < 30 * 2          # reads still queued stopped once the pause began
+    assert second == [None] * 5 and len(requests) == sent_first   # later reads send nothing

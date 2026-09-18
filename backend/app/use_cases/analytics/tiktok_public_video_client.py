@@ -1,14 +1,18 @@
 """Collect public TikTok video metrics without logging into an account.
 
-One hidden browser page renders the profile; every video's counts come from
-the items that page's grid already holds. A video's own page is opened only for
-what the grid does not carry (region, shadow-ban) and only when that is missing
-or stale - over HTTP first, the browser for what HTTP misses.
+A second hidden tab stays on TikTok and calls its item_list API, which gives an
+account's counts and every video's item without loading the profile. When that
+is not possible, one tab renders the profile and the items come from its grid.
+A video's own page is opened only for what neither carries (region,
+shadow-ban) and only when that is missing or stale - over HTTP first, the
+browser for what HTTP misses.
 """
 
 from __future__ import annotations
 
 import asyncio
+import collections
+import json
 import logging
 import os
 import random
@@ -18,7 +22,7 @@ import tempfile
 import uuid
 import weakref
 from typing import Any, Dict, Iterable, Optional
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 import httpx
 from invisible_playwright.async_api import InvisiblePlaywright
@@ -37,6 +41,9 @@ from app.use_cases.health_check.quick_check_use_case import (
     _HTTP_HEADERS,
     _TikTokJsonScriptParser,
     _classify_profile_response,
+    _extract_profile_metrics,
+    _extract_public_profile_data,
+    _profile_classification,
 )
 
 
@@ -118,6 +125,48 @@ _READ_GRID_ITEMS_JS = r"""() => {
 #: A grid read by fetch_profile is reused by the fetch_videos call that follows
 #: for the same account, instead of loading the same profile a second time.
 _GRID_CACHE_SECONDS = 120.0
+
+#: TikTok's own item_list endpoint: the data behind the profile grid.
+_ITEM_LIST_PATH = "/api/post/item_list/"
+#: Tokens TikTok's script adds to each request itself. A captured copy made
+#: TikTok answer with an empty body (2026-09-16), so they are never replayed.
+_API_VOLATILE_PARAMS = frozenset({"X-Bogus", "X-Gnarly", "X-Dynosaur", "msToken"})
+#: Per-profile query fields, set on every call.
+_ITEM_LIST_OWN_PARAMS = frozenset({
+    "secUid", "cursor", "count", "coverFormat",
+    "post_item_list_request_type", "needPinnedItemIds",
+})
+_API_PAGE_SIZE = 35
+_API_TIMEOUT_SECONDS = 15.0
+#: Warm-ups (one profile load in the API tab) allowed per browser session.
+_API_MAX_WARMUPS = 5
+#: Transport failures in a row before the API tab is loaded again.
+_API_FAILURES_BEFORE_REWARM = 3
+#: ⛔ evaluate() has no timeout of its own: a fetch TikTok holds open hung a
+#: probe for 16 minutes. The page aborts it, and the caller bounds evaluate.
+_API_FETCH_JS = r"""async ({path, params, timeoutMs}) => {
+  const url = new URL(path, location.origin);
+  for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, value);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url.toString(), {credentials: 'include', signal: controller.signal});
+    return {status: response.status, text: await response.text()};
+  } catch (error) {
+    return {status: 0, text: '', error: String(error)};
+  } finally {
+    clearTimeout(timer);
+  }
+}"""
+
+#: Plain HTTP video reads are paused for a while when at most one of the last
+#: few got a page: in 2026-09-17 runs it read 21 of ~596, each a request and
+#: a retry that only delayed the browser read. A rare hit must not reset it.
+_HTTP_DETAIL_WINDOW = 12
+_HTTP_DETAIL_MAX_HITS_TO_PAUSE = 1
+_HTTP_DETAIL_SKIP_SECONDS = 600.0
+#: A read that did not happen because plain HTTP is paused.
+_HTTP_SKIPPED = object()
 
 #: How long to stay on a page while TikTok's challenge resolves itself.
 #: Measured 2026-09-16 over 16 loads: the slowest resolved in 3.6s.
@@ -384,6 +433,49 @@ def public_video_row_from_item(item: Dict[str, Any], share_url: str = "") -> Dic
     }
 
 
+_REQUIRED_API_METRICS = ("video_count", "follower_count", "following_count", "likes_count")
+
+
+def api_profile_result_from_items(
+    items: Iterable[Dict[str, Any]], username: str
+) -> Optional[QuickCheckResult]:
+    """The profile an item_list answer describes - only if it is clearly this user's.
+
+    Every item carries its author and the author's counts. None when the list
+    is empty, any item belongs to someone else (a renamed account keeps its
+    secUid), or a count is missing, so the caller loads the profile instead.
+    """
+    target = username.lstrip("@").casefold()
+    author: Optional[Dict[str, Any]] = None
+    stats: Optional[Dict[str, Any]] = None
+    for item in items:
+        item_author = item.get("author") if isinstance(item, dict) else None
+        if not isinstance(item_author, dict):
+            return None
+        if str(item_author.get("uniqueId") or "").lstrip("@").casefold() != target:
+            return None
+        if author is None:
+            author = item_author
+            stats = item.get("authorStats") if isinstance(item.get("authorStats"), dict) else None
+    if author is None or stats is None:
+        return None
+    metrics = _extract_profile_metrics(stats)
+    if any(name not in metrics for name in _REQUIRED_API_METRICS):
+        return None
+    return QuickCheckResult(
+        _profile_classification(author, stats),
+        "tiktok_item_list_api",
+        http_status=200,
+        profile_metrics=metrics,
+        profile_identity={
+            "user_id": str(author.get("id") or ""),
+            "sec_uid": str(author.get("secUid") or ""),
+            "username": str(author.get("uniqueId") or ""),
+        },
+        profile_data=_extract_public_profile_data(author, stats),
+    )
+
+
 def _playwright_proxy_options(proxy_url: Optional[str]) -> Optional[Dict[str, str]]:
     if not proxy_url:
         return None
@@ -523,20 +615,43 @@ class TikTokPublicVideoClient:
             detail_concurrency
         )
         self._detail_route_gates = detail_route_gates if detail_route_gates is not None else {}
+        self._account_cookies_seeded = False
+        # Tabs that read video pages side by side, separate from the profile tab.
+        self._idle_detail_tabs: list[Any] = []
+        self._detail_tab_gate = asyncio.Semaphore(max(1, min(
+            int(getattr(settings, "FAST_ANALYTICS_DETAIL_TABS_PER_BROWSER", 3)), 6
+        )))
+        # A second tab that stays on TikTok and calls its item_list API; the
+        # query template is copied from the page's own item_list request.
+        self._api_page = None
+        self._api_params: Optional[Dict[str, str]] = None
+        self._api_gate = asyncio.Semaphore(2)
+        self._api_warm_lock = asyncio.Lock()
+        self._api_warmups = 0
+        self._api_failures = 0
+        # Plain HTTP detail reads mostly get TikTok's challenge page; when
+        # almost none of the recent ones worked they pause (loop time, seconds).
+        self._http_detail_outcomes: "collections.deque[bool]" = collections.deque(
+            maxlen=_HTTP_DETAIL_WINDOW
+        )
+        self._http_detail_skip_until = 0.0
         self.http_detail_requests = 0
         self.http_detail_retries = 0
         self.browser_detail_fallbacks = 0
+        self.api_account_reads = 0
 
     def reset_stats(self) -> None:
         self.http_detail_requests = 0
         self.http_detail_retries = 0
         self.browser_detail_fallbacks = 0
+        self.api_account_reads = 0
 
     def get_stats(self) -> Dict[str, int]:
         return {
             "video_http_requests": self.http_detail_requests,
             "video_http_retries": self.http_detail_retries,
             "video_browser_fallbacks": self.browser_detail_fallbacks,
+            "api_account_reads": self.api_account_reads,
         }
 
     async def _fetch_video_details_http(
@@ -555,6 +670,11 @@ class TikTokPublicVideoClient:
         """
         if not links:
             return []
+        loop = asyncio.get_running_loop()
+        if loop.time() < self._http_detail_skip_until:
+            # TikTok has been answering plain HTTP with its challenge page;
+            # more tries only cost retries and raise this IP's risk score.
+            return [None] * len(links)
         route_key = proxy_url or "__DIRECT__"
         route_gate = self._detail_route_gates.setdefault(
             route_key, asyncio.Semaphore(2 if proxy_url else 3)
@@ -573,6 +693,13 @@ class TikTokPublicVideoClient:
                 trust_env=False,
             ) as client:
                 async def fetch_detail(url: str) -> Optional[Dict[str, Any]]:
+                    row = await read_detail(url)
+                    if row is _HTTP_SKIPPED:
+                        return None
+                    self._note_http_detail(row is not None)
+                    return row
+
+                async def read_detail(url: str) -> Any:
                     url = ensure_tiktok_english_url(url)
                     video_id = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
                     for attempt in range(2):
@@ -580,6 +707,9 @@ class TikTokPublicVideoClient:
                         try:
                             async with self._detail_global_gate:
                                 async with route_gate:
+                                    if loop.time() < self._http_detail_skip_until:
+                                        # Paused while this read waited its turn.
+                                        return _HTTP_SKIPPED
                                     self.http_detail_requests += 1
                                     response = await client.get(
                                         url,
@@ -636,6 +766,17 @@ class TikTokPublicVideoClient:
                     return None
 
                 return await asyncio.gather(*(fetch_detail(url) for url in links))
+
+    def _note_http_detail(self, got_page: bool) -> None:
+        self._http_detail_outcomes.append(got_page)
+        if (
+            len(self._http_detail_outcomes) == self._http_detail_outcomes.maxlen
+            and sum(self._http_detail_outcomes) <= _HTTP_DETAIL_MAX_HITS_TO_PAUSE
+        ):
+            self._http_detail_outcomes.clear()
+            self._http_detail_skip_until = (
+                asyncio.get_running_loop().time() + _HTTP_DETAIL_SKIP_SECONDS
+            )
 
     @staticmethod
     def _finish_video_results(
@@ -734,6 +875,58 @@ class TikTokPublicVideoClient:
                     type(exc).__name__,
                 )
 
+    async def _fill_missing_details_in_tabs(
+        self,
+        links: list[str],
+        results: list[Optional[Dict[str, Any]]],
+    ) -> None:
+        """Read the missing video pages in the browser's detail tab(s).
+
+        ⛔ WHY NOT THE PROFILE TAB. Video pages queued behind the profile tab's
+        lock: in the 132-account THAITEST run, 369 page reads at 4.95s each were
+        15 of its 17 minutes. In their own tab the same reads took 1.7s each.
+        ⛔ AND WHY ONE TAB. More tabs loading at once made TikTok slow every
+        load (3 tabs: 8.1s a page, 23 of 348 never ready) - see
+        FAST_ANALYTICS_DETAIL_TABS_PER_BROWSER.
+        """
+        missing = [index for index, row in enumerate(results) if row is None]
+        self.browser_detail_fallbacks += len(missing)
+
+        async def read(index: int) -> None:
+            url = links[index]
+            video_id = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
+            page = await self._borrow_detail_tab()
+            try:
+                html, _ready = await self._open_until_ready(page, url, _PAGE_DATA_READY_JS)
+                results[index] = extract_public_video_detail_html(html, video_id, share_url=url)
+            except Exception as exc:
+                logger.warning(
+                    "Browser video fallback failed for %s: %s", video_id, type(exc).__name__
+                )
+            finally:
+                self._return_detail_tab(page)
+
+        await asyncio.gather(*(read(index) for index in missing))
+
+    async def _borrow_detail_tab(self):
+        await self._detail_tab_gate.acquire()
+        try:
+            while self._idle_detail_tabs:
+                page = self._idle_detail_tabs.pop()
+                if not page.is_closed():
+                    return page
+            return await self._browser.new_page()
+        except BaseException:
+            self._detail_tab_gate.release()
+            raise
+
+    def _return_detail_tab(self, page) -> None:
+        try:
+            if page is not None and not page.is_closed():
+                self._idle_detail_tabs.append(page)
+        finally:
+            self._detail_tab_gate.release()
+
     async def _close_session_unlocked(self) -> None:
         try:
             if self._invisible_pw is not None:
@@ -745,6 +938,12 @@ class TikTokPublicVideoClient:
             self._browser = None
             self._invisible_pw = None
             self._route_key = None
+            self._idle_detail_tabs = []
+            self._api_page = None
+            self._api_params = None
+            self._api_warmups = 0
+            self._api_failures = 0
+            self._account_cookies_seeded = False
             profile_dir, self._profile_dir = self._profile_dir, None
             # Deliberately NOT persist_external_storage: this browser only reads
             # the shared extension state. Writing its guest session back would
@@ -807,21 +1006,32 @@ class TikTokPublicVideoClient:
                         timeout=max(15, int(getattr(settings, "BROWSER_LAUNCH_TIMEOUT", 45))),
                     )
                     self._page = await self._browser.new_page()
+                    self._watch_for_api_template(self._page)
                     self._route_key = route_key
                     return self._page
                 except BaseException:
                     await self._close_session_unlocked()
                     raise
 
-    @staticmethod
-    async def _apply_cookie_header(page, cookie_header: str) -> None:
-        """Isolate the shared fallback browser to one account's TikTok cookies."""
+    async def _apply_cookie_header(self, page, cookie_header: str) -> None:
+        """Isolate the shared fallback browser to one account's TikTok cookies.
+
+        ⛔ A GUEST READ CLEARS NOTHING. Clearing before every guest load threw
+        away the cookies TikTok sets once its "Please wait..." challenge is
+        passed, so the next load met the challenge again, and it wiped the
+        session the item_list tab signs its calls with. Cookies are cleared
+        only to remove an account's seeded session.
+        """
+        if not cookie_header and not self._account_cookies_seeded:
+            return
         try:
             await page.context.clear_cookies()
         except Exception:
             pass
+        self._account_cookies_seeded = False
         if not cookie_header:
             return
+        self._account_cookies_seeded = True
         cookies = []
         for raw_part in cookie_header.split(";"):
             name, separator, value = raw_part.strip().partition("=")
@@ -988,6 +1198,177 @@ class TikTokPublicVideoClient:
                     await asyncio.sleep(1.0)
             return last
 
+    def _watch_for_api_template(self, page) -> None:
+        """Copy the query of the first item_list request any of our tabs makes."""
+
+        def capture(request) -> None:
+            if self._api_params is not None:
+                return
+            url = str(getattr(request, "url", "") or "")
+            if _ITEM_LIST_PATH not in url:
+                return
+            params = {
+                key: value
+                for key, value in parse_qsl(urlparse(url).query, keep_blank_values=True)
+                if key not in _API_VOLATILE_PARAMS and key not in _ITEM_LIST_OWN_PARAMS
+            }
+            if params:
+                self._api_params = params
+
+        try:
+            page.on("request", capture)
+        except Exception as exc:
+            logger.debug("Cannot watch requests for the API template: %s", type(exc).__name__)
+
+    def _api_tab_ready(self) -> bool:
+        return (
+            self._api_params is not None
+            and self._api_page is not None
+            and not self._api_page.is_closed()
+        )
+
+    async def _ensure_api_page(
+        self, username: str, proxy_url: Optional[str]
+    ) -> tuple[Any, Optional[QuickCheckResult]]:
+        """The API tab, warmed by loading this account's own profile in it.
+
+        The warm-up load is never wasted: it is this account's profile read,
+        returned as the second value, and its grid is cached like fetch_profile
+        does. Accounts arriving meanwhile wait here, then use the API.
+        """
+        await self._ensure_page(proxy_url)
+        if self._api_tab_ready():
+            return self._api_page, None
+        async with self._api_warm_lock:
+            if self._api_tab_ready():
+                return self._api_page, None
+            if self._api_warmups >= _API_MAX_WARMUPS:
+                return None, None
+            self._api_warmups += 1
+            page = self._api_page
+            if page is None or page.is_closed():
+                page = await self._browser.new_page()
+                self._watch_for_api_template(page)
+                self._api_page = page
+            profile_url = ensure_tiktok_english_url(
+                f"https://www.tiktok.com/@{username.lstrip('@')}"
+            )
+            try:
+                html, _ready = await self._open_until_ready(
+                    page, profile_url, _PAGE_DATA_READY_JS
+                )
+            except Exception:
+                return None, None
+            result = _classify_profile_response(html, username, 200)
+            if result.profile_metrics:
+                # Rendering the grid is also what sends item_list, i.e. the template.
+                await self._cache_grid_from_open_page(page, username, result.profile_metrics)
+            self._api_failures = 0
+            usable_page = page if self._api_tab_ready() else None
+            if result.classification is not None or result.profile_metrics:
+                return usable_page, result
+            return usable_page, None
+
+    async def _api_get(self, page, path: str, params: Dict[str, str]) -> Optional[Dict[str, Any]]:
+        """One signed call from inside the API tab; None on a transport failure."""
+        async with self._api_gate:
+            await asyncio.sleep(random.uniform(0.15, 0.4))
+            try:
+                response = await asyncio.wait_for(
+                    page.evaluate(
+                        _API_FETCH_JS,
+                        {
+                            "path": path,
+                            "params": {**(self._api_params or {}), **params},
+                            "timeoutMs": int(_API_TIMEOUT_SECONDS * 1000),
+                        },
+                    ),
+                    timeout=_API_TIMEOUT_SECONDS + 10,
+                )
+            except Exception:
+                response = None
+        body: Any = None
+        if isinstance(response, dict) and response.get("status") == 200 and response.get("text"):
+            try:
+                body = json.loads(response["text"])
+            except ValueError:
+                body = None
+        if not isinstance(body, dict):
+            self._api_failures += 1
+            if self._api_failures >= _API_FAILURES_BEFORE_REWARM and self._api_page is page:
+                # The tab's session went bad (challenge, expired token): load it again.
+                self._api_page = None
+                self._api_failures = 0
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+            return None
+        self._api_failures = 0
+        return body
+
+    async def fetch_profile_via_api(
+        self,
+        username: str,
+        sec_uid: str,
+        proxy_url: Optional[str] = None,
+        max_videos: int = 60,
+    ) -> Optional[QuickCheckResult]:
+        """Profile counts and every video item from item_list - no page load.
+
+        ⛔ WHY. Loading the profile page was ~6s of every account even when
+        nothing else was needed; the same data from TikTok's item_list API,
+        called inside a tab that stays on TikTok, took 0.6s (20 of 20 read,
+        counts equal to the profile's). Returns None whenever the answer is
+        not clearly this user's complete list, and the caller loads the
+        profile exactly as before. The videos go to the grid cache, so
+        fetch_videos reads them from there.
+        """
+        username = username.lstrip("@")
+        if not username or not sec_uid:
+            return None
+        try:
+            page, warm_result = await self._ensure_api_page(username, proxy_url)
+        except Exception as exc:
+            logger.debug("API tab unavailable for @%s: %s", username, type(exc).__name__)
+            return None
+        if warm_result is not None:
+            return warm_result
+        if page is None:
+            return None
+        ids: list[str] = []
+        items: Dict[str, Any] = {}
+        cursor = "0"
+        while len(ids) < max_videos:
+            body = await self._api_get(page, _ITEM_LIST_PATH, {
+                "secUid": sec_uid,
+                "cursor": cursor,
+                "count": str(_API_PAGE_SIZE),
+                "coverFormat": "2",
+            })
+            if body is None or body.get("statusCode") not in (0, None):
+                return None
+            batch = body.get("itemList") or []
+            if not isinstance(batch, list):
+                return None
+            for item in batch:
+                video_id = str((item or {}).get("id") or "") if isinstance(item, dict) else ""
+                if video_id.isdigit() and video_id not in items:
+                    ids.append(video_id)
+                    items[video_id] = item
+            next_cursor = str(body.get("cursor") or "")
+            if not body.get("hasMore") or not batch or not next_cursor or next_cursor == cursor:
+                break
+            cursor = next_cursor
+        result = api_profile_result_from_items((items[vid] for vid in ids), username)
+        if result is None:
+            return None
+        self._grid_cache[self._grid_key(username)] = (
+            asyncio.get_running_loop().time(), ids[:max_videos], items
+        )
+        self.api_account_reads += 1
+        return result
+
     async def _fetch_videos_via_grid(
         self,
         username: str,
@@ -1058,10 +1439,8 @@ class TikTokPublicVideoClient:
                 links, profile_url=profile_url, proxy_url=proxy_url, cookie_header=""
             )
             if any(row is None for row in results):
-                async with self._lock:
-                    page = await self._ensure_page(proxy_url)
-                    await self._apply_cookie_header(page, "")
-                    await self._fill_missing_details_with_browser(page, links, results)
+                await self._ensure_page(proxy_url)
+                await self._fill_missing_details_in_tabs(links, results)
             for vid, page_row in zip(need, results):
                 if page_row is not None:
                     rows[vid] = page_row   # the full page row supersedes the grid row
