@@ -2095,27 +2095,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         'div[role="dialog"] input[type="file"][accept*="image"]'
                     ).first
                     await avatar_input.wait_for(state="attached", timeout=15000)
-                    trigger = await self._resolve_native_upload_trigger(
-                        avatar_input, "photo"
-                    )
-                    owner_process_ids = await asyncio.to_thread(
-                        self._native_upload_process_ids
-                    )
-                    owner_session_token = getattr(
-                        self._invisible_pw, "_session_token", None
-                    )
-                    await set_input_files_native(
-                        avatar_input,
-                        [abs_origin_path],
-                        trigger=trigger,
-                        owner_process_ids=owner_process_ids or None,
-                        owner_session_token=owner_session_token,
-                        on_dialog_active=self._set_native_dialog_active,
-                        trigger_dwell_ms=random.randint(160, 420),
-                        trigger_click_delay_ms=random.randint(70, 160),
-                        timeout_ms=15000,
-                    )
-                    logger.info("[+] Da gan file avatar bang native chooser an.")
+                    await self._attach_avatar_file(avatar_input, abs_origin_path)
 
                     if step_logger:
                         await step_logger("Doi khung cat anh (Crop Modal) on dinh...")
@@ -2362,6 +2342,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 except Exception as e_cf:
                     logger.warning(f"[Username] Khong thay/khong bam duoc dialog Confirm: {str(e_cf)}")
 
+            await self._confirm_profile_saved(
+                save_btn, retry_save=not username_needs_confirm, step_logger=step_logger
+            )
             if step_logger:
                 await step_logger("Da luu thay doi ho so thanh cong!")
             await asyncio.sleep(5)
@@ -2394,6 +2377,145 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 continue
         return False
 
+    _EDIT_PROFILE_DIALOG_PARTS = (
+        '[data-e2e="edit-profile-save"], [data-e2e="edit-profile-avatar"]'
+    )
+
+    async def _edit_profile_dialog_closed(self, timeout_seconds: float) -> bool:
+        parts = self._page.locator(self._EDIT_PROFILE_DIALOG_PARTS)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        while True:
+            try:
+                count = await asyncio.wait_for(parts.count(), timeout=2.0)
+                if not count or not await asyncio.wait_for(parts.first.is_visible(), timeout=2.0):
+                    return True
+            except Exception:
+                pass
+            if loop.time() >= deadline:
+                return False
+            await asyncio.sleep(0.5)
+
+    async def _confirm_profile_saved(self, save_btn, *, retry_save: bool, step_logger=None) -> None:
+        """Raise unless TikTok closed the edit dialog, i.e. accepted the save.
+
+        ⛔ A CLICK ON SAVE IS NOT A SAVE. TikTok answers every Save with HTTP
+        200 on /api/update/profile/ and only closes the dialog when it kept
+        the change. On lexie_39_lipton (2026-09-17) one run left the dialog
+        open - new photo and bio still in it, "No bio yet." on the profile -
+        and the task was recorded SUCCESS/COMPLETED; the next run closed it
+        and the bio appeared publicly.
+        """
+        if await self._edit_profile_dialog_closed(timeout_seconds=12.0):
+            return
+        if retry_save:
+            for attempt in range(1, 3):
+                logger.warning("[-] Hop thoai Edit profile van mo sau Save; bam lai Save (lan %d).", attempt)
+                if step_logger:
+                    await step_logger(f"[!] TikTok chua dong hop thoai sau Save, bam lai Save (lan {attempt})...")
+                try:
+                    await save_btn.first.click(timeout=4000)
+                except Exception:
+                    try:
+                        await save_btn.first.dispatch_event("click")
+                    except Exception:
+                        pass
+                if await self._edit_profile_dialog_closed(timeout_seconds=12.0):
+                    return
+        raise RuntimeError(
+            "TikTok chua luu ho so: hop thoai Edit profile van mo sau khi bam Save "
+            "(TikTok tu choi thay doi - thu lai sau hoac doi proxy)."
+        )
+
+    _AVATAR_EDIT_ICON = (
+        'div[role="dialog"] [data-e2e="edit-profile-avatar-edit-icon"], '
+        '[data-e2e="edit-profile-avatar-edit-icon"]'
+    )
+
+    async def _avatar_crop_dialog_visible(self, timeout_seconds: float) -> bool:
+        """TikTok answers an accepted photo with its "Edit photo" crop dialog."""
+        apply = self._page.get_by_role("button", name=re.compile(r"^\s*(Apply|Áp dụng)\s*$", re.I))
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        while True:
+            try:
+                if (
+                    await asyncio.wait_for(apply.count(), timeout=2.0)
+                    and await asyncio.wait_for(apply.first.is_visible(), timeout=2.0)
+                ):
+                    return True
+            except Exception:
+                pass
+            if loop.time() >= deadline:
+                return False
+            await asyncio.sleep(0.5)
+
+    async def _attach_avatar_file(self, avatar_input, path: str) -> None:
+        """Give the edit-profile dialog its new photo.
+
+        ⛔ DIRECT INPUT FIRST, AND NEVER A GUESSED TRIGGER. The native chooser
+        used to be opened by whatever `_resolve_native_upload_trigger` found,
+        and on the profile page that was the sidebar's "Upload" nav button -
+        a VIDEO upload link lying under the edit dialog. The click waited on
+        an element the dialog covers ("Windows file chooser did not appear
+        (click command remained pending)", lexie_39_lipton 2026-09-17); had
+        it landed it would have left the page. `set_input_files` on the hidden
+        input attached the photo in 0.0s and TikTok opened its crop dialog.
+        The native chooser stays as a fallback, opened only by the avatar's own
+        edit icon inside the dialog.
+        """
+        try:
+            handle = await asyncio.wait_for(
+                avatar_input.element_handle(timeout=5000), timeout=5.5
+            )
+            if handle is None:
+                raise RuntimeError("Input anh dai dien da bien mat.")
+            await handle.set_input_files([path], timeout=15000)
+            if await self._avatar_crop_dialog_visible(timeout_seconds=10.0):
+                logger.info("[+] Da gan file avatar qua input truc tiep.")
+                return
+            logger.warning("[-] Da gan avatar truc tiep nhung khung cat anh chua hien; thu hop thoai native.")
+        except Exception as exc:
+            logger.warning("[-] Gan avatar qua input truc tiep that bai (%s); thu hop thoai native.", exc)
+
+        trigger = self._page.locator(self._AVATAR_EDIT_ICON).first
+        await trigger.wait_for(state="visible", timeout=5000)
+        owner_process_ids = await asyncio.to_thread(self._native_upload_process_ids)
+        await set_input_files_native(
+            avatar_input,
+            [path],
+            trigger=trigger,
+            owner_process_ids=owner_process_ids or None,
+            owner_session_token=getattr(self._invisible_pw, "_session_token", None),
+            on_dialog_active=self._set_native_dialog_active,
+            trigger_dwell_ms=random.randint(160, 420),
+            trigger_click_delay_ms=random.randint(70, 160),
+            timeout_ms=15000,
+        )
+        logger.info("[+] Da gan file avatar bang native chooser an.")
+
+    @staticmethod
+    async def _is_unobstructed(candidate) -> bool:
+        """False when something else (a dialog, an overlay) covers its centre.
+
+        A click on a covered element never completes - it waits for the
+        element to receive pointer events. Unknown stays True, as before.
+        """
+        try:
+            return bool(await asyncio.wait_for(
+                candidate.evaluate(
+                    """el => {
+                        const r = el.getBoundingClientRect();
+                        if (!r.width || !r.height) return false;
+                        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                        return !!top && (top === el || el.contains(top));
+                    }"""
+                ),
+                timeout=2.0,
+            ))
+        except Exception:
+            return True
+
     async def _resolve_native_upload_trigger(self, target, media_kind: str):
         """Find the visible control a person clicks to open ``target``."""
         semantic_pattern = re.compile(
@@ -2421,6 +2543,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     await asyncio.wait_for(candidate.count(), timeout=2.0)
                     and await asyncio.wait_for(candidate.is_visible(), timeout=2.0)
                     and await asyncio.wait_for(candidate.is_enabled(), timeout=2.0)
+                    and await self._is_unobstructed(candidate)
                 ):
                     return candidate
             except Exception:
@@ -2486,6 +2609,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     if (
                         await asyncio.wait_for(candidate.is_visible(), timeout=2.0)
                         and await asyncio.wait_for(candidate.is_enabled(), timeout=2.0)
+                        # "upload" also matches the sidebar nav link; under a
+                        # dialog it is covered and a click on it never returns.
+                        and await self._is_unobstructed(candidate)
                     ):
                         return candidate
             except Exception:

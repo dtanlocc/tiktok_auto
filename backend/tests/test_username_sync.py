@@ -37,6 +37,11 @@ class _FakeLocator:
         return self._input_value
 
 
+class _ClosedDialog(_FakeLocator):
+    async def count(self):
+        return 0
+
+
 class _FakePage:
     def __init__(self, web_username):
         self._generic = _FakeLocator()
@@ -45,6 +50,9 @@ class _FakePage:
     def locator(self, selector):
         if 'input[placeholder="Username"' in selector:
             return self._username
+        if selector == InvisiblePlaywrightAdapter._EDIT_PROFILE_DIALOG_PARTS:
+            # TikTok closes the edit dialog once it accepted the save.
+            return _ClosedDialog()
         return self._generic
 
 
