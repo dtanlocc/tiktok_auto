@@ -71,12 +71,39 @@ export interface TikTokVideoMetric {
   synced_at: string;
 }
 
+export type ProxyCheckStatus = 'OK' | 'WARN' | 'FAIL' | 'UNCHECKED';
+
 export interface Proxy {
   id: string;
   host: string;
   port: number;
   username: string | null;
   protocol: string;
+  has_password?: boolean;
+  label?: string;
+  note?: string;
+  enabled?: boolean;
+  created_at?: string;
+  check_status?: ProxyCheckStatus | string;
+  check_error?: string;
+  checked_at?: string;
+  exit_ip?: string;
+  country?: string;
+  latency_ms?: number | null;
+  tiktok_ok?: boolean | null;
+  cdn_ok?: boolean | null;
+  account_count?: number;
+}
+
+export interface ProxyInput {
+  protocol: string;
+  host: string;
+  port: number;
+  username?: string | null;
+  password?: string | null;
+  label?: string;
+  note?: string;
+  enabled?: boolean;
 }
 
 export interface LogMessage {

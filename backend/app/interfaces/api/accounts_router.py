@@ -72,7 +72,8 @@ def _get_least_used_proxy_id(
     Thuật toán Least Connections:
     Tìm kiếm và trả về ID của Proxy hiện đang liên kết với ít tài khoản nhất trong hệ thống.
     """
-    proxies = proxy_repo.get_all()
+    # A disabled proxy is never handed to a new account.
+    proxies = [proxy for proxy in proxy_repo.get_all() if proxy.enabled]
     if not proxies:
         return None
 
@@ -547,6 +548,7 @@ async def bind_proxy_to_account(
     account_id: str,
     proxy_id: Optional[str] = Body(default=None, embed=True),
     account_repo: IAccountRepository = Depends(get_account_repository),
+    proxy_repo: IProxyRepository = Depends(get_proxy_repository),
 ):
     """API gán hoặc gỡ Proxy cho một tài khoản cụ thể"""
     account = account_repo.get_by_id(account_id)
@@ -557,6 +559,16 @@ async def bind_proxy_to_account(
             status_code=403,
             detail="Account ĐÃ BÁN chỉ được lưu trữ; không thay đổi proxy.",
         )
+    proxy_id = proxy_id or None
+    if proxy_id and str(proxy_id) != str(account.proxy_id or ""):
+        proxy = proxy_repo.get_by_id(proxy_id)
+        if proxy is None:
+            raise HTTPException(status_code=404, detail="Proxy không còn trong kho.")
+        if not proxy.enabled:
+            raise HTTPException(
+                status_code=400,
+                detail="Proxy đang tắt; hãy bật lại trong Kho Proxy trước khi gán.",
+            )
 
     account.proxy_id = proxy_id
     saved = account_repo.save(account)
@@ -589,15 +601,44 @@ async def bind_proxy_to_account(
 @router.post("/auto-allocate-proxies")
 async def auto_allocate_proxies_endpoint(
     account_ids: List[str] = Body(..., embed=True),
+    proxy_ids: Optional[List[str]] = Body(default=None, embed=True),
     account_repo: IAccountRepository = Depends(get_account_repository),
     proxy_repo: IProxyRepository = Depends(get_proxy_repository),
 ):
-    """API chuột phải: Tự động phân bổ đều danh sách Proxy cho các tài khoản đã chọn"""
-    proxies = proxy_repo.get_all()
-    if not proxies:
+    """API chuột phải: chia đều các tài khoản đã chọn cho các proxy được chọn.
+
+    proxy_ids = những proxy người dùng tích trong hộp thoại; không gửi = mọi
+    proxy đang bật. Proxy đang tắt không bao giờ được phân bổ.
+    """
+    all_proxies = proxy_repo.get_all()
+    if not all_proxies:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Kho lưu trữ chưa có Proxy nào. Vui lòng nạp Proxy trước.",
+        )
+    if proxy_ids is None:
+        proxies = [proxy for proxy in all_proxies if proxy.enabled]
+    else:
+        by_id = {str(proxy.id): proxy for proxy in all_proxies}
+        wanted = list(dict.fromkeys(str(proxy_id) for proxy_id in proxy_ids))
+        missing = [proxy_id for proxy_id in wanted if proxy_id not in by_id]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Có proxy được chọn không còn trong kho. Hãy tải lại danh sách proxy.",
+            )
+        disabled = [by_id[proxy_id] for proxy_id in wanted if not by_id[proxy_id].enabled]
+        if disabled:
+            names = ", ".join(p.label or f"{p.host}:{p.port}" for p in disabled)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Proxy đang tắt không được phân bổ: {names}.",
+            )
+        proxies = [by_id[proxy_id] for proxy_id in wanted]
+    if not proxies:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chưa chọn proxy nào (hoặc mọi proxy đang tắt).",
         )
 
     selected_accounts: list[TikTokAccount] = []

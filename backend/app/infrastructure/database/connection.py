@@ -199,6 +199,35 @@ def init_db() -> None:
                 session.commit()
                 print(f"[+] Added account performance columns: {', '.join(added_performance)}")
 
+            # Proxy management: label/note, on-off switch and last health check.
+            proxy_result = session.execute(text("PRAGMA table_info(proxies)")).fetchall()
+            proxy_existing = [row[1] for row in proxy_result]
+            proxy_columns = {
+                "label": "VARCHAR NOT NULL DEFAULT ''",
+                "note": "VARCHAR NOT NULL DEFAULT ''",
+                "enabled": "BOOLEAN NOT NULL DEFAULT 1",
+                "created_at": "VARCHAR NOT NULL DEFAULT ''",
+                "check_status": "VARCHAR NOT NULL DEFAULT 'UNCHECKED'",
+                "check_error": "VARCHAR NOT NULL DEFAULT ''",
+                "checked_at": "VARCHAR NOT NULL DEFAULT ''",
+                "exit_ip": "VARCHAR NOT NULL DEFAULT ''",
+                "country": "VARCHAR NOT NULL DEFAULT ''",
+                "latency_ms": "INTEGER",
+                "tiktok_ok": "BOOLEAN",
+                "cdn_ok": "BOOLEAN",
+            }
+            added_proxy_columns = []
+            for column_name, column_sql in proxy_columns.items():
+                if column_name in proxy_existing:
+                    continue
+                session.execute(text(
+                    f"ALTER TABLE proxies ADD COLUMN {column_name} {column_sql}"
+                ))
+                added_proxy_columns.append(column_name)
+            if added_proxy_columns:
+                session.commit()
+                print(f"[+] Added proxy management columns: {', '.join(added_proxy_columns)}")
+
             # Rich public-video diagnostics collected from each exact
             # tiktok.com/@username/video/{id} page. Nullable counters keep
             # "TikTok did not expose this" distinct from a genuine zero.

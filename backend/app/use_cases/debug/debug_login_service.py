@@ -113,9 +113,16 @@ class DebugLoginService:
             # Proxy cach ly giong dispatcher (chi khi USE_PROXY=True; False -> truc tiep).
             from app.core.config import settings as _settings
             proxy_config = None
-            if getattr(_settings, "USE_PROXY", True) and account.proxy_id:
-                proxy = proxy_repo.get_by_id(account.proxy_id)
-                if proxy:
+            proxy_problem = ""
+            if getattr(_settings, "USE_PROXY", True):
+                proxy = proxy_repo.get_by_id(account.proxy_id) if account.proxy_id else None
+                if proxy is None:
+                    # This used to open the browser with NO proxy - logging the
+                    # account in from the machine's own IP while in proxy mode.
+                    proxy_problem = "account chưa được gán proxy (hoặc proxy đã bị xóa)"
+                elif not proxy.enabled:
+                    proxy_problem = f"proxy đang tắt ({proxy.label or f'{proxy.host}:{proxy.port}'})"
+                else:
                     proxy_config = {
                         "server": proxy.connection_string,
                         "username": proxy.username,
@@ -136,6 +143,11 @@ class DebugLoginService:
                 await self._broadcast_status(account_id, "RUNNING", "🐛 Debug: đang mở trình duyệt HIỆN...")
                 await slog("🐛 DEBUG: Đang mở trình duyệt HIỆN (không ẩn) để bạn thao tác tay...")
 
+                if proxy_problem:
+                    raise RuntimeError(
+                        f"Chế độ Proxy: {proxy_problem}. Không mở trình duyệt bằng IP thật "
+                        "của máy - hãy phân bổ proxy hoặc chuyển sang Mạng thật."
+                    )
                 seed_val = _uuid_to_seed(account_id)
                 # force_visible=True: cua so ra HIEN + foreground, KHONG day off-screen.
                 await browser.initialize(proxy_config=proxy_config, seed=seed_val, force_visible=True)

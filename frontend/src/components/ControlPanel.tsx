@@ -52,7 +52,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const blankUrl = 'https://www.tiktok.com/tiktokstudio/upload?lang=en';
   // Mang cho trinh duyet trang: '' = truc tiep (khong proxy); hoac id cua 1 proxy.
   const [blankProxyId, setBlankProxyId] = useState<string>('');
-  const [proxyList, setProxyList] = useState<{ id: string; host: string; port: number; protocol: string }[]>([]);
+  const [proxyList, setProxyList] = useState<{ id: string; host: string; port: number; protocol: string; label?: string }[]>([]);
   useEffect(() => {
     fetch('http://127.0.0.1:9000/api/v1/proxies/')
       .then((r) => r.json()).then((d) => Array.isArray(d) && setProxyList(d)).catch(() => {});
@@ -239,7 +239,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             title="Mạng dùng cho trình duyệt trắng: trực tiếp (mạng thật/VPN) hoặc qua 1 proxy cụ thể">
             <option value="">Mạng thật (không proxy)</option>
             {proxyList.map((p) => (
-              <option key={p.id} value={p.id}>{p.protocol}://{p.host}:{p.port}</option>
+              <option key={p.id} value={p.id}>{p.label ? `${p.label} · ` : `${p.protocol}://`}{p.host}:{p.port}</option>
             ))}
           </select>
         )}

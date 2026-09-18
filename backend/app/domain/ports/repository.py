@@ -1,4 +1,4 @@
-from typing import Protocol, List, Optional, Tuple
+from typing import Dict, Protocol, List, Optional, Tuple
 from app.domain.entities.account import TikTokAccount
 from app.domain.entities.proxy import Proxy
 
@@ -9,6 +9,12 @@ class IProxyRepository(Protocol):
     def save(self, proxy: Proxy) -> Proxy:
         ...
     def get_all(self) -> List[Proxy]:
+        ...
+    def delete(self, proxy_id: str) -> bool:
+        ...
+    def account_counts(self) -> Dict[str, int]:
+        ...
+    def detach_accounts(self, proxy_id: str) -> List[str]:
         ...
 
 

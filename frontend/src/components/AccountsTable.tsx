@@ -483,11 +483,16 @@ export const AccountsTable: React.FC<AccountsTableProps> = ({
                         }`}
                       >
                         <option value="none">Mạng LAN (Không Proxy)</option>
-                        {proxies.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            [{p.protocol.toUpperCase()}] {p.host}:{p.port}
-                          </option>
-                        ))}
+                        {proxies.map((p) => {
+                          const off = p.enabled === false;
+                          return (
+                            // A disabled proxy stays visible on the account already using it.
+                            <option key={p.id} value={p.id} disabled={off && p.id !== acc.proxy_id}>
+                              {p.label ? `${p.label} · ` : `[${p.protocol.toUpperCase()}] `}{p.host}:{p.port}
+                              {off ? ' (đang tắt)' : p.check_status === 'FAIL' ? ' (lỗi)' : ''}
+                            </option>
+                          );
+                        })}
                       </select>
                     </td>
 

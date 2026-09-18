@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogIn, KeyRound, Image, Globe, ScanSearch, Trash2, Wifi, ChevronRight, Check } from 'lucide-react';
+import { LogIn, KeyRound, Image, Globe, ScanSearch, Trash2, Wifi, ChevronRight, Check, Shuffle } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -60,16 +60,24 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         {showProxySub && (
           <div className="absolute left-full top-0 -ml-1 pl-1.5 z-50">
             <div className="min-w-[238px] rounded-xl p-1.5 bg-elevated/95 border border-line shadow-2xl shadow-black/60 backdrop-blur-md">
-              {/* 1) Tự động map proxy như cũ */}
+              {/* 1) Chạy qua proxy đã gán cho từng account */}
               <button
                 className={rowCls}
-                onClick={() => { onSetProxyMode(true); onAutoAllocateProxies(); }}
+                onClick={() => onSetProxyMode(true)}
               >
                 <Globe className="w-4 h-4 shrink-0 text-fg-subtle" />
-                <span className="truncate flex-1">Tự động map proxy</span>
+                <span className="truncate flex-1">Dùng proxy đã gán</span>
                 {proxyMode && <Check className="w-4 h-4 shrink-0 text-brand" />}
               </button>
-              {/* 2) Dùng mạng thật (không proxy) - cho VPN toàn máy */}
+              {/* 2) Chọn proxy nào được chia cho các account đã chọn */}
+              <button
+                className={rowCls}
+                onClick={onAutoAllocateProxies}
+              >
+                <Shuffle className="w-4 h-4 shrink-0 text-fg-subtle" />
+                <span className="truncate flex-1">Phân bổ proxy…</span>
+              </button>
+              {/* 3) Dùng mạng thật (không proxy) - cho VPN toàn máy */}
               <button
                 className={rowCls}
                 onClick={() => onSetProxyMode(false)}

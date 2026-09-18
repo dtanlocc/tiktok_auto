@@ -294,6 +294,13 @@ class ConcurrentTaskDispatcher:
             raise RuntimeError(
                 "Proxy da gan cho tai khoan khong con ton tai trong kho Proxy."
             )
+        if not getattr(assigned_proxy, "enabled", True):
+            # Never re-route silently: the operator switched this proxy off.
+            name = getattr(assigned_proxy, "label", "") or f"{assigned_proxy.host}:{assigned_proxy.port}"
+            raise RuntimeError(
+                f"Proxy đang tắt ({name}). Bật lại proxy trong Kho Proxy hoặc phân bổ "
+                "account sang proxy khác rồi chạy lại."
+            )
 
         proxy_key = f"{assigned_proxy.host}:{assigned_proxy.port}"
         waited_logged = False

@@ -19,6 +19,9 @@ class FakeProxyRepository:
         self.saved.append(proxy)
         return proxy
 
+    def get_all(self):
+        return list(self.saved)
+
 
 def test_import_accepts_host_port_username_password_format():
     proxy_repo = FakeProxyRepository()

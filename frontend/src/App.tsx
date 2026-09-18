@@ -6,11 +6,11 @@ import { isTauriRuntime, listenBackendMessages } from './services/secureTranspor
 // Nhập khẩu các thành phần đã mô-đun hóa
 import { NavSidebar } from './components/NavSidebar';
 import { ControlPanel } from './components/ControlPanel';
-import { Sidebar } from './components/Sidebar';
 import { StatsCards } from './components/StatsCards';
 import { AccountPerformanceSummary } from './components/AccountPerformanceSummary';
 import { AccountsTable } from './components/AccountsTable';
-import { ProxiesTable } from './components/ProxiesTable';
+import { ProxyManager } from './components/proxy/ProxyManager';
+import { ProxyAllocateModal } from './components/proxy/ProxyAllocateModal';
 import { InteractionPanel } from './components/InteractionPanel';
 import { TerminalConsole } from './components/TerminalConsole';
 import { ContextMenu } from './components/ContextMenu';
@@ -58,6 +58,7 @@ export default function App() {
   const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
   const [expandedCountries, setExpandedCountries] = useState<string[]>([]);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false); // <-- TRẠNG THÁI POPUP IMPORT
+  const [isAllocateModalOpen, setIsAllocateModalOpen] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false); // <-- POPUP XUẤT ACC
   const [proxyMode, setProxyMode] = useState<boolean>(true); // true = dùng proxy (auto-map); false = mạng thật
 
@@ -78,6 +79,13 @@ export default function App() {
     setTaskCompletionNotices((current) => current.filter((notice) => notice.id !== id));
   }, []);
 
+  const refreshProxies = useCallback(() => {
+    fetch('http://127.0.0.1:9000/api/v1/proxies/')
+      .then((res) => res.json())
+      .then((data) => { if (Array.isArray(data)) setProxies(data); })
+      .catch((err) => console.error('Lỗi tải danh sách proxy:', err));
+  }, [setProxies]);
+
   const loadData = useCallback(() => {
     fetch('http://127.0.0.1:9000/api/v1/accounts/')
       .then((res) => res.json())
@@ -94,10 +102,7 @@ export default function App() {
       })
       .catch((err) => console.error('Lỗi tải danh sách tài khoản:', err));
 
-    fetch('http://127.0.0.1:9000/api/v1/proxies/')
-      .then((res) => res.json())
-      .then((data) => setProxies(data))
-      .catch((err) => console.error('Lỗi tải danh sách proxy:', err));
+    refreshProxies();
 
     fetch('http://127.0.0.1:9000/api/v1/tasks/status')
       .then((res) => res.json())
@@ -114,7 +119,7 @@ export default function App() {
       .then((res) => res.json())
       .then((data) => { if (typeof data?.use_proxy === 'boolean') setProxyMode(data.use_proxy); })
       .catch(() => {});
-  }, [setAccounts, setProxies]);
+  }, [setAccounts, refreshProxies]);
 
   // 1. Khởi động WebSockets, tải dữ liệu ban đầu và lắng nghe sự kiện đóng menu chuột phải
   useEffect(() => {
@@ -158,6 +163,9 @@ export default function App() {
           useAppStore.getState().deleteAccount(message.data.id);
         } else if (message.event === 'ACCOUNT_PROXY_CHANGED') {
           useAppStore.getState().updateAccountProxy(message.data.id, message.data.proxy_id);
+          refreshProxies(); // số account trên mỗi proxy đổi theo
+        } else if (message.event === 'PROXIES_CHANGED') {
+          refreshProxies();
         } else if (message.event === 'QUICK_CHECK_FINISHED') {
           const completed = Number(message.data?.completed) || 0;
           const total = Number(message.data?.total) || 0;
@@ -262,7 +270,7 @@ export default function App() {
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       document.removeEventListener('click', closeMenu);
     };
-  }, [loadData, pushTaskCompletionNotice]);
+  }, [loadData, pushTaskCompletionNotice, refreshProxies]);
 
   // Đồng bộ định kỳ danh sách phiên tay đang mở (bắt trường hợp user tự ĐÓNG
   // cửa sổ -> nút tự trở lại "Run one test").
@@ -565,29 +573,18 @@ export default function App() {
     }
   };
 
-  // Phân bổ Proxy tự động
-  const handleAutoAllocateProxies = async () => {
+  // Phân bổ Proxy: mở hộp thoại chọn proxy nào được chia
+  const handleAutoAllocateProxies = () => {
     if (selectedAccountIds.length === 0) return;
-    setLoading(true);
+    setContextMenu(null);
+    setIsAllocateModalOpen(true);
+  };
 
-    try {
-      const response = await fetch('http://127.0.0.1:9000/api/v1/accounts/auto-allocate-proxies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_ids: selectedAccountIds }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        alert(result.message);
-        loadData(); 
-        setContextMenu(null); 
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+  const handleProxyAllocated = (message: string) => {
+    // Phân bổ proxy nghĩa là muốn chạy qua proxy: bật lại chế độ Proxy nếu đang Mạng thật.
+    if (!proxyMode) handleSetProxyMode(true);
+    alert(message);
+    loadData();
   };
 
   // SỬA TRƯỜNG TRỰC TIẾP TRÊN UI (inline edit) - cập nhật store NGAY (không reload)
@@ -734,11 +731,15 @@ export default function App() {
   const handleBindProxy = async (accountId: string, proxyId: string) => {
     try {
       const targetProxyId = proxyId === 'none' ? null : proxyId;
-      await fetch(`http://127.0.0.1:9000/api/v1/accounts/${accountId}/proxy`, {
+      const res = await fetch(`http://127.0.0.1:9000/api/v1/accounts/${accountId}/proxy`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ proxy_id: targetProxyId }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.detail || 'Không đổi được proxy cho account.');
+      }
       loadData();
     } catch (err) {
       console.error(err);
@@ -861,11 +862,11 @@ export default function App() {
             width vì không cần cây thư mục/sidebar.
             =================================================================== */}
         {(() => {
-          const showLeftColumn = (activeTab === 'accounts' && !isTreeCollapsed) || activeTab === 'proxies';
+          const showLeftColumn = activeTab === 'accounts' && !isTreeCollapsed;
           if (!showLeftColumn) return null;
           return (
             <div className="lg:col-span-1">
-              {activeTab === 'accounts' ? (
+              {activeTab === 'accounts' && (
                 <FolderTree
                   accounts={accounts}
                   selectedCountry={selectedCountry}
@@ -876,8 +877,6 @@ export default function App() {
                   onOpenImportModal={() => setIsImportModalOpen(true)} // Mở modal nổi nạp tài khoản
                   onCollapse={() => setIsTreeCollapsed(true)}
                 />
-              ) : (
-                <Sidebar activeTab="proxies" loading={loading} onFileUpload={handleFileUpload} />
               )}
             </div>
           );
@@ -888,7 +887,7 @@ export default function App() {
             Giãn full 4 cột khi không có cột trái, ngược lại chiếm 3 cột.
             =================================================================== */}
         <div className={
-          ((activeTab === 'accounts' && !isTreeCollapsed) || activeTab === 'proxies')
+          (activeTab === 'accounts' && !isTreeCollapsed)
             ? 'lg:col-span-3 flex flex-col gap-6'
             : 'lg:col-span-4 flex flex-col gap-6'
         }>
@@ -1022,7 +1021,7 @@ export default function App() {
               <LiveScreens accounts={accounts} />
             </Suspense>
           ) : (
-            <ProxiesTable proxies={proxies} />
+            <ProxyManager proxies={proxies} accounts={accounts} onChanged={refreshProxies} />
           )}
 
         </div>
@@ -1057,6 +1056,13 @@ export default function App() {
         onClose={() => setIsImportModalOpen(false)}
         loading={loading}
         onFileUpload={handleFileUpload}
+      />
+
+      <ProxyAllocateModal
+        isOpen={isAllocateModalOpen}
+        accounts={accounts.filter((a) => selectedAccountIds.includes(a.id))}
+        onClose={() => setIsAllocateModalOpen(false)}
+        onDone={handleProxyAllocated}
       />
 
       {/* MODAL XUẤT ACC RA FILE TXT */}

@@ -10,6 +10,20 @@ class ProxyDbTable(SQLModel, table=True):
     username: Optional[str] = Field(default=None)
     password: Optional[str] = Field(default=None)
     protocol: str = Field(default="http")
+    label: str = Field(default="")
+    note: str = Field(default="")
+    # A disabled proxy is never allocated, and account sessions refuse to run on it.
+    enabled: bool = Field(default=True)
+    created_at: str = Field(default="")
+    # Last health check: OK / WARN / FAIL / UNCHECKED, and what it saw.
+    check_status: str = Field(default="UNCHECKED")
+    check_error: str = Field(default="")
+    checked_at: str = Field(default="")
+    exit_ip: str = Field(default="")
+    country: str = Field(default="")
+    latency_ms: Optional[int] = Field(default=None)
+    tiktok_ok: Optional[bool] = Field(default=None)
+    cdn_ok: Optional[bool] = Field(default=None)
 
 class AccountDbTable(SQLModel, table=True):
     __tablename__ = "accounts"

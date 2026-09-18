@@ -1,7 +1,8 @@
 # File: backend/app/infrastructure/database/sqlite_repository.py
 import json
 import uuid
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+from sqlalchemy import func
 from sqlmodel import Session, select
 from app.domain.entities.account import TikTokAccount
 from app.domain.entities.proxy import Proxy
@@ -9,52 +10,72 @@ from app.domain.ports.repository import IAccountRepository, IProxyRepository
 from app.infrastructure.database.schemas import AccountDbTable, ProxyDbTable
 
 class SQLiteProxyRepository(IProxyRepository):
+    _FIELDS = (
+        "host", "port", "username", "password", "protocol", "label", "note",
+        "enabled", "created_at", "check_status", "check_error", "checked_at",
+        "exit_ip", "country", "latency_ms", "tiktok_ok", "cdn_ok",
+    )
+
     def __init__(self, session: Session):
         self.session = session
+
+    @classmethod
+    def _to_domain(cls, row: ProxyDbTable) -> Proxy:
+        return Proxy(id=row.id, **{name: getattr(row, name) for name in cls._FIELDS})
 
     def get_by_id(self, proxy_id: str) -> Optional[Proxy]:
         db_row = self.session.get(ProxyDbTable, proxy_id)
         if not db_row:
             return None
-        return Proxy(
-            id=db_row.id,
-            host=db_row.host,
-            port=db_row.port,
-            username=db_row.username,
-            password=db_row.password,
-            protocol=db_row.protocol
-        )
+        return self._to_domain(db_row)
 
     def save(self, proxy: Proxy) -> Proxy:
         db_row = self.session.get(ProxyDbTable, proxy.id) if proxy.id else None
         if not db_row:
-            db_row = ProxyDbTable(id=proxy.id, host=proxy.host, port=proxy.port)
-        
-        db_row.username = proxy.username
-        db_row.password = proxy.password
-        db_row.protocol = proxy.protocol
+            db_row = ProxyDbTable(id=proxy.id or str(uuid.uuid4()), host=proxy.host, port=proxy.port)
+        for name in self._FIELDS:
+            setattr(db_row, name, getattr(proxy, name))
 
         self.session.add(db_row)
         self.session.commit()
         self.session.refresh(db_row)
-        
+
         proxy.id = db_row.id
         return proxy
 
     def get_all(self) -> List[Proxy]:
         statement = select(ProxyDbTable)
         results = self.session.exec(statement).all()
-        return [
-            Proxy(
-                id=row.id,
-                host=row.host,
-                port=row.port,
-                username=row.username,
-                password=row.password,
-                protocol=row.protocol
-            )
-            for row in results
-        ]
+        return [self._to_domain(row) for row in results]
+
+    def account_counts(self) -> Dict[str, int]:
+        """How many accounts point at each proxy id (sold accounts included)."""
+        rows = self.session.exec(
+            select(AccountDbTable.proxy_id, func.count())
+            .where(AccountDbTable.proxy_id.is_not(None))
+            .group_by(AccountDbTable.proxy_id)
+        ).all()
+        return {str(proxy_id): int(count) for proxy_id, count in rows if proxy_id}
+
+    def detach_accounts(self, proxy_id: str) -> list[str]:
+        """Put every account on this proxy back on the machine's own network."""
+        rows = self.session.exec(
+            select(AccountDbTable).where(AccountDbTable.proxy_id == proxy_id)
+        ).all()
+        for row in rows:
+            row.proxy_id = None
+            self.session.add(row)
+        if rows:
+            self.session.commit()
+        return [str(row.email) for row in rows]
+
+    def delete(self, proxy_id: str) -> bool:
+        db_row = self.session.get(ProxyDbTable, proxy_id)
+        if not db_row:
+            return False
+        self.session.delete(db_row)
+        self.session.commit()
+        return True
 
 
 class SQLiteAccountRepository(IAccountRepository):
