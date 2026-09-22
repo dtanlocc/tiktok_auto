@@ -851,6 +851,9 @@ class ConcurrentTaskDispatcher:
                             _uname,
                             get_hwnd=lambda: getattr(browser_service, "_hwnd", None),
                             recover_hwnd=browser_service.recover_stream_hwnd,
+                            get_desktop=lambda: getattr(
+                                browser_service, "_browser_desktop", None
+                            ),
                             capture_allowed=lambda: not browser_service.stream_suspended,
                         )
                     )

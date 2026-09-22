@@ -207,6 +207,28 @@ class TikTokUploadMediaUseCase:
             await self._log(
                 "Bài đăng đã xong; đang xác nhận lại phiên For You và lưu cookie trước khi đóng browser..."
             )
+            # The server first: a session TikTok ended right after the post
+            # otherwise surfaced as "username not verified", which sent the
+            # operator after the wrong problem.
+            reader = getattr(self.browser_service, "read_session_account", None)
+            if reader is not None:
+                try:
+                    server = await reader()
+                except Exception:
+                    server = {}
+                if server.get("state") == "signed_out":
+                    logger.warning(
+                        "[Upload] TikTok da huy phien cua %s ngay sau khi dang: %s",
+                        account_id,
+                        server.get("detail"),
+                    )
+                    await self._log(
+                        "⚠️ Video đã đăng nhưng TikTok đã HỦY phiên đăng nhập ngay sau khi Post "
+                        f"('{server.get('detail')}'). Cookies cũ không còn dùng được; lần chạy "
+                        "sau sẽ cần login OTP. Nguyên nhân thường gặp: IP ra đổi giữa phiên "
+                        "(VPN xoay IP) - hãy dùng mạng IP cố định."
+                    )
+                    return account
             home_ready = await self.browser_service.prepare_foryou_home(
                 step_logger=None
             )
@@ -254,28 +276,6 @@ class TikTokUploadMediaUseCase:
 
             updated = self.account_repo.get_by_id(account_id) or account
             updated.cookies = fresh
-            # The server first: a session TikTok ended right after the post
-            # otherwise surfaced as "username not verified", which sent the
-            # operator after the wrong problem.
-            reader = getattr(self.browser_service, "read_session_account", None)
-            if reader is not None:
-                try:
-                    server = await reader()
-                except Exception:
-                    server = {}
-                if server.get("state") == "signed_out":
-                    logger.warning(
-                        "[Upload] TikTok da huy phien cua %s ngay sau khi dang: %s",
-                        account_id,
-                        server.get("detail"),
-                    )
-                    await self._log(
-                        "⚠️ Video đã đăng nhưng TikTok đã HỦY phiên đăng nhập ngay sau khi Post "
-                        f"('{server.get('detail')}'). Cookies cũ không còn dùng được; lần chạy "
-                        "sau sẽ cần login OTP. Nguyên nhân thường gặp: IP ra đổi giữa phiên "
-                        "(VPN xoay IP) - hãy dùng mạng IP cố định."
-                    )
-                    return account
             updated.health_status = "ALIVE"
             self.account_repo.save(updated)
             updated_auth = {
@@ -364,6 +364,45 @@ class TikTokUploadMediaUseCase:
             except Exception:
                 pass
 
+    async def _recover_studio_session(self, account_id: str, account, used: dict):
+        """Studio bounced to /login: keep a session TikTok still honours, and
+        spend the one forced OTP login only on a session it has ended.
+
+        ⛔ A /login BOUNCE IS NOT A DEAD COOKIE. Clearing the jar on the first
+        bounce and logging in again by OTP is what the operator saw as "the
+        account logs out as soon as the upload starts" (batch 1k,
+        2026-09-18). TikTok's own account-info answer decides: still signed
+        in -> back to For You and open Studio once more with the same cookies.
+        """
+        if used.get("otp"):
+            raise StudioReauthenticationRequired(
+                "TikTok Studio vẫn yêu cầu đăng nhập sau khi đã login OTP lại."
+            )
+        reader = getattr(self.browser_service, "read_session_account", None)
+        if not used.get("kept") and reader is not None:
+            used["kept"] = True
+            try:
+                server = await reader()
+            except Exception:
+                server = {}
+            if server.get("state") == "alive":
+                await self._log(
+                    "TikTok Studio mở trang đăng nhập nhưng máy chủ TikTok xác nhận phiên "
+                    f"@{server.get('username')} vẫn còn hiệu lực; giữ nguyên Cookies, "
+                    "mở lại For You rồi thử Studio lần nữa..."
+                )
+                if await self.browser_service.prepare_foryou_home(
+                    step_logger=self.step_logger
+                ):
+                    return account
+            elif server.get("state") == "signed_out":
+                await self._log(
+                    "Máy chủ TikTok xác nhận phiên Cookies đã bị hủy/hết hạn "
+                    f"('{server.get('detail')}'); cần đăng nhập OTP lại."
+                )
+        used["otp"] = True
+        return await self._reauthenticate_for_studio(account_id, account)
+
     async def _reauthenticate_for_studio(self, account_id: str, account):
         """Force one credential/OTP login when Studio rejects a web cookie."""
         await self._log(
@@ -411,45 +450,6 @@ class TikTokUploadMediaUseCase:
         image_path: Optional[str] = None,
         video_path: Optional[str] = None,
         caption: str = "",
-    async def _recover_studio_session(self, account_id: str, account, used: dict):
-        """Studio bounced to /login: keep a session TikTok still honours, and
-        spend the one forced OTP login only on a session it has ended.
-
-        ⛔ A /login BOUNCE IS NOT A DEAD COOKIE. Clearing the jar on the first
-        bounce and logging in again by OTP is what the operator saw as "the
-        account logs out as soon as the upload starts" (batch 1k,
-        2026-09-18). TikTok's own account-info answer decides: still signed
-        in -> back to For You and open Studio once more with the same cookies.
-        """
-        if used.get("otp"):
-            raise StudioReauthenticationRequired(
-                "TikTok Studio vẫn yêu cầu đăng nhập sau khi đã login OTP lại."
-            )
-        reader = getattr(self.browser_service, "read_session_account", None)
-        if not used.get("kept") and reader is not None:
-            used["kept"] = True
-            try:
-                server = await reader()
-            except Exception:
-                server = {}
-            if server.get("state") == "alive":
-                await self._log(
-                    "TikTok Studio mở trang đăng nhập nhưng máy chủ TikTok xác nhận phiên "
-                    f"@{server.get('username')} vẫn còn hiệu lực; giữ nguyên Cookies, "
-                    "mở lại For You rồi thử Studio lần nữa..."
-                )
-                if await self.browser_service.prepare_foryou_home(
-                    step_logger=self.step_logger
-                ):
-                    return account
-            elif server.get("state") == "signed_out":
-                await self._log(
-                    "Máy chủ TikTok xác nhận phiên Cookies đã bị hủy/hết hạn "
-                    f"('{server.get('detail')}'); cần đăng nhập OTP lại."
-                )
-        used["otp"] = True
-        return await self._reauthenticate_for_studio(account_id, account)
-
         schedule_at: Optional[str] = None,
         **kwargs: Any,
     ) -> bool:
@@ -600,6 +600,7 @@ class TikTokUploadMediaUseCase:
                         account = await self._recover_studio_session(
                             account_id,
                             account,
+                            studio_recovery,
                         )
                 if not ok:
                     failure_code = str(getattr(
@@ -648,7 +649,6 @@ class TikTokUploadMediaUseCase:
                     failure_code = ""
 
             self._record_upload_result(account_id, ok, error)
-                            studio_recovery,
             if result_sink is not None:
                 result_sink.append({
                     "video_path": path,
@@ -819,6 +819,7 @@ class TikTokUploadMediaUseCase:
                 account = await self._recover_studio_session(
                     account_id,
                     account,
+                    studio_recovery,
                 )
         if ok:
             account = await self._checkpoint_cookies_before_browser_close(
@@ -858,4 +859,3 @@ class TikTokUploadMediaUseCase:
 
 # Backward-compatible import for existing callers/plugins.
 TikTokUploadVideoUseCase = TikTokUploadMediaUseCase
-                    studio_recovery,

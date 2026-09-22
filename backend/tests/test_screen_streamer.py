@@ -76,8 +76,8 @@ def test_windows_hwnd_stream_does_not_use_playwright_screenshot(monkeypatch):
     monkeypatch.setattr(screen_streamer.asyncio, "to_thread", direct_to_thread)
     monkeypatch.setattr(screen_streamer.sys, "platform", "win32")
     monkeypatch.setattr(screen_streamer, "screens_are_watched", lambda: True)
-    def capture_hwnd(_hwnd, max_width, quality):
-        capture_options.update(max_width=max_width, quality=quality)
+    def capture_hwnd(_hwnd, max_width, quality, desktop=None):
+        capture_options.update(max_width=max_width, quality=quality, desktop=desktop)
         return b"jpeg-from-print-window"
 
     monkeypatch.setattr(screen_streamer, "capture_hwnd_jpeg", capture_hwnd)
@@ -89,12 +89,16 @@ def test_windows_hwnd_stream_does_not_use_playwright_screenshot(monkeypatch):
             "account-id",
             "username",
             get_hwnd=lambda: 1234,
+            # From invisible_playwright 0.24 the window lives on its own
+            # desktop; a capture that is not told which one photographs nothing.
+            get_desktop=lambda: "invpw_abc123",
         )
     )
 
     frame = next(message for message in messages if message["event"] == "BROWSER_FRAME")
     assert base64.b64decode(frame["data"]["jpeg_b64"]) == b"jpeg-from-print-window"
-    assert capture_options == {"max_width": 1280, "quality": 92}
+    assert capture_options == {
+        "max_width": 1280, "quality": 92, "desktop": "invpw_abc123"}
 
 
 def test_stream_recovers_after_more_than_fifteen_capture_failures(monkeypatch):

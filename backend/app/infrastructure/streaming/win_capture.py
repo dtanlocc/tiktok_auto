@@ -16,6 +16,7 @@ Uu diem:
 
 CHI dung tren Windows. Cac nen tang khac tra ve None (streamer se fallback).
 """
+import contextlib
 import io
 import json
 import os
@@ -30,6 +31,69 @@ logger = logging.getLogger("WinCapture")
 # Co PW_RENDERFULLCONTENT = 2: buoc cua so tu render TOAN BO noi dung (ke ca
 # phan GPU/DirectComposition) ra bitmap, chup duoc ca khi bi che/cloak.
 _PW_RENDERFULLCONTENT = 2
+
+
+# =============================================================================
+# CUA SO SONG TREN DESKTOP RIENG (invisible_playwright >= 0.24 tren Windows)
+# =============================================================================
+#: ⛔ EnumWindows CHI THAY CUA SO CUA DESKTOP MA LUONG NAY DANG GAN VAO.
+#: Tu 0.24, `headless=True` tao han mot Win32 desktop rieng cho moi phien
+#: (`CreateDesktopW`, ten o `InvisiblePlaywright._virtual_display.name`) thay vi
+#: cloak cua so tren desktop chinh. Do 2026-09-22: tu luong thuong,
+#: EnumWindows dem duoc 0 cua so Firefox; sau khi gan luong vao dung desktop do,
+#: van thay cua so va PrintWindow van chup ra anh dung.
+#: `desktop=None` = ban cu (cua so nam tren desktop chinh) -> khong dong cham gi.
+_DESKTOP_ALL = 0x000F01FF
+
+
+@contextlib.contextmanager
+def thread_on_desktop(desktop: Optional[str]):
+    """Gan LUONG HIEN TAI vao desktop cua browser trong pham vi khoi lenh."""
+    if sys.platform != "win32" or not desktop:
+        yield True
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        user32.OpenDesktopW.restype = wintypes.HANDLE
+        user32.OpenDesktopW.argtypes = (
+            wintypes.LPCWSTR, wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        user32.GetThreadDesktop.restype = wintypes.HANDLE
+        user32.GetThreadDesktop.argtypes = (wintypes.DWORD,)
+        user32.SetThreadDesktop.restype = wintypes.BOOL
+        user32.SetThreadDesktop.argtypes = (wintypes.HANDLE,)
+        user32.CloseDesktop.restype = wintypes.BOOL
+        user32.CloseDesktop.argtypes = (wintypes.HANDLE,)
+    except Exception as exc:
+        logger.debug("Khong nap duoc user32 de gan desktop: %s", exc)
+        yield False
+        return
+
+    previous = user32.GetThreadDesktop(kernel32.GetCurrentThreadId())
+    handle = user32.OpenDesktopW(desktop, 0, False, _DESKTOP_ALL)
+    if not handle:
+        logger.debug(
+            "Khong mo duoc desktop %s (WinError %d)",
+            desktop, ctypes.get_last_error(),
+        )
+        yield False
+        return
+    attached = bool(user32.SetThreadDesktop(handle))
+    if not attached:
+        logger.debug(
+            "Khong gan duoc luong vao desktop %s (WinError %d)",
+            desktop, ctypes.get_last_error(),
+        )
+    try:
+        yield attached
+    finally:
+        # Tra luong ve desktop cu: luong nay thuoc executor dung chung.
+        if attached and previous:
+            user32.SetThreadDesktop(previous)
+        user32.CloseDesktop(handle)
 
 
 def prepare_profile_window_offscreen(profile_dir: str) -> bool:
@@ -72,7 +136,7 @@ def prepare_profile_window_offscreen(profile_dir: str) -> bool:
         return False
 
 
-def enum_moz_hwnds() -> set:
+def enum_moz_hwnds(desktop: Optional[str] = None) -> set:
     """Tra ve tap hcuwr (HWND) cac cua so top-level cua Firefox (class
     'MozillaWindowClass') dang ton tai, du kich thuoc (>200px)."""
     if sys.platform != "win32":
@@ -95,13 +159,14 @@ def enum_moz_hwnds() -> set:
         return True
 
     try:
-        win32gui.EnumWindows(_cb, None)
+        with thread_on_desktop(desktop):
+            win32gui.EnumWindows(_cb, None)
     except Exception:
         pass
     return found
 
 
-def find_session_moz_hwnd(session_token) -> Optional[int]:
+def find_session_moz_hwnd(session_token, desktop: Optional[str] = None) -> Optional[int]:
     """Find the top-level Firefox window owned by one invisible session.
 
     Comparing the set of windows before/after launch is ambiguous when two
@@ -137,13 +202,15 @@ def find_session_moz_hwnd(session_token) -> Optional[int]:
         return True
 
     try:
-        win32gui.EnumWindows(_cb, None)
+        with thread_on_desktop(desktop):
+            win32gui.EnumWindows(_cb, None)
     except Exception:
         return None
     return max(candidates)[1] if candidates else None
 
 
-def move_window_offscreen(hwnd: int, x: int = -3200, y: int = -3200) -> bool:
+def move_window_offscreen(hwnd: int, x: int = -3200, y: int = -3200,
+                          desktop: Optional[str] = None) -> bool:
     """Co che ban cu: dua cua so ra han ngoai desktop, khong minimize va khong
     cuop focus. Firefox van render nho occlusion tracking da bi tat trong prefs."""
     if sys.platform != "win32" or not hwnd:
@@ -153,10 +220,11 @@ def move_window_offscreen(hwnd: int, x: int = -3200, y: int = -3200) -> bool:
         import win32con
         # SWP_NOSIZE: giu nguyen kich thuoc (khong dong cham viewport/fingerprint).
         # SWP_NOACTIVATE: khong cuop focus. SWP_NOZORDER: giu nguyen thu tu z.
-        win32gui.SetWindowPos(
-            hwnd, None, x, y, 0, 0,
-            win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | win32con.SWP_NOZORDER,
-        )
+        with thread_on_desktop(desktop):
+            win32gui.SetWindowPos(
+                hwnd, None, x, y, 0, 0,
+                win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE | win32con.SWP_NOZORDER,
+            )
         return True
     except Exception as e:
         logger.debug(f"move_window_offscreen that bai (hwnd={hwnd}): {e}")
@@ -172,7 +240,13 @@ def move_window_offscreen(hwnd: int, x: int = -3200, y: int = -3200) -> bool:
 #     -> thay bang registry HWND theo tung adapter + move_window_offscreen/show.
 # =============================================================================
 
-def show_window_foreground(hwnd: int) -> bool:
+def show_window_foreground(hwnd: int, desktop: Optional[str] = None) -> bool:
+    """Same as before, run on the desktop the window lives on."""
+    with thread_on_desktop(desktop):
+        return _show_window_foreground(hwnd)
+
+
+def _show_window_foreground(hwnd: int) -> bool:
     """Dua cua so ra HIEN tren man hinh + dua len FOREGROUND (nguoc voi off-screen).
     Dung cho che do DEBUG/manual takeover: user can nhin thay + thao tac tay.
     Khong dung AttachThreadInput vi no co the deadlock tren RDP; neu Windows khong
@@ -248,7 +322,15 @@ def downscale_jpeg(raw: bytes, max_width: int = 1280, quality: int = 82) -> byte
         return raw
 
 
-def capture_hwnd_jpeg(hwnd: int, max_width: int = 1280, quality: int = 82) -> Optional[bytes]:
+def capture_hwnd_jpeg(hwnd: int, max_width: int = 1280, quality: int = 82,
+                      desktop: Optional[str] = None) -> Optional[bytes]:
+    """Same as before, run on the desktop the window lives on."""
+    with thread_on_desktop(desktop):
+        return _capture_hwnd_jpeg(hwnd, max_width, quality)
+
+
+def _capture_hwnd_jpeg(hwnd: int, max_width: int = 1280,
+                       quality: int = 82) -> Optional[bytes]:
     """Chup 1 cua so theo HWND bang PrintWindow -> thu nho ve max_width ->
     nen JPEG. Tra ve bytes JPEG, hoac None neu that bai (cua so da dong...)."""
     if sys.platform != "win32" or not hwnd:

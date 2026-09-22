@@ -64,6 +64,10 @@ async def stream_browser_frames(
     username: str,
     get_hwnd: Optional[Callable[[], Optional[int]]] = None,
     recover_hwnd: Optional[Callable[[], Awaitable[Optional[int]]]] = None,
+    #: Where that HWND lives. From invisible_playwright 0.24 a headless session
+    #: builds its window on a desktop of its own, and a capture thread that is
+    #: not attached to it photographs nothing.
+    get_desktop: Optional[Callable[[], Optional[str]]] = None,
     capture_allowed: Optional[Callable[[], bool]] = None,
 ) -> None:
     """Vong lap chup & phat frame cho 1 account. Tu ket thuc khi bi cancel
@@ -106,7 +110,8 @@ async def stream_browser_frames(
             hwnd = get_hwnd() if get_hwnd else None
             if is_win and get_hwnd is not None and hwnd:
                 raw = await asyncio.to_thread(
-                    capture_hwnd_jpeg, hwnd, max_width, quality
+                    capture_hwnd_jpeg, hwnd, max_width, quality,
+                    get_desktop() if get_desktop else None,
                 )
                 captured_with_hwnd = raw is not None
 
@@ -127,7 +132,8 @@ async def stream_browser_frames(
                     hwnd = None
                 if hwnd:
                     raw = await asyncio.to_thread(
-                        capture_hwnd_jpeg, hwnd, max_width, quality
+                        capture_hwnd_jpeg, hwnd, max_width, quality,
+                        get_desktop() if get_desktop else None,
                     )
                     captured_with_hwnd = raw is not None
 

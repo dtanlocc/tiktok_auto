@@ -484,6 +484,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         # HWND cua so Firefox cua rieng phien nay (dung cho PrintWindow stream).
         self._hwnd: Optional[int] = None
         self._window_visible: bool = False
+        #: The private Win32 desktop this session's browser lives on
+        #: (invisible_playwright >= 0.24). None = the ordinary desktop.
+        self._browser_desktop: Optional[str] = None
         self._launch_headless: bool = True
         self._automation_gate: Optional[asyncio.Event] = None
         self._stream_suspended: bool = False
@@ -694,6 +697,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             # True-headless khong co HWND. Neu tat tuy chon nay thi wrapper quay ve
             # DWM self-cloak va ta van theo doi HWND cho PrintWindow.
             _before_hwnds = set() if use_true_headless else enum_moz_hwnds()
+            # (the session's own desktop does not exist yet; this snapshot is
+            # only used by the pre-token fallback below)
             # =============================================================
             # invisible-core hien tai + firefox_prefs o tren deu tat Windows
             # occlusion tracking, nen headed-offscreen van tiep tuc render.
@@ -777,6 +782,21 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
             # AN CUA SO NGAY SAU __aenter__, TRUOC moi thao tac page. Ban vua roi
             # tao/doi tab truoc khi an nen cua so lo ra lau va co the can focus.
+            # ⛔ FROM 0.24 THE WINDOW IS NOT ON THIS DESKTOP. `headless=True`
+            # creates a private Win32 desktop per session and builds the browser
+            # there, so EnumWindows/PrintWindow from an ordinary thread see
+            # nothing at all (measured 2026-09-22: 0 windows). The name of that
+            # desktop is the only thing needed to look again from a thread
+            # attached to it. On 0.16.2 there is no such object and this stays
+            # None, which every helper reads as "the window is on this desktop".
+            self._browser_desktop = getattr(
+                getattr(self._invisible_pw, "_virtual_display", None), "name", None
+            )
+            if self._browser_desktop:
+                logger.info(
+                    "[WINDOW] Browser song tren desktop rieng %s.",
+                    self._browser_desktop,
+                )
             self._hwnd = None
             self._window_visible = False
             try:
@@ -791,18 +811,25 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         show_window_foreground,
                     )
                     try:
-                        if self._launch_headless:
-                            # Khong show/move: patched binary da DWMWA_CLOAK ngay
-                            # ben trong. HWND chi duoc luu cho PrintWindow stream.
+                        if self._launch_headless or self._browser_desktop:
+                            # Nothing to hide: the binary cloaks itself (<=0.23)
+                            # or the whole desktop is private (>=0.24). The HWND
+                            # is kept only so PrintWindow can stream it.
                             self._window_visible = False
                         elif hide_offscreen:
                             ok = await asyncio.wait_for(
-                                asyncio.to_thread(move_window_offscreen, self._hwnd), timeout=5
+                                asyncio.to_thread(
+                                    move_window_offscreen, self._hwnd, -3200, -3200,
+                                    self._browser_desktop,
+                                ), timeout=5
                             )
                             self._window_visible = not bool(ok)
                         else:
                             ok = await asyncio.wait_for(
-                                asyncio.to_thread(show_window_foreground, self._hwnd), timeout=5
+                                asyncio.to_thread(
+                                    show_window_foreground, self._hwnd,
+                                    self._browser_desktop,
+                                ), timeout=5
                             )
                             self._window_visible = bool(ok)
                     except Exception:
@@ -951,7 +978,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if session_token:
                 try:
                     owned_hwnd = await asyncio.to_thread(
-                        find_session_moz_hwnd, session_token
+                        find_session_moz_hwnd, session_token, self._browser_desktop
                     )
                 except Exception:
                     owned_hwnd = None
@@ -967,7 +994,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 # concurrently launching session's window.
                 continue
             try:
-                now = enum_moz_hwnds()
+                now = enum_moz_hwnds(self._browser_desktop)
             except Exception:
                 continue
             with _hwnd_lock:
@@ -995,7 +1022,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         try:
             from app.infrastructure.streaming.win_capture import find_session_moz_hwnd
 
-            owned_hwnd = await asyncio.to_thread(find_session_moz_hwnd, session_token)
+            owned_hwnd = await asyncio.to_thread(
+                find_session_moz_hwnd, session_token, self._browser_desktop
+            )
         except Exception:
             return None
         if not owned_hwnd:
@@ -1026,7 +1055,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
         try:
             shown = await asyncio.wait_for(
-                asyncio.to_thread(show_window_foreground, self._hwnd), timeout=5
+                asyncio.to_thread(
+                    show_window_foreground, self._hwnd, self._browser_desktop
+                ), timeout=5
             )
         except Exception:
             shown = False
@@ -1041,7 +1072,10 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
         try:
             hidden = await asyncio.wait_for(
-                asyncio.to_thread(move_window_offscreen, self._hwnd), timeout=5
+                asyncio.to_thread(
+                    move_window_offscreen, self._hwnd, -3200, -3200,
+                    self._browser_desktop,
+                ), timeout=5
             )
         except Exception:
             hidden = False
@@ -1265,40 +1299,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         )
         return False
 
-    async def clear_auth_session(self) -> None:
-        """Clear the partial web session before a forced Studio re-login."""
-        await self._wait_automation_gate()
-        if not self._page:
-            raise RuntimeError("Trinh duyet chua khoi tao.")
-        try:
-            await self._page.evaluate(
-                "() => { try { localStorage.clear(); } catch (_) {} "
-                "try { sessionStorage.clear(); } catch (_) {} }"
-            )
-        except Exception:
-            pass
-        await self._page.context.clear_cookies()
-
-    def _blocked_asset_counter(self) -> Dict[str, int]:
-        """Refused CDN requests for the CURRENT tab, by host.
-
-        ⛔ WHY A NETWORK LISTENER AND NOT JUST A TIMER. The document comes from
-        `www.tiktok.com`; every script that paints it comes from the CDN. A
-        proxy can serve the first and refuse the second, and the page then
-        reaches readyState=complete with 317KB of markup, 69 script tags and
-        not one character of text - forever, through reloads. Measured
-        2026-09-16: 67 refusals of `lf16-tiktok-web.tiktokcdn-us.com` in 20s
-        while `www.tiktok.com` answered 200. Waiting does not change that and
-        the DOM never says why, so the refusals themselves are the evidence.
-
-        The listener is attached ONCE PER TAB. Attaching it per call would pile
-        a new one on the same page for every login check of the session.
-        """
-        page = self._page
-        if page is None:
-            return {}
-        if getattr(self, "_blocked_assets_page", None) is page:
-            return self._blocked_assets
     _SESSION_ACCOUNT_JS = r"""async () => {
       if (location.hostname !== 'www.tiktok.com')
         return {state: 'unknown', detail: 'page is not on www.tiktok.com'};
@@ -1365,6 +1365,40 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             samples=samples,
         )
 
+    async def clear_auth_session(self) -> None:
+        """Clear the partial web session before a forced Studio re-login."""
+        await self._wait_automation_gate()
+        if not self._page:
+            raise RuntimeError("Trinh duyet chua khoi tao.")
+        try:
+            await self._page.evaluate(
+                "() => { try { localStorage.clear(); } catch (_) {} "
+                "try { sessionStorage.clear(); } catch (_) {} }"
+            )
+        except Exception:
+            pass
+        await self._page.context.clear_cookies()
+
+    def _blocked_asset_counter(self) -> Dict[str, int]:
+        """Refused CDN requests for the CURRENT tab, by host.
+
+        ⛔ WHY A NETWORK LISTENER AND NOT JUST A TIMER. The document comes from
+        `www.tiktok.com`; every script that paints it comes from the CDN. A
+        proxy can serve the first and refuse the second, and the page then
+        reaches readyState=complete with 317KB of markup, 69 script tags and
+        not one character of text - forever, through reloads. Measured
+        2026-09-16: 67 refusals of `lf16-tiktok-web.tiktokcdn-us.com` in 20s
+        while `www.tiktok.com` answered 200. Waiting does not change that and
+        the DOM never says why, so the refusals themselves are the evidence.
+
+        The listener is attached ONCE PER TAB. Attaching it per call would pile
+        a new one on the same page for every login check of the session.
+        """
+        page = self._page
+        if page is None:
+            return {}
+        if getattr(self, "_blocked_assets_page", None) is page:
+            return self._blocked_assets
         counter: Dict[str, int] = {}
 
         def _note(request) -> None:
@@ -2106,6 +2140,15 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             except Exception:
                 pass
 
+        # The same button's own link, when the button could not be clicked
+        # (a hidden responsive duplicate is common).
+        if profile_href:
+            edit_button = await navigate_profile(str(profile_href))
+            if edit_button is not None:
+                return edit_button
+
+        # Last resort only. "Edit profile" appears on one's own page alone, so
+        # a wrong saved name fails here instead of editing someone else.
         safe_username = re.sub(
             r"[^A-Za-z0-9._]", "", (db_username or "").strip().lstrip("@")
         )
@@ -2217,15 +2260,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
                     await apply_btn.wait_for(state="visible", timeout=15000)
 
-        # The same button's own link, when the button could not be clicked
-        # (a hidden responsive duplicate is common).
-        if profile_href:
-            edit_button = await navigate_profile(str(profile_href))
-            if edit_button is not None:
-                return edit_button
-
-        # Last resort only. "Edit profile" appears on one's own page alone, so
-        # a wrong saved name fails here instead of editing someone else.
                     if step_logger:
                         await step_logger("Dang nhan nut Apply...")
 
@@ -2352,6 +2386,14 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 await bio_input.first.press_sequentially(bio, delay=random.randint(100, 200))
                 await asyncio.sleep(2)
 
+            if not avatar_path and bio is None and not username_needs_confirm:
+                # Nothing was changed - the username sync after login only
+                # READ the name. Save is disabled then, and pressing it would
+                # leave the dialog open, which _confirm_profile_saved rightly
+                # calls a refused save. Close the dialog instead.
+                await self._close_edit_profile_dialog()
+                return (True, username_for_db)
+
             if step_logger:
                 await step_logger("Dang nhan Save luu toan bo thay doi...")
 
@@ -2463,14 +2505,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 continue
         return False
 
-            if not avatar_path and bio is None and not username_needs_confirm:
-                # Nothing was changed - the username sync after login only
-                # READ the name. Save is disabled then, and pressing it would
-                # leave the dialog open, which _confirm_profile_saved rightly
-                # calls a refused save. Close the dialog instead.
-                await self._close_edit_profile_dialog()
-                return (True, username_for_db)
-
     _EDIT_PROFILE_DIALOG_PARTS = (
         '[data-e2e="edit-profile-save"], [data-e2e="edit-profile-avatar"]'
     )
@@ -2489,6 +2523,24 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if loop.time() >= deadline:
                 return False
             await asyncio.sleep(0.5)
+
+    async def _close_edit_profile_dialog(self) -> None:
+        """Leave the edit dialog without saving (Cancel, else Escape)."""
+        try:
+            cancel = self._page.locator(
+                'div[role="dialog"] button:has-text("Cancel"), '
+                'div[role="dialog"] button:has-text("Hủy")'
+            )
+            if await cancel.count() and await cancel.first.is_visible():
+                await cancel.first.click(timeout=4000)
+            else:
+                await self._page.keyboard.press("Escape")
+        except Exception:
+            try:
+                await self._page.keyboard.press("Escape")
+            except Exception:
+                pass
+        await self._edit_profile_dialog_closed(timeout_seconds=5.0)
 
     async def _confirm_profile_saved(self, save_btn, *, retry_save: bool, step_logger=None) -> None:
         """Raise unless TikTok closed the edit dialog, i.e. accepted the save.
@@ -2601,24 +2653,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     """el => {
                         const r = el.getBoundingClientRect();
                         if (!r.width || !r.height) return false;
-    async def _close_edit_profile_dialog(self) -> None:
-        """Leave the edit dialog without saving (Cancel, else Escape)."""
-        try:
-            cancel = self._page.locator(
-                'div[role="dialog"] button:has-text("Cancel"), '
-                'div[role="dialog"] button:has-text("Hủy")'
-            )
-            if await cancel.count() and await cancel.first.is_visible():
-                await cancel.first.click(timeout=4000)
-            else:
-                await self._page.keyboard.press("Escape")
-        except Exception:
-            try:
-                await self._page.keyboard.press("Escape")
-            except Exception:
-                pass
-        await self._edit_profile_dialog_closed(timeout_seconds=5.0)
-
                         const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
                         return !!top && (top === el || el.contains(top));
                     }"""
@@ -2959,6 +2993,10 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
         return False
 
+    async def _attach_media_by_clicking_button(
+        self, abs_paths: List[str], media_kind: str
+    ) -> bool:
+        """Click TikTok's own Select button and fill the Windows chooser."""
         # B178: the real-path protocol command is still broken in firefox-21.
         # Use the helper kept in our vendored invisible_playwright build
         # source. It opens the real Windows chooser, DWM-cloaks it immediately,
@@ -2993,13 +3031,16 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             owner_process_ids = await asyncio.to_thread(
                 self._native_upload_process_ids
             )
-    async def _attach_media_by_clicking_button(
-        self, abs_paths: List[str], media_kind: str
-    ) -> bool:
-        """Click TikTok's own Select button and fill the Windows chooser."""
             owner_session_token = getattr(
                 self._invisible_pw, "_session_token", None
             )
+            # The chooser opens on the browser's own desktop from
+            # invisible_playwright 0.24; older builds have no such desktop and
+            # no such argument, so it is only passed when there is one.
+            desktop_kwargs = (
+                {"desktop": self._browser_desktop} if self._browser_desktop else {}
+            )
+
             async def open_native_chooser() -> None:
                 await set_input_files_native(
                     target,
@@ -3012,6 +3053,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     trigger_dwell_ms=random.randint(160, 420),
                     trigger_click_delay_ms=random.randint(70, 160),
                     timeout_ms=15000,
+                    **desktop_kwargs,
                 )
 
             try:
@@ -3377,48 +3419,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             re.I | re.M,
         ))
 
-    async def _video_upload_entry_ready(self) -> bool:
-        """Detect Studio's upload entry by semantics, then its real file input."""
-        visible_text = await self._read_visible_page_text()
-        if visible_text is not None and re.search(
-            r"\b(Select video to upload|Select video|Choose (?:a )?video(?: to upload)?|"
-            r"Chọn video(?: để tải lên)?|Tải video lên)\b",
-            visible_text,
-            re.I,
-        ):
-            return True
-
-        # Some Studio variants attach the real input without the old prompt.
-        # This is a read-only check; it never clicks a probe element.
-        try:
-            inputs = self._page.locator('input[type="file"]')
-            count = await asyncio.wait_for(inputs.count(), timeout=2.0)
-            for index in range(min(count, 8)):
-                accept = ((await inputs.nth(index).get_attribute(
-                    "accept", timeout=1500
-                )) or "").lower()
-                if "video" in accept or ".mp4" in accept or ".mov" in accept:
-                    return True
-        except Exception:
-            pass
-        return False
-
-    def _publish_button(self, scheduled: bool = False):
-        """Resolve the currently rendered primary action, never a hidden clone."""
-        labels = (r"Post|Publish|Đăng|Schedule|Lên lịch" if scheduled
-                  else r"Post|Publish|Đăng")
-        return self._page.locator("button:visible").filter(
-            has_text=re.compile(rf"^\s*({labels})\s*$", re.IGNORECASE)
-        ).first
-
-    async def _upload_editor_is_active(self) -> bool:
-        """Return whether the current page still shows the pre-publish editor."""
-        try:
-            editor = self._page.locator(
-                '.public-DraftEditor-content, [contenteditable="true"]'
-            ).first
-            return bool(
-                await editor.count()
     #: The controls a person clicks to reach the upload screen: the sidebar
     #: entry on For You, Studio's own Upload button, or a link to either page.
     _UPLOAD_ENTRY_SELECTOR = (
@@ -3479,6 +3479,48 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         await log("Không thấy nút Upload trên trang; mở thẳng màn đăng bài...")
         await self.navigate_to("https://www.tiktok.com/tiktokstudio/upload?lang=en")
 
+    async def _video_upload_entry_ready(self) -> bool:
+        """Detect Studio's upload entry by semantics, then its real file input."""
+        visible_text = await self._read_visible_page_text()
+        if visible_text is not None and re.search(
+            r"\b(Select video to upload|Select video|Choose (?:a )?video(?: to upload)?|"
+            r"Chọn video(?: để tải lên)?|Tải video lên)\b",
+            visible_text,
+            re.I,
+        ):
+            return True
+
+        # Some Studio variants attach the real input without the old prompt.
+        # This is a read-only check; it never clicks a probe element.
+        try:
+            inputs = self._page.locator('input[type="file"]')
+            count = await asyncio.wait_for(inputs.count(), timeout=2.0)
+            for index in range(min(count, 8)):
+                accept = ((await inputs.nth(index).get_attribute(
+                    "accept", timeout=1500
+                )) or "").lower()
+                if "video" in accept or ".mp4" in accept or ".mov" in accept:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _publish_button(self, scheduled: bool = False):
+        """Resolve the currently rendered primary action, never a hidden clone."""
+        labels = (r"Post|Publish|Đăng|Schedule|Lên lịch" if scheduled
+                  else r"Post|Publish|Đăng")
+        return self._page.locator("button:visible").filter(
+            has_text=re.compile(rf"^\s*({labels})\s*$", re.IGNORECASE)
+        ).first
+
+    async def _upload_editor_is_active(self) -> bool:
+        """Return whether the current page still shows the pre-publish editor."""
+        try:
+            editor = self._page.locator(
+                '.public-DraftEditor-content, [contenteditable="true"]'
+            ).first
+            return bool(
+                await editor.count()
                 and await editor.is_visible()
             )
         except Exception:
