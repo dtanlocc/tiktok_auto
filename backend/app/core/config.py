@@ -122,6 +122,13 @@ class Settings(BaseSettings):
     BROWSER_LAUNCH_TIMEOUT: int = 45
     # Chi la luoi an toan cho launch hi huu bi treo -> 2 la du.
     BROWSER_LAUNCH_MAX_TRIES: int = 2
+
+    # Truoc khi dang bai: do IP ra cua duong mang (proxy hoac mang that) qua
+    # vai ket noi moi. Neu IP doi theo tung ket noi (VPN xoay IP), TikTok huy phien
+    # dang nhap ngay sau khi bam Post (do 2026-09-19, 4/4 account). Mac dinh chi
+    # CANH BAO roi van dang (nguoi van hanh chon 2026-09-19); True -> KHONG dang.
+    UPLOAD_REQUIRE_STABLE_EGRESS: bool = False
+    UPLOAD_EGRESS_SAMPLES: int = 5
     # Dong driver loi co the treo vo han sau khi task da bao thanh cong/that bai,
     # lam proxy + worker slot khong duoc tra. Qua han nay se reap dung cay process
     # cua phien theo session token; khong anh huong cac browser account khac.

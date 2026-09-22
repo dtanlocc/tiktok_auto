@@ -1299,6 +1299,72 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             return {}
         if getattr(self, "_blocked_assets_page", None) is page:
             return self._blocked_assets
+    _SESSION_ACCOUNT_JS = r"""async () => {
+      if (location.hostname !== 'www.tiktok.com')
+        return {state: 'unknown', detail: 'page is not on www.tiktok.com'};
+      try {
+        // Absolute: TikTok wraps window.fetch to sign calls, and the wrapper
+        // rejected a relative path once ("is not a valid URL", 2026-09-18).
+        const r = await fetch(location.origin
+                              + '/passport/web/account/info/?aid=1459&app_name=tiktok_web&lang=en',
+                              {credentials: 'include'});
+        const j = await r.json();
+        const d = (j && j.data) || {};
+        if (String((j && j.message) || '').toLowerCase() === 'success'
+            && (d.user_id || d.user_id_str || d.username))
+          return {state: 'alive', username: String(d.username || ''),
+                  detail: String(d.user_id_str || d.user_id || '')};
+        const why = String(d.description || (j && j.message) || ('HTTP ' + r.status));
+        if (d.error_code === 13 || /session expired|sign in again|log ?in/i.test(why))
+          return {state: 'signed_out', detail: why};
+        return {state: 'unknown', detail: why};
+      } catch (e) {
+        return {state: 'unknown', detail: String(e).slice(0, 160)};
+      }
+    }"""
+
+    async def read_session_account(self) -> Dict[str, str]:
+        """What TikTok's server says about this browser's session.
+
+        ⛔ THE SERVER DECIDES, NOT THE PAINT. A For You whose scripts were
+        refused by the proxy, or a Studio tab that bounced through /login,
+        looks signed out while TikTok still honours the session - and treating
+        that as a dead cookie cleared it and forced an OTP login (the "logged
+        out when upload starts" of batch 1k, 2026-09-18). passport account/info
+        is answered by www.tiktok.com itself, so it works even when the CDN
+        is refused. Returns {"state": "alive"|"signed_out"|"unknown",
+        "username", "detail"}.
+        """
+        await self._wait_automation_gate()
+        if not self._page:
+            return {"state": "unknown", "username": "", "detail": "no page"}
+        try:
+            result = await asyncio.wait_for(
+                self._page.evaluate(self._SESSION_ACCOUNT_JS), timeout=30
+            )
+        except Exception as exc:
+            return {"state": "unknown", "username": "", "detail": str(exc)[:160]}
+        if not isinstance(result, dict):
+            return {"state": "unknown", "username": "", "detail": "no answer"}
+        return {
+            "state": str(result.get("state") or "unknown"),
+            "username": str(result.get("username") or "").lstrip("@"),
+            "detail": str(result.get("detail") or ""),
+        }
+
+    async def sample_egress_ips(self, samples: int = 5) -> List[str]:
+        """Public address of `samples` fresh connections on THIS session's route
+        (its proxy, or the machine's own network). See egress_stability."""
+        from app.infrastructure.automation.egress_stability import (
+            proxy_url_from_config,
+            sample_egress_ips,
+        )
+
+        return await sample_egress_ips(
+            proxy_url_from_config(getattr(self, "_init_proxy_config", None)),
+            samples=samples,
+        )
+
         counter: Dict[str, int] = {}
 
         def _note(request) -> None:

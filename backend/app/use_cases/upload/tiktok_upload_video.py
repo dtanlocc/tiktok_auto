@@ -17,6 +17,11 @@ from app.use_cases.upload.media_selection import select_preferred_media
 
 logger = logging.getLogger("UploadMediaUseCase")
 
+
+class UnstableEgressError(RuntimeError):
+    """The session's route changes public address per connection."""
+
+
 #: Everything after this marker in ``note`` belongs to the uploader and is
 #: rewritten on every batch. Everything before it was typed by a person -
 #: five accounts carry hand-written notes like "video đăng tay" - so the
@@ -119,6 +124,48 @@ class TikTokUploadMediaUseCase:
     async def _log(self, message: str) -> None:
         if self.step_logger:
             await self.step_logger(message)
+
+    async def _require_stable_egress(self) -> None:
+        """Measure whether the route changes address per connection.
+
+        TikTok ends the session seconds after "Post now" when the page, the
+        upload and the publish call leave from different addresses - see
+        egress_stability. With UPLOAD_REQUIRE_STABLE_EGRESS the post is
+        refused (cookies kept); without it - the default the operator chose
+        on 2026-09-19 - the risk is written to the log and the post goes on.
+        """
+        from app.core.config import settings
+        from app.infrastructure.automation.egress_stability import rotating_addresses
+
+        probe = getattr(self.browser_service, "sample_egress_ips", None)
+        if probe is None:
+            return
+        refuse = bool(getattr(settings, "UPLOAD_REQUIRE_STABLE_EGRESS", False))
+        await self._log("Đang kiểm tra IP ra của mạng trước khi đăng...")
+        try:
+            ips = await probe(int(getattr(settings, "UPLOAD_EGRESS_SAMPLES", 5) or 5))
+        except Exception as exc:
+            logger.warning("[Upload] Không đo được IP ra: %s", exc)
+            return
+        rotating = rotating_addresses(ips)
+        if rotating:
+            shown = ", ".join(rotating[:5]) + ("…" if len(rotating) > 5 else "")
+            finding = (
+                f"mạng đang đổi IP theo từng kết nối ({len(ips)} lần đo ra "
+                f"{len(rotating)} IP: {shown}). TikTok có thể đăng xuất account ngay "
+                "sau khi bấm Post khi IP nhảy giữa phiên"
+            )
+            if refuse:
+                raise UnstableEgressError(
+                    f"KHÔNG ĐĂNG: {finding}. Hãy dùng proxy IP cố định, hoặc bật chế độ "
+                    "IP tĩnh/dedicated trên VPN rồi đăng lại. Cookies được giữ nguyên."
+                )
+            await self._log(f"⚠️ Cảnh báo: {finding}. Vẫn tiếp tục đăng (đã tắt chặn).")
+            return
+        if ips:
+            await self._log(f"Mạng ra ổn định 1 IP ({ips[0]}); tiếp tục đăng.")
+        else:
+            logger.warning("[Upload] Không đo được IP ra; vẫn tiếp tục đăng.")
 
     async def _persist_authenticated_cookie_snapshot(self, account_id: str, account):
         """Replace stored cookies only with a snapshot that still has auth."""
@@ -489,6 +536,7 @@ class TikTokUploadMediaUseCase:
             "Đang đăng nhập một lần tại trang For You..."
         )
         try:
+            await self._require_stable_egress()
             logged_in = await self.login_strategy.login(
                 self.browser_service,
                 account,
@@ -738,6 +786,7 @@ class TikTokUploadMediaUseCase:
             caption = Path(caption_source).stem if caption_source else ""
 
         media_label = f"{len(media.image_paths)} ảnh" if media.kind == "photo" else "video dự phòng"
+        await self._require_stable_egress()
         await self._log(f"Đã chọn {media_label}. Đang đăng nhập tại trang For You...")
         logged_in = await self.login_strategy.login(
             self.browser_service,
