@@ -185,7 +185,12 @@ async def _type_login_field(page, field, text: str, label: str, attempts: int = 
         await asyncio.sleep(0.4)
         await page.keyboard.press("Control+A")
         await page.keyboard.press("Backspace")
-        await field.first.press_sequentially(text, delay=random.randint(60, 130))
+        # ⛔ NO `delay=`: the engine draws a keystroke rhythm - dwell and gap
+        # per character - from this session's seed, and a `delay` REPLACES it
+        # with one flat interval. Every install that passed a number shared
+        # that interval, which is a key linking them; a password field is
+        # exactly where a site already listens (_juggler/keyboard.py).
+        await field.first.press_sequentially(text)
         await asyncio.sleep(0.6)
         try:
             if await field.first.input_value() == text:
@@ -321,11 +326,6 @@ async def _submit_login(
     2026-09-18) is TikTok's server, not the account: press again, with a pause.
     A wrong password or a locked account is never pressed again - every
     press spends one of the few attempts TikTok allows.
-    """
-    previous_error = ""
-    for press in range(transient_retries + 1):
-        if press and await _moved_past_login_form(page):
-            return ""   # the last press went through while its old error line stayed
 
     ⛔ AND THE PRESSES THEMSELVES ARE THE BUDGET. Measured 2026-09-22 on
     LÔ_20260922: press one answered "Internal server error", the immediate
@@ -333,6 +333,11 @@ async def _submit_login(
     retries spend an allowance TikTok currently counts in single digits, so
     there is ONE retry and it waits long enough to be a second try rather than
     a burst.
+    """
+    previous_error = ""
+    for press in range(transient_retries + 1):
+        if press and await _moved_past_login_form(page):
+            return ""   # the last press went through while its old error line stayed
         if not await _wait_submit_enabled(login_btn):
             # A dead button is a form React had not bound yet, not a dead end.
             # Type it again now the page has had longer, and give up only if it
@@ -997,7 +1002,8 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
 
                 await otp_input.first.click()
                 await asyncio.sleep(0.8)
-                await otp_input.first.press_sequentially(otp_code, delay=random.randint(100, 200))
+                # No `delay=`: the engine's own per-session rhythm types this (a flat `delay=` would replace it with one interval every install shares).
+                await otp_input.first.press_sequentially(otp_code)
                 await asyncio.sleep(2.0)
 
                 if step_logger:

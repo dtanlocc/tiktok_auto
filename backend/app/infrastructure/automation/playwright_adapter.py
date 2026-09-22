@@ -603,12 +603,14 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 # prefs passed through the invisible_playwright launcher.
                 **firefox_prefs_for_extensions(installed_extensions),
 
-                # TikTok Studio ignores ?lang=en on some routes and resolves
-                # translations from the browser context instead. Keep the
-                # Firefox prefs aligned with InvisiblePlaywright(locale=...) so
-                # navigator.language, Intl and Accept-Language all say en-US.
-                "intl.accept_languages": "en-US, en",
-                "intl.locale.requested": "en-US",
+                # ⛔ THE LANGUAGE IS `locale=`, NOT A PREF. One pref produces
+                # both the Accept-Language header and navigator.languages, and
+                # the engine sets it - along with five sibling values - from
+                # the locale this session was launched with. Setting it here by
+                # hand overrode one of the six and left the others following
+                # the constructor, which is an internal disagreement inside a
+                # single surface: exactly what a detector cross-checks. Studio
+                # still gets English because `locale="en-US"` is passed below.
 
                 # =============================================================
                 # SUA LOI "TRINH DUYET 2 DUNG TRANG KHI BI CUA SO 1 CHE":
@@ -681,8 +683,6 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 # khác Firefox stock. Để engine invisible quản lý các bề mặt này.
             }
 
-            # TikTok Studio reads Canvas2D pixels while preparing crops and
-            # thumbnails. The default anti-fingerprint substitution would
             # ⛔ A PROXY THAT REFUSES CONNECTIONS LOOKS LIKE A BROKEN TIKTOK.
             # These proxies accept about ten at a time; a TikTok page opens far
             # more, so the extra ones are refused, the scripts never arrive and
@@ -712,6 +712,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     "network.prefetch-next": False,
                 })
 
+            # TikTok Studio reads Canvas2D pixels while preparing crops and
+            # thumbnails. The default anti-fingerprint substitution would
             # otherwise become visible speckle in the resulting media. Apply
             # this consistently to every product session for the identity.
             firefox_prefs = merge_faithful_canvas_readback(
@@ -2003,7 +2005,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         await self._page.keyboard.press("Control+A")
         await self._page.keyboard.press("Backspace")
         await asyncio.sleep(0.4)
-        await uname_input.press_sequentially(value, delay=random.randint(60, 140))
+        # No `delay=`: the engine's own per-session rhythm types this (a flat `delay=` would replace it with one interval every install shares).
+        await uname_input.press_sequentially(value)
         await asyncio.sleep(0.5)
 
     async def _type_username_until_valid(
@@ -2412,7 +2415,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 await bio_input.first.click()
                 await self._page.keyboard.press("Control+A")
                 await self._page.keyboard.press("Backspace")
-                await bio_input.first.press_sequentially(bio, delay=random.randint(100, 200))
+                # No `delay=`: the engine's own per-session rhythm types this (a flat `delay=` would replace it with one interval every install shares).
+                await bio_input.first.press_sequentially(bio)
                 await asyncio.sleep(2)
 
             if not avatar_path and bio is None and not username_needs_confirm:
@@ -4065,9 +4069,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             runs = re.findall(r"[\x20-\x7e]+|[^\x20-\x7e]+", value)
             for run in runs:
                 if run.isascii() and all(0x20 <= ord(char) <= 0x7E for char in run):
+                    # No `delay=`: the engine's own per-session rhythm types this (a flat `delay=` would replace it with one interval every install shares).
                     await editor.press_sequentially(
                         run,
-                        delay=delay,
                         timeout=timeout_ms,
                     )
                 else:

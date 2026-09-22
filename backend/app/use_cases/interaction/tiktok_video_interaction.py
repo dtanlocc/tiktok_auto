@@ -149,7 +149,8 @@ class TikTokVideoInteractionUseCase:
                                 comment_input = page.locator(self.COMMENT_INPUT_SELECTORS).first
                                 await comment_input.wait_for(state="visible", timeout=8000)
                                 await comment_input.click()
-                                await comment_input.press_sequentially(comment_text, delay=random.randint(80, 180))
+                                # No `delay=`: the engine's own per-session rhythm types this (a flat `delay=` would replace it with one interval every install shares).
+                                await comment_input.press_sequentially(comment_text)
                                 await asyncio.sleep(random.uniform(0.5, 1.2))
 
                                 post_btn = page.locator(self.COMMENT_POST_SELECTORS).first
