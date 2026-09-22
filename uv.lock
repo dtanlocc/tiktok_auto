@@ -519,7 +519,7 @@ wheels = [
 
 [[package]]
 name = "invisible-core"
-version = "30.23.0"
+version = "34.28.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "maxminddb" },
@@ -528,14 +528,14 @@ dependencies = [
     { name = "requests", extra = ["socks"] },
     { name = "tzdata" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/10/f2/26ac014be3b01fe764fc5f3a1f8201422fb010b134aff7a5b6f61fdf95af/invisible_core-30.23.0.tar.gz", hash = "sha256:057e879a6b726149903e7d8c493c30b5116fedeefb57d101762c4913b1aa7f2e", size = 483983, upload-time = "2026-09-15T22:57:11.768Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c8/13/97ddd25675dfeda5808c1cd3e6c3351008ea794b9f5885bfc98770f601a3/invisible_core-34.28.0.tar.gz", hash = "sha256:024f79a626fa2242fc9b98c139eaa06c12b4e0dbe07afa7e46dccf322483f210", size = 503851, upload-time = "2026-09-21T21:46:08.362Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/04/a7/51b42b49428f8f91865004dc44680556732456b6e1b6acd4beb1e837d15a/invisible_core-30.23.0-py3-none-any.whl", hash = "sha256:6ef1e2b1ff5374f9e35d7d7342e69adc740863d79cb44698bc6406aaf9d0c85f", size = 261531, upload-time = "2026-09-15T22:57:10.553Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/51/896ce83244de76bd4280b4b9c21d33105996a23370897163030f01ccde31/invisible_core-34.28.0-py3-none-any.whl", hash = "sha256:85a10d58086f3d52b8062594e1411a2d5dfcb3f0405697933c65abc627c1754b", size = 269666, upload-time = "2026-09-21T21:46:07.267Z" },
 ]
 
 [[package]]
 name = "invisible-playwright"
-version = "0.16.2"
+version = "0.25.4"
 source = { editable = "tools/invisible_playwright" }
 dependencies = [
     { name = "greenlet" },
@@ -549,7 +549,7 @@ dependencies = [
 requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1" },
     { name = "greenlet", specifier = ">=3.1.1,<4.0.0" },
-    { name = "invisible-core", specifier = "==30.23.0" },
+    { name = "invisible-core", specifier = "==34.28.0" },
     { name = "playwright", marker = "extra == 'dev'", specifier = "==1.61.0" },
     { name = "psutil", specifier = ">=5.9" },
     { name = "pyee", specifier = ">=13,<14" },
