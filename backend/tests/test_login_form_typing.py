@@ -338,14 +338,14 @@ def _answers(monkeypatch, answers):
     monkeypatch.setattr(login_strategies, "_await_login_response", respond)
 
 
-def test_an_internal_server_error_is_pressed_again_until_tiktok_moves_on(monkeypatch):
-    _answers(monkeypatch, ["Internal server error. Please try again later.",
-                           "Internal server error. Please try again later.", ""])
+def test_an_internal_server_error_is_pressed_again_once(monkeypatch):
+    """One more press, not a burst: TikTok counts every press as an attempt."""
+    _answers(monkeypatch, ["Internal server error. Please try again later.", ""])
     button = _SubmitButton()
 
     error = asyncio.run(login_strategies._submit_login(object(), _CaptchaFreeBrowser(), button))
 
-    assert error == "" and button.clicks == 3
+    assert error == "" and button.clicks == 2
 
 
 def test_a_wrong_password_is_never_pressed_again(monkeypatch):
@@ -357,13 +357,13 @@ def test_a_wrong_password_is_never_pressed_again(monkeypatch):
     assert error.startswith("Incorrect") and button.clicks == 1
 
 
-def test_a_server_error_that_never_clears_is_reported_after_the_retries(monkeypatch):
-    _answers(monkeypatch, ["Internal server error. Please try again later."] * 4)
+def test_a_server_error_that_never_clears_is_reported_after_one_retry(monkeypatch):
+    _answers(monkeypatch, ["Internal server error. Please try again later."] * 3)
     button = _SubmitButton()
 
     error = asyncio.run(login_strategies._submit_login(object(), _CaptchaFreeBrowser(), button))
 
-    assert error.startswith("Internal server error") and button.clicks == 4
+    assert error.startswith("Internal server error") and button.clicks == 2
 
 
 class _AfterLoginBrowser:
@@ -789,3 +789,46 @@ def test_a_live_session_is_not_cleared_for_an_otp_login():
         asyncio.run(login_strategies.CookieThenCredentialLoginStrategy().login(
             browser, _cookie_account()))
     assert browser.cleared == 0
+
+
+class _LateButton(_SubmitButton):
+    """Disabled until the form is typed again, like a page React bound late."""
+
+    def __init__(self):
+        super().__init__()
+        self.typed_again = False
+
+    async def is_enabled(self):
+        return self.typed_again
+
+
+def test_a_button_still_disabled_is_typed_again_before_giving_up(monkeypatch):
+    _answers(monkeypatch, [""])
+    button = _LateButton()
+    refills = []
+
+    async def refill():
+        refills.append(True)
+        button.typed_again = True
+
+    error = asyncio.run(login_strategies._submit_login(
+        object(), _CaptchaFreeBrowser(), button, transient_retries=0, refill=refill))
+
+    assert error == "" and refills == [True] and button.clicks == 1
+
+
+def test_a_button_that_stays_dead_after_the_retype_is_reported(monkeypatch):
+    button = _LateButton()
+
+    async def refill():
+        return None          # the page is genuinely broken; the button stays dead
+
+    with pytest.raises(RuntimeError, match="sau khi go lai"):
+        asyncio.run(login_strategies._submit_login(
+            object(), _CaptchaFreeBrowser(), button, transient_retries=0, refill=refill))
+
+
+def test_without_a_refill_the_old_message_is_kept(monkeypatch):
+    with pytest.raises(RuntimeError, match="sau khi go Email/Password"):
+        asyncio.run(login_strategies._submit_login(
+            object(), _CaptchaFreeBrowser(), _LateButton(), transient_retries=0))

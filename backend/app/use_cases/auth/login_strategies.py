@@ -312,7 +312,8 @@ def is_transient_login_error(message: str) -> bool:
 
 
 async def _submit_login(
-    page, browser, login_btn, step_logger=None, transient_retries: int = 3
+    page, browser, login_btn, step_logger=None, transient_retries: int = 1,
+    refill=None,
 ) -> str:
     """Press Log in and return TikTok's refusal, or "" once it moved on.
 
@@ -325,11 +326,33 @@ async def _submit_login(
     for press in range(transient_retries + 1):
         if press and await _moved_past_login_form(page):
             return ""   # the last press went through while its old error line stayed
+
+    ⛔ AND THE PRESSES THEMSELVES ARE THE BUDGET. Measured 2026-09-22 on
+    LÔ_20260922: press one answered "Internal server error", the immediate
+    second press answered "Maximum number of attempts reached". Three quick
+    retries spend an allowance TikTok currently counts in single digits, so
+    there is ONE retry and it waits long enough to be a second try rather than
+    a burst.
         if not await _wait_submit_enabled(login_btn):
-            raise RuntimeError(
-                "Nut Log in van bi khoa sau khi go Email/Password: TikTok chua nhan "
-                "thong tin dang nhap."
-            )
+            # A dead button is a form React had not bound yet, not a dead end.
+            # Type it again now the page has had longer, and give up only if it
+            # is still dead after that.
+            if refill is None:
+                raise RuntimeError(
+                    "Nut Log in van bi khoa sau khi go Email/Password: TikTok chua nhan "
+                    "thong tin dang nhap."
+                )
+            if step_logger:
+                await step_logger(
+                    "[!] Nut Log in con khoa (trang chua gan xong form); go lai Email/Password..."
+                )
+            await refill()
+            refill = None      # one re-fill per login, never a loop
+            if not await _wait_submit_enabled(login_btn, timeout_seconds=20.0):
+                raise RuntimeError(
+                    "Nut Log in van bi khoa sau khi go lai Email/Password: TikTok chua "
+                    "nhan thong tin dang nhap."
+                )
         try:
             await login_btn.first.click()
         except Exception:
@@ -351,7 +374,7 @@ async def _submit_login(
                 f"[!] TikTok bao loi tam thoi '{error}'; bam Log in lai "
                 f"(lan {press + 1}/{transient_retries})..."
             )
-        await asyncio.sleep(random.uniform(3.0, 6.0))
+        await asyncio.sleep(random.uniform(20.0, 35.0))
     return error
 
 
@@ -537,7 +560,7 @@ async def _wait_visible(locator, timeout_seconds: float) -> bool:
 
 async def _wait_verification_screen(
     page, browser, email_channel, otp_input, step_logger=None,
-    timeout_seconds: float = 90.0,
+    timeout_seconds: float = 150.0,
 ) -> str:
     """After Log in: "email" (choose where to send the code), "otp" (code box
     already there), "none" (TikTok went straight on / nothing came) or
@@ -770,7 +793,14 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             )
             # Nothing is typed until the login page has fully loaded: typing
             # while its scripts were still arriving was wiped.
-            await _wait_page_fully_loaded(page, step_logger, "trang dang nhap")
+            # ⛔ 30s IS NOT ENOUGH ON A THROTTLED ROUTE. These proxies refuse
+            # tens of CDN requests under load, so the form paints late and is
+            # still unbound when the old cap expired: the typed text went
+            # nowhere and the login died on "Log in is still disabled"
+            # (LÔ_20260922 through 151.244.238.42, 2026-09-22).
+            await _wait_page_fully_loaded(
+                page, step_logger, "trang dang nhap", timeout_seconds=90.0
+            )
 
             # Buoc 5: Dien EMAIL tu tu tung phim mot (delay 120ms).
             # Dung account.email de dang nhap (thay vi username) - on dinh hon.
@@ -799,7 +829,15 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             await login_btn.first.wait_for(state="visible", timeout=15000)
             # Captcha after submit is waited out inside; transient server
             # errors are pressed again.
-            form_error = await _submit_login(page, browser, login_btn, step_logger)
+            async def refill_login_form():
+                await _fill_login_form(
+                    page, email_input, pass_input, login_identifier, account.password,
+                    step_logger=step_logger,
+                )
+
+            form_error = await _submit_login(
+                page, browser, login_btn, step_logger, refill=refill_login_form
+            )
 
             # TikTok refuses on the form itself. "Account doesn't exist" for the
             # imported email while @username is alive (treft21664, 2026-09-18):

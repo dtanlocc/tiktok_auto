@@ -123,6 +123,13 @@ class Settings(BaseSettings):
     # Chi la luoi an toan cho launch hi huu bi treo -> 2 la du.
     BROWSER_LAUNCH_MAX_TRIES: int = 2
 
+    # So ket noi song song toi da cua Firefox KHI CHAY QUA PROXY. Cac proxy hien
+    # dung (AS211407) tu choi ket noi vuot ~10 cung luc: trang TikTok mo mot luc
+    # hang chuc ket noi -> CDN bi tu choi hang loat -> trang khong co JS, form
+    # login la HTML chet va nut Log in khong bao gio sang (do 2026-09-22).
+    # 0 = khong gioi han (hanh vi cu).
+    PROXY_BROWSER_MAX_CONNECTIONS: int = 10
+
     # Truoc khi dang bai: do IP ra cua duong mang (proxy hoac mang that) qua
     # vai ket noi moi. Neu IP doi theo tung ket noi (VPN xoay IP), TikTok huy phien
     # dang nhap ngay sau khi bam Post (do 2026-09-19, 4/4 account). Mac dinh chi

@@ -683,6 +683,35 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
             # TikTok Studio reads Canvas2D pixels while preparing crops and
             # thumbnails. The default anti-fingerprint substitution would
+            # ⛔ A PROXY THAT REFUSES CONNECTIONS LOOKS LIKE A BROKEN TIKTOK.
+            # These proxies accept about ten at a time; a TikTok page opens far
+            # more, so the extra ones are refused, the scripts never arrive and
+            # the page is dead HTML - a login form whose button never enables,
+            # a For You that never paints. Capping the browser keeps every
+            # request inside what the route will carry (measured 2026-09-22:
+            # 127 refusals uncapped, 13-24 capped).
+            proxy_connection_cap = int(
+                getattr(settings, "PROXY_BROWSER_MAX_CONNECTIONS", 0) or 0
+            )
+            if proxy_opts and proxy_connection_cap > 0:
+                firefox_prefs.update({
+                    "network.http.max-connections": proxy_connection_cap,
+                    "network.http.max-persistent-connections-per-server":
+                        max(2, proxy_connection_cap // 3),
+                    "network.http.max-persistent-connections-per-proxy":
+                        max(4, proxy_connection_cap - 2),
+                    # ⛔ AND IDLE SOCKETS MUST GIVE THE BUDGET BACK. Firefox
+                    # keeps one alive for 115s by default; For You leaves a
+                    # dozen behind, so the login page opened next inherits no
+                    # budget at all and its scripts never arrive - the form
+                    # then sits there unbound, with Log in permanently grey.
+                    "network.http.keep-alive.timeout": 10,
+                    # (dns.disablePrefetch and predictor.enabled are the
+                    # engine's own; re-declaring them here would only risk
+                    # disagreeing with it.)
+                    "network.prefetch-next": False,
+                })
+
             # otherwise become visible speckle in the resulting media. Apply
             # this consistently to every product session for the identity.
             firefox_prefs = merge_faithful_canvas_readback(
