@@ -990,3 +990,91 @@ def test_a_clean_rerun_clears_the_stale_failure_note(tmp_path: Path):
     account.status = "IDLE"
     _run_two_video_batch(account, tmp_path, fail_index=0)   # nothing fails
     assert account.note == "nick VIP"
+
+
+def _studio_bounce_run(tmp_path: Path, server: dict, bounces: int):
+    """Studio sends the first `bounces` publishes to /login; TikTok's server says `server`."""
+    video = tmp_path / "studio-bounce.mp4"
+    video.write_bytes(b"video")
+    account = SimpleNamespace(
+        id="account", username="norvi4671",
+        cookies=[{"name": "sessionid", "value": "stored"}],
+        health_status="ALIVE", status="IDLE", current_step="", note="",
+        upload_success_count=0, upload_failure_count=0,
+        last_upload_status="NEVER", last_upload_error="", last_upload_at="",
+    )
+
+    class Repo:
+        def get_by_id(self, _account_id):
+            return account
+
+        def save(self, _account):
+            return None
+
+    class InitialLogin:
+        async def login(self, *_args, **_kwargs):
+            return True
+
+    class ForcedOtpLogin:
+        calls = 0
+
+        async def login(self, *_args, **_kwargs):
+            ForcedOtpLogin.calls += 1
+            return True
+
+    class Browser:
+        def __init__(self):
+            self.publish_calls = 0
+            self.clears = 0
+
+        async def prepare_foryou_home(self, **_kwargs):
+            return True
+
+        async def extract_cookies(self):
+            return [{"name": "sessionid", "value": "stored"}]
+
+        async def read_session_account(self):
+            return dict(server)
+
+        async def clear_auth_session(self):
+            self.clears += 1
+
+        async def publish_media(self, **_kwargs):
+            self.publish_calls += 1
+            if self.publish_calls <= bounces:
+                raise StudioReauthenticationRequired("Studio login redirect")
+            return True
+
+    browser = Browser()
+    use_case = TikTokUploadMediaUseCase(
+        Repo(), browser, InitialLogin(), email_service=None,
+        credential_login_strategy_factory=ForcedOtpLogin,
+    )
+    result = asyncio.run(use_case.execute_video_batch("account", video_paths=[str(video)]))
+    return result, browser, ForcedOtpLogin.calls
+
+
+def test_a_studio_login_bounce_with_a_live_session_keeps_the_cookies(tmp_path: Path):
+    result, browser, otp_logins = _studio_bounce_run(
+        tmp_path, {"state": "alive", "username": "norvi4671"}, bounces=1)
+
+    assert result is True
+    assert browser.clears == 0 and otp_logins == 0
+    assert browser.publish_calls == 2
+
+
+def test_a_studio_bounce_on_a_session_tiktok_ended_logs_in_by_otp_once(tmp_path: Path):
+    result, browser, otp_logins = _studio_bounce_run(
+        tmp_path, {"state": "signed_out", "detail": "session expired"}, bounces=1)
+
+    assert result is True
+    assert browser.clears == 1 and otp_logins == 1
+
+
+def test_a_bounce_that_survives_the_retry_still_gets_the_one_otp_login(tmp_path: Path):
+    result, browser, otp_logins = _studio_bounce_run(
+        tmp_path, {"state": "alive", "username": "norvi4671"}, bounces=2)
+
+    assert result is True
+    assert browser.clears == 1 and otp_logins == 1
+    assert browser.publish_calls == 3

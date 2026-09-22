@@ -231,7 +231,7 @@ def test_moving_on_to_the_code_screen_is_not_a_refusal(monkeypatch):
     _clock_only(monkeypatch)
     page = _SlowRefusalPage(looks_before_error=99, moved_on=True)
     assert asyncio.run(login_strategies._await_login_response(page)) == ""
-    assert page.looks == 1
+    assert page.looks == 0      # moved on: no need to read the form for an error
 
 
 def _clock_only(monkeypatch):
@@ -332,7 +332,7 @@ class _CaptchaFreeBrowser:
 def _answers(monkeypatch, answers):
     replies = list(answers)
 
-    async def respond(_page, timeout_seconds=12.0):
+    async def respond(_page, timeout_seconds=12.0, ignore_error=""):
         return replies.pop(0)
 
     monkeypatch.setattr(login_strategies, "_await_login_response", respond)
@@ -407,3 +407,385 @@ def test_no_page_and_no_session_cookie_is_still_a_failure(monkeypatch):
 
     with pytest.raises(AuthenticationPageNotReady):
         asyncio.run(login_strategies._confirm_logged_in(browser))
+
+
+class _StaleGuestPageBrowser(_AfterLoginBrowser):
+    """The login modal signed in on /foryou; the old guest navbar shows until a reload."""
+
+    def __init__(self, cookies, signed_in_after_reloads=1):
+        super().__init__(blank=0, cookies=cookies)
+        self.signed_in_after_reloads = signed_in_after_reloads
+
+    async def check_login_status(self):
+        self.looks += 1
+        return self.reloads >= self.signed_in_after_reloads
+
+
+def _no_wait(monkeypatch):
+    async def instant(_seconds):
+        return None
+
+    monkeypatch.setattr(login_strategies.asyncio, "sleep", instant)
+
+
+def test_a_guest_navbar_left_from_before_the_code_is_reloaded_not_reported(monkeypatch):
+    _no_wait(monkeypatch)
+    browser = _StaleGuestPageBrowser(cookies=[{"name": "sessionid", "value": "fresh"}])
+
+    assert asyncio.run(login_strategies._confirm_logged_in(browser)) == (True, True)
+    assert browser.reloads == 1
+
+
+def test_a_guest_page_without_a_session_cookie_is_a_failure_at_once(monkeypatch):
+    _no_wait(monkeypatch)
+    browser = _StaleGuestPageBrowser(cookies=[{"name": "ttwid", "value": "guest"}])
+
+    assert asyncio.run(login_strategies._confirm_logged_in(browser)) == (False, True)
+    assert browser.reloads == 0
+
+
+def test_a_session_cookie_that_never_signs_the_page_in_fails_after_the_reloads(monkeypatch):
+    _no_wait(monkeypatch)
+    browser = _StaleGuestPageBrowser(
+        cookies=[{"name": "sessionid", "value": "dead"}], signed_in_after_reloads=99)
+
+    assert asyncio.run(login_strategies._confirm_logged_in(browser)) == (False, True)
+    assert browser.reloads == 3
+
+
+class _CodeBox:
+    def __init__(self, visible_looks):
+        self.visible_looks = visible_looks
+        self.looks = 0
+
+    @property
+    def first(self):
+        return self
+
+    async def count(self):
+        return 1
+
+    async def is_visible(self):
+        self.looks += 1
+        return self.looks <= self.visible_looks
+
+
+class _CodePage:
+    def __init__(self, text):
+        self.text = text
+
+    async def evaluate(self, _script):
+        return self.text
+
+
+def test_a_refused_code_is_reported(monkeypatch):
+    _no_wait(monkeypatch)
+    page = _CodePage("2-step verification\nVerification code is expired or incorrect. Try again.\nNext")
+
+    assert "expired or incorrect" in asyncio.run(
+        login_strategies._await_otp_result(page, _CodeBox(visible_looks=99)))
+
+
+def test_the_code_screen_going_away_is_an_accepted_code(monkeypatch):
+    _no_wait(monkeypatch)
+    page = _CodePage("2-step verification\nYour code was emailed to a***3@hotmail.com.\nResend code: 44s\nNext")
+
+    assert asyncio.run(login_strategies._await_otp_result(page, _CodeBox(visible_looks=3))) == ""
+
+
+# --- a credential login into a differently named account ------------------------
+
+class _AnyLocator:
+    @property
+    def first(self):
+        return self
+
+    def filter(self, **_kw):
+        return self
+
+    async def wait_for(self, **_kw):
+        return None
+
+    async def click(self, **_kw):
+        return None
+
+    async def count(self):
+        return 0
+
+    async def is_visible(self):
+        return False
+
+
+class _AnyPage:
+    url = "https://www.tiktok.com/foryou?lang=en"
+
+    def locator(self, _selector):
+        return _AnyLocator()
+
+
+class _SignedInElsewhereBrowser:
+    """The credentials open @maryannfranze while the app saved @mo91trow4_spau."""
+
+    def __init__(self):
+        self._page = _AnyPage()
+        self.last_observed_identity = ""
+
+    async def navigate_to(self, _url):
+        return None
+
+    async def is_account_banned(self):
+        return False
+
+    async def validate_authenticated_identity(self, expected):
+        self.last_observed_identity = "maryannfranze"
+        return expected == "maryannfranze"
+
+
+def test_a_credential_login_into_a_renamed_account_is_a_success_not_a_mismatch(monkeypatch):
+    async def form(browser, step_logger=None):
+        return browser._page, _AnyLocator()
+
+    async def nothing(*_a, **_kw):
+        return None
+
+    async def loaded(*_a, **_kw):
+        return True
+
+    async def submitted(*_a, **_kw):
+        return ""
+
+    async def no_code_screen(*_a, **_kw):
+        return "none"
+
+    async def signed_in(*_a, **_kw):
+        return True, True
+
+    monkeypatch.setattr(login_strategies, "_open_email_login_form", form)
+    monkeypatch.setattr(login_strategies, "_wait_page_fully_loaded", loaded)
+    monkeypatch.setattr(login_strategies, "_fill_login_form", nothing)
+    monkeypatch.setattr(login_strategies, "_submit_login", submitted)
+    monkeypatch.setattr(login_strategies, "_wait_verification_screen", no_code_screen)
+    monkeypatch.setattr(login_strategies, "_confirm_logged_in", signed_in)
+    messages = []
+
+    async def log(message):
+        messages.append(message)
+
+    from types import SimpleNamespace
+    account = SimpleNamespace(email="maryannfranze570852@hotmail.com", username="mo91trow4_spau",
+                              password="pw", refresh_token="t", client_id="c")
+    ok = asyncio.run(login_strategies.CredentialEmailOtpLoginStrategy().login(
+        _SignedInElsewhereBrowser(), account, step_logger=log))
+
+    assert ok is True, messages           # the use case's username sync corrects the name next
+    assert any("@maryannfranze" in m and "cap nhat username" in m for m in messages)
+
+
+class _StaleErrorPage:
+    """After a re-press the old red line stays while TikTok opens the Email dialog."""
+
+    def __init__(self, moves_on_after_looks):
+        self.looks = 0
+        self.moves_on_after_looks = moves_on_after_looks
+
+    async def evaluate(self, script):
+        if "innerText.slice(0, 4000)" in script:
+            return "Log in\nInternal server error. Please try again later.\nLog in"
+        self.looks += 1
+        return self.looks > self.moves_on_after_looks
+
+
+def test_an_old_error_line_is_not_read_as_a_new_refusal(monkeypatch):
+    _clock_only(monkeypatch)
+    page = _StaleErrorPage(moves_on_after_looks=3)
+    stale = "Internal server error. Please try again later."
+
+    assert asyncio.run(login_strategies._await_login_response(page, ignore_error=stale)) == ""
+
+
+def test_a_press_blocked_by_the_email_dialog_counts_as_moved_on(monkeypatch):
+    class CoveredButton(_SubmitButton):
+        async def click(self):
+            raise RuntimeError("the event would have landed elsewhere (<form>)")
+
+    async def moved(_page):
+        return True
+
+    monkeypatch.setattr(login_strategies, "_moved_past_login_form", moved)
+    assert asyncio.run(login_strategies._submit_login(object(), _CaptchaFreeBrowser(), CoveredButton())) == ""
+
+
+# --- the For You login modal stays the main way in ------------------------------
+
+class _ModalPage:
+    """For You: the first Log in press opens nothing (page still loading), the
+    second opens the modal; then "Use phone or email" -> "Use email or username"."""
+
+    def __init__(self):
+        self.login_presses = 0
+        self.step = "feed"      # feed -> modal -> phone -> email
+
+    def locator(self, selector):
+        return _ModalLocator(self, selector)
+
+    def get_by_text(self, *_a, **_kw):
+        return _ModalLocator(self, "text")
+
+
+class _ModalLocator:
+    def __init__(self, page, selector):
+        self.page, self.selector = page, selector
+
+    @property
+    def first(self):
+        return self
+
+    def filter(self, **_kw):
+        return self
+
+    def _visible(self):
+        sel, step = self.selector, self.page.step
+        if "login-modal" in sel:
+            return step in ("modal", "phone", "email")
+        if "channel-item" in sel:
+            return step == "modal"
+        if "login/phone-or-email/email" in sel or "Use email or username" in sel:
+            return step == "phone"
+        if "input" in sel:
+            return step == "email"
+        if "Log in" in sel or "login-button" in sel:
+            return step == "feed"
+        return False
+
+    async def count(self):
+        return 1 if self._visible() else 0
+
+    async def is_visible(self):
+        return self._visible()
+
+    async def wait_for(self, **_kw):
+        if not self._visible():
+            raise RuntimeError(f"not visible: {self.selector[:40]}")
+
+    async def click(self, **_kw):
+        sel = self.selector
+        if "Log in" in sel or "login-button" in sel:
+            self.page.login_presses += 1
+            if self.page.login_presses >= 2:
+                self.page.step = "modal"
+        elif "channel-item" in sel:
+            self.page.step = "phone"
+        elif "Use email or username" in sel or "login/phone-or-email/email" in sel:
+            self.page.step = "email"
+
+
+def test_the_for_you_modal_is_walked_before_any_direct_url(monkeypatch):
+    _clock_only(monkeypatch)
+    navigated = []
+
+    class Browser:
+        def __init__(self):
+            self._page = _ModalPage()
+
+        async def navigate_to(self, url):
+            navigated.append(url)
+
+    browser = Browser()
+    page, email_input = asyncio.run(login_strategies._open_email_login_form(browser))
+
+    assert navigated == []                      # no fallback to the direct login URL
+    assert browser._page.login_presses == 2     # pressed again when the modal did not open
+    assert asyncio.run(email_input.first.is_visible())
+
+
+# --- the server, not the paint, decides whether a stored cookie is dead ---------
+
+class _CookieBrowser:
+    """For You shows a guest navbar for `guest_looks` looks; TikTok's server says `server`."""
+
+    def __init__(self, guest_looks, server, identity=True):
+        self.guest_looks = guest_looks
+        self.server = server
+        self.identity = identity
+        self.looks = 0
+        self.navigations = 0
+        self.cleared = 0
+
+    async def navigate_to(self, _url):
+        self.navigations += 1
+
+    async def inject_cookies(self, _cookies):
+        return None
+
+    async def check_login_status(self):
+        self.looks += 1
+        return self.looks > self.guest_looks
+
+    async def read_session_account(self):
+        return dict(self.server)
+
+    async def validate_authenticated_identity(self, _expected):
+        return self.identity
+
+    async def clear_auth_session(self):
+        self.cleared += 1
+
+
+def _cookie_account():
+    from types import SimpleNamespace
+    return SimpleNamespace(username="norvi4671", email="n@hotmail.com", password="pw",
+                           cookies=[{"name": "sessionid", "value": "live"}])
+
+
+_ALIVE = {"state": "alive", "username": "norvi4671", "detail": "1"}
+_ENDED = {"state": "signed_out", "username": "", "detail": "session expired, please sign in again"}
+
+
+def test_a_guest_looking_page_with_a_live_session_is_reloaded_not_logged_out():
+    browser = _CookieBrowser(guest_looks=1, server=_ALIVE)
+    messages = []
+
+    async def log(m):
+        messages.append(m)
+
+    assert asyncio.run(login_strategies.CookieLoginStrategy().login(
+        browser, _cookie_account(), step_logger=log)) is True
+    assert browser.looks == 2
+    assert any("VAN CON" in m.upper() or "van con hieu luc" in m for m in messages)
+
+
+def test_a_live_session_the_page_never_shows_keeps_the_cookies_and_stops():
+    browser = _CookieBrowser(guest_looks=99, server=_ALIVE)
+
+    with pytest.raises(AuthenticationPageNotReady):
+        asyncio.run(login_strategies.CookieLoginStrategy().login(browser, _cookie_account()))
+    assert browser.looks == 3
+
+
+def test_a_session_tiktok_ended_is_a_failed_cookie_login():
+    browser = _CookieBrowser(guest_looks=99, server=_ENDED)
+    messages = []
+
+    async def log(m):
+        messages.append(m)
+
+    assert asyncio.run(login_strategies.CookieLoginStrategy().login(
+        browser, _cookie_account(), step_logger=log)) is False
+    assert browser.looks == 1
+    assert any("session expired" in m for m in messages)
+
+
+def test_the_server_names_the_account_when_the_nav_does_not():
+    browser = _CookieBrowser(guest_looks=0, server=_ALIVE, identity=False)
+
+    assert asyncio.run(login_strategies.CookieLoginStrategy().login(browser, _cookie_account())) is True
+
+
+def test_a_live_session_is_not_cleared_for_an_otp_login():
+    """CookieThenCredential used to clear the jar and log in by OTP on a guest-looking page."""
+    browser = _CookieBrowser(guest_looks=99, server=_ALIVE)
+
+    with pytest.raises(AuthenticationPageNotReady):
+        asyncio.run(login_strategies.CookieThenCredentialLoginStrategy().login(
+            browser, _cookie_account()))
+    assert browser.cleared == 0

@@ -88,18 +88,30 @@ async def _open_email_login_form(
     if existing is not None:
         return page, existing
 
+    # ⛔ THE FOR YOU MODAL IS THE MAIN WAY IN; the direct URL below is only
+    # the fallback. Measured 2026-09-18 through 209.145.57.39: with For You
+    # fully loaded, Log in -> the "Log in to TikTok" modal came ~6s later ->
+    # "Use phone or email" ([data-e2e=channel-item]) -> "Use email or
+    # username" -> both fields, all inside the modal. Clicking Log in before
+    # the page had loaded, or looking for the modal after 1.5s, missed it.
     try:
         if step_logger:
             await step_logger("Dang tim va nhap vao nut Log in ngoai trang chu...")
         login_home_btn = page.locator(
+            '[data-e2e="nav-login-button"]:visible, '
+            '[data-e2e="top-login-button"]:visible, '
             'div.TUXButton-content:has-text("Log in"), '
             'div.TUXButton-label:has-text("Log in"), '
-            '[data-e2e="nav-login-button"]:visible, '
             'button:has-text("Log in"):visible'
         )
-        await login_home_btn.first.wait_for(state="visible", timeout=8000)
-        await login_home_btn.first.click()
-        await asyncio.sleep(1.5)
+        await login_home_btn.first.wait_for(state="visible", timeout=15000)
+        login_modal = page.locator('[data-e2e="login-modal"]')
+        for press in range(2):
+            await login_home_btn.first.click()
+            if await _wait_visible(login_modal, timeout_seconds=15.0):
+                break
+            if step_logger and press == 0:
+                await step_logger("Chua thay hop thoai Log in; bam Log in lai...")
 
         direct = await visible_email_input(2000)
         if direct is not None:
@@ -108,13 +120,13 @@ async def _open_email_login_form(
         if step_logger:
             await step_logger("Dang chon phuong thuc 'Use phone or email'...")
         channel_btn = page.locator('[data-e2e="channel-item"]').filter(
-            has_text="Use phone"
+            has_text=re.compile(r"use phone", re.I)
         )
-        await channel_btn.first.wait_for(state="visible", timeout=10000)
+        await channel_btn.first.wait_for(state="visible", timeout=15000)
         await channel_btn.first.click()
         await asyncio.sleep(1.5)
 
-        direct = await visible_email_input(2000)
+        direct = await visible_email_input(3000)
         if direct is not None:
             return page, direct
 
@@ -125,11 +137,11 @@ async def _open_email_login_form(
             'a:has-text("Use email or username"), .elfe54h0, '
             'span:has-text("Username or email")'
         )
-        await tab_btn.first.wait_for(state="visible", timeout=10000)
+        await tab_btn.first.wait_for(state="visible", timeout=15000)
         await tab_btn.first.click()
         await asyncio.sleep(1.5)
 
-        email_input = await visible_email_input(10000)
+        email_input = await visible_email_input(15000)
         if email_input is not None:
             return page, email_input
     except Exception as exc:
@@ -309,19 +321,31 @@ async def _submit_login(
     A wrong password or a locked account is never pressed again - every
     press spends one of the few attempts TikTok allows.
     """
+    previous_error = ""
     for press in range(transient_retries + 1):
+        if press and await _moved_past_login_form(page):
+            return ""   # the last press went through while its old error line stayed
         if not await _wait_submit_enabled(login_btn):
             raise RuntimeError(
                 "Nut Log in van bi khoa sau khi go Email/Password: TikTok chua nhan "
                 "thong tin dang nhap."
             )
-        await login_btn.first.click()
+        try:
+            await login_btn.first.click()
+        except Exception:
+            # Covered by the Email-choice dialog: TikTok already moved on.
+            if await _moved_past_login_form(page):
+                return ""
+            raise
         await asyncio.sleep(3)  # cho trang phan hoi sau khi submit
         # Day la diem hay xuat hien captcha (geetest/slider) nhat trong luong login.
         await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
-        error = await _await_login_response(page)
+        # After a re-press the previous line may still be on screen; only a
+        # different message (or the same one after TikTok cleared it) counts.
+        error = await _await_login_response(page, ignore_error=previous_error)
         if not is_transient_login_error(error) or press == transient_retries:
             return error
+        previous_error = error
         if step_logger:
             await step_logger(
                 f"[!] TikTok bao loi tam thoi '{error}'; bam Log in lai "
@@ -329,6 +353,33 @@ async def _submit_login(
             )
         await asyncio.sleep(random.uniform(3.0, 6.0))
     return error
+
+
+async def _server_session(browser) -> Dict[str, str]:
+    """TikTok's own answer about the browser's session (see read_session_account)."""
+    reader = getattr(browser, "read_session_account", None)
+    if reader is None:
+        return {"state": "unknown", "username": "", "detail": ""}
+    try:
+        return await reader()
+    except Exception as exc:
+        return {"state": "unknown", "username": "", "detail": str(exc)[:120]}
+
+
+def _server_session_note(server: Dict[str, str]) -> str:
+    state = server.get("state")
+    if state == "alive":
+        return f" (May chu TikTok: phien @{server.get('username')} VAN CON hieu luc.)"
+    if state == "signed_out":
+        return f" (May chu TikTok: phien da bi huy/het han - '{server.get('detail')}'.)"
+    return ""
+
+
+async def _has_session_cookie(browser) -> bool:
+    try:
+        return has_tiktok_auth_cookies(await browser.extract_cookies())
+    except Exception:
+        return False
 
 
 async def _confirm_logged_in(browser, step_logger=None, reloads: int = 3) -> tuple[bool, bool]:
@@ -343,7 +394,21 @@ async def _confirm_logged_in(browser, step_logger=None, reloads: int = 3) -> tup
     last_error: Optional[AuthenticationPageNotReady] = None
     for attempt in range(reloads + 1):
         try:
-            return await browser.check_login_status(), True
+            if await browser.check_login_status():
+                return True, True
+            # ⛔ A GUEST NAVBAR AFTER THE CODE IS NOT A FAILED LOGIN. The For
+            # You login modal signs in on /foryou without reloading it, so the
+            # "Log in" button painted before the modal opened is still there
+            # when the check runs (adanavid168, 2026-09-18: Next pressed, the
+            # login reported failed 17s later; the same account re-run was
+            # signed in). Only a reload shows whether TikTok kept the session.
+            if attempt == reloads or not await _has_session_cookie(browser):
+                return False, True
+            if step_logger:
+                await step_logger(
+                    "[!] Trang van hien nut Log in cu nhung trinh duyet da co phien dang nhap; "
+                    f"tai lai For You (F5) de xac nhan (lan {attempt + 1}/{reloads})..."
+                )
         except AuthenticationPageNotReady as exc:
             last_error = exc
             if attempt == reloads:
@@ -353,13 +418,9 @@ async def _confirm_logged_in(browser, step_logger=None, reloads: int = 3) -> tup
                     f"[!] Trang sau dang nhap chua hien duoc ({str(exc)[:90]}); "
                     f"tai lai trang (F5) lan {attempt + 1}/{reloads}..."
                 )
-            await asyncio.sleep(random.uniform(3.0, 5.0))
-            await browser.navigate_to("https://www.tiktok.com/foryou?lang=en")
-    try:
-        cookies = await browser.extract_cookies()
-    except Exception:
-        cookies = []
-    if has_tiktok_auth_cookies(cookies):
+        await asyncio.sleep(random.uniform(3.0, 5.0))
+        await browser.navigate_to("https://www.tiktok.com/foryou?lang=en")
+    if await _has_session_cookie(browser):
         if step_logger:
             await step_logger(
                 "[+] Trang van khong hien (proxy chan CDN) nhung trinh duyet da co phien "
@@ -370,15 +431,39 @@ async def _confirm_logged_in(browser, step_logger=None, reloads: int = 3) -> tup
     raise last_error
 
 
+#: ⛔ NOT THE URL. The For You login modal logs in on /foryou, so "no /login in
+#: the URL" was read as "already past the form" the moment Log in was pressed,
+#: the wait for the Email choice was skipped and the login failed silently
+#: (adanavid168, 2026-09-18). Moved on = a verification screen is showing, or
+#: no login form is left on the page.
 _NEXT_SCREEN_JS = r"""() => {
-  if (!/\/login/.test(location.pathname)) return true;
+  const vis = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
   const text = document.body.innerText || '';
-  return /verify identity|enter 6-digit code|verification code|x[aá]c minh/i.test(text)
-      || !!document.querySelector('[class*="pc-home-item"], input[placeholder*="code" i]');
+  if (/verify identity|enter 6-digit code|verification code/i.test(text)) return true;
+  if ([...document.querySelectorAll('[class*="pc-home-item"], input[placeholder*="code" i]')].some(vis)) return true;
+  const form = [...document.querySelectorAll(
+    '[data-e2e="login-modal"], input[name="username"], input[type="password"]')].some(vis);
+  return !form && !/\/login/.test(location.pathname);
+}"""
+
+_LOGIN_FORM_GONE_JS = r"""() => {
+  const vis = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
+  const form = [...document.querySelectorAll(
+    '[data-e2e="login-modal"], input[name="username"], input[type="password"]')].some(vis);
+  return !form && !/\/login/.test(location.pathname);
 }"""
 
 
-async def _await_login_response(page, timeout_seconds: float = 12.0) -> str:
+async def _moved_past_login_form(page) -> bool:
+    try:
+        return bool(await page.evaluate(_NEXT_SCREEN_JS))
+    except Exception:
+        return False
+
+
+async def _await_login_response(
+    page, timeout_seconds: float = 12.0, ignore_error: str = ""
+) -> str:
     """After submit: TikTok's refusal message, or "" once it moved on (or time ran out).
 
     ⛔ NOT A SINGLE LOOK. Through a slow proxy (CDN refused 69 requests,
@@ -387,18 +472,49 @@ async def _await_login_response(page, timeout_seconds: float = 12.0) -> str:
     """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout_seconds
+    cleared = not ignore_error
     while True:
+        # The next screen first: an old red line can stay on the page under
+        # the Email-choice dialog (mo91trow4_spau, 2026-09-18).
+        if await _moved_past_login_form(page):
+            return ""
         error = await _login_form_error(page)
-        if error:
+        if not error:
+            cleared = True      # the same line shown again after this is a new answer
+        elif error != ignore_error or cleared:
             return error
-        try:
-            if await page.evaluate(_NEXT_SCREEN_JS):
-                return ""
-        except Exception:
-            pass
         if loop.time() >= deadline:
             return ""
         await asyncio.sleep(0.8)
+
+
+#: TikTok refusing the typed code, as opposed to still checking it.
+_OTP_REFUSED = re.compile(
+    r"\b(code|m[aã])\b.{0,40}(expired|incorrect|invalid|wrong|h[eế]t h[aạ]n|"
+    r"kh[oô]ng (ch[ií]nh x[aá]c|h[oợ]p l[eệ])|\bsai\b)|"
+    r"too many attempts|maximum number of attempts",
+    re.I,
+)
+
+
+async def _await_otp_result(page, otp_input, timeout_seconds: float = 30.0) -> str:
+    """After Next: TikTok's refusal of the code, or "" once the code box is gone
+    (or time ran out - the login check after this is what decides)."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+    while True:
+        try:
+            text = await page.evaluate("() => document.body.innerText.slice(0, 4000)")
+        except Exception:
+            text = ""
+        for line in str(text or "").splitlines():
+            if _OTP_REFUSED.search(line):
+                return line.strip()
+        if not await _is_visible(otp_input):
+            return ""
+        if loop.time() >= deadline:
+            return ""
+        await asyncio.sleep(1.0)
 
 
 async def _is_visible(locator) -> bool:
@@ -443,10 +559,12 @@ async def _wait_verification_screen(
         if await _is_visible(otp_input):
             return "otp"
         error = await _login_form_error(page)
-        if error:
+        # A server hiccup line left over from an earlier press is not a
+        # refusal - that press may be the one that went through.
+        if error and not is_transient_login_error(error):
             return f"error:{error}"
         try:
-            if "/login" not in (page.url or ""):
+            if await page.evaluate(_LOGIN_FORM_GONE_JS):
                 return "none"   # signed straight in, no code asked
         except Exception:
             pass
@@ -521,7 +639,10 @@ class CookieLoginStrategy(ITikTokLoginStrategy):
         await browser.inject_cookies(account.cookies)
 
         is_logged_in = False
-        for attempt in range(2):
+        server: Dict[str, str] = {}
+        # One ordinary look, plus up to two more reloads while TikTok's server
+        # still honours the session the page failed to show.
+        for attempt in range(3):
             await browser.navigate_to("https://www.tiktok.com/foryou?lang=en")
             if step_logger:
                 await step_logger(
@@ -530,17 +651,45 @@ class CookieLoginStrategy(ITikTokLoginStrategy):
                 )
             try:
                 is_logged_in = await browser.check_login_status()
-                break
             except AuthenticationPageNotReady:
+                server = await _server_session(browser)
                 if attempt == 0:
                     if step_logger:
                         await step_logger(
                             "Trang For You chưa tải ổn định; đang mở lại một lần, "
                             "chưa xóa Cookies và chưa chuyển OTP..."
+                            + _server_session_note(server)
                         )
                     continue
+                if step_logger and server.get("state") != "unknown":
+                    await step_logger("[!] Trang For You vẫn không tải được." + _server_session_note(server))
                 raise
+            if is_logged_in:
+                break
+            # ⛔ A GUEST-LOOKING PAGE IS NOT A DEAD COOKIE. Ask TikTok first:
+            # clearing a session it still honours and logging in again by OTP
+            # is what made accounts "log out when the upload started".
+            server = await _server_session(browser)
+            if server.get("state") != "alive" or attempt == 2:
+                break
+            if step_logger:
+                await step_logger(
+                    "[!] Trang hien nhu chua dang nhap nhung may chu TikTok xac nhan phien "
+                    f"@{server.get('username')} van con hieu luc; tai lai For You "
+                    f"(lan {attempt + 1}/2), giu nguyen Cookies..."
+                )
         if not is_logged_in:
+            if server.get("state") == "alive":
+                raise AuthenticationPageNotReady(
+                    f"TikTok xác nhận phiên @{server.get('username')} vẫn còn hiệu lực "
+                    "nhưng trang For You không hiện giao diện đã đăng nhập sau 3 lần tải. "
+                    "Giữ nguyên Cookies, không login OTP; thử lại sau hoặc đổi proxy."
+                )
+            if step_logger and server.get("state") == "signed_out":
+                await step_logger(
+                    "[-] May chu TikTok xac nhan phien Cookies da bi huy/het han "
+                    f"('{server.get('detail')}') -> can dang nhap lai."
+                )
             return False
 
         identity_validator = getattr(
@@ -549,6 +698,15 @@ class CookieLoginStrategy(ITikTokLoginStrategy):
         if identity_validator is not None:
             identity_matches = await identity_validator(account.username)
             if not identity_matches:
+                # The nav may not name the account yet; the server does.
+                server = await _server_session(browser)
+                expected = str(account.username or "").lstrip("@").casefold()
+                if (
+                    server.get("state") == "alive"
+                    and expected
+                    and server.get("username", "").casefold() == expected
+                ):
+                    return True
                 if step_logger:
                     await step_logger(
                         "[!] Cookies không xác minh được đúng username; chuyển sang OTP."
@@ -590,11 +748,11 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             await step_logger("Dang truy cap trang chu TikTok...")
         await browser.navigate_to("https://www.tiktok.com/foryou?lang=en")
         page = browser._page
-        # Its "Log in" button and modal belong to scripts that load late. Nothing
-        # is typed here, and through some proxies this feed never finishes
-        # loading (20s cap reached on 209.145.57.39, 2026-09-18) - keep it short.
+        # Its "Log in" button opens the login modal only once the feed's scripts
+        # have loaded: ~45s through 209.145.57.39 (2026-09-18). A 10s cap made
+        # the click open nothing and every login fell back to the direct URL.
         await _wait_page_fully_loaded(
-            page, step_logger, "trang chu TikTok", timeout_seconds=10.0
+            page, step_logger, "trang chu TikTok", timeout_seconds=60.0
         )
 
         # Moc thoi gian OTP THAT SU duoc gui - se duoc GAN LAI (ghi de) ngay tai
@@ -806,11 +964,20 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
 
                 if step_logger:
                     await step_logger("Dang nhan Next de hoan tat xac minh...")
-                next_btn = page.locator('button.tux-button__element-ZBq38f:has-text("Next"), button:has-text("Next")')
+                next_btn = page.locator(
+                    'button.tux-button__element-ZBq38f:has-text("Next"):visible, '
+                    'button:has-text("Next"):visible'
+                )
                 await next_btn.first.click(timeout=10000)
                 await asyncio.sleep(3)
                 # Sau khi xac minh OTP, TikTok co the hien captcha lan nua -> cho giai.
                 await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
+                otp_error = await _await_otp_result(page, otp_input)
+                if otp_error:
+                    if step_logger:
+                        await step_logger(f"[-] TikTok tu choi ma OTP {otp_code}: {otp_error}")
+                    logger.error("[-] TikTok tu choi ma OTP cua %s: %s", account.username, otp_error)
+                    return False
 
             try:
                 for _ in range(3):
@@ -822,27 +989,25 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 pass
 
             is_logged_in, page_rendered = await _confirm_logged_in(browser, step_logger)
-            identity_validator = getattr(
-                browser, "validate_authenticated_identity", None
-            )
-            # A page that never painted cannot show whose session it is; the
-            # session was made from this account's own credentials just now.
-            if is_logged_in and page_rendered and identity_validator is not None:
-                is_logged_in = await identity_validator(account.username)
-                if not is_logged_in and step_logger:
-                    observed = getattr(browser, "last_observed_identity", "") or ""
-                    if observed and observed.casefold() != str(account.username or "").casefold():
-                        # mo91trow4_spau (2026-09-18): its email + password
-                        # signed into @maryannfranze, a different account.
-                        await step_logger(
-                            f"[!] Email/mật khẩu này đăng nhập vào @{observed}, KHÔNG phải "
-                            f"@{account.username}: email trong app thuộc tài khoản TikTok khác. "
-                            "Không lưu phiên để tránh chạy nhầm account."
-                        )
-                    else:
-                        await step_logger(
-                            "[!] Phiên đăng nhập không khớp username cần chạy."
-                        )
+            # ⛔ NO USERNAME VERDICT HERE. The email, password and mailbox typed
+            # above belong to this row, so whoever they signed into IS this
+            # account; a different name means the SAVED username is out of
+            # date. Refusing here (mo91trow4_spau -> @maryannfranze,
+            # 2026-09-18) also skipped the username sync the login use case
+            # runs next: it opens the profile with the Profile button, reads
+            # the real name and updates the app. Cookie logins still check.
+            identity_reader = getattr(browser, "validate_authenticated_identity", None)
+            if is_logged_in and page_rendered and identity_reader is not None:
+                try:
+                    if not await identity_reader(account.username):
+                        observed = getattr(browser, "last_observed_identity", "") or ""
+                        if observed and step_logger:
+                            await step_logger(
+                                f"[!] Da dang nhap vao @{observed} (dang luu @{account.username}); "
+                                "se mo trang Profile de doi chieu va cap nhat username trong app."
+                            )
+                except Exception as exc:
+                    logger.debug("[Login] Khong doc duoc username sau dang nhap: %s", exc)
             return is_logged_in
 
         except AccountBannedException as e_ban:

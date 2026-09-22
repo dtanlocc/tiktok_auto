@@ -729,21 +729,32 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             _tries = max(1, int(getattr(settings, "BROWSER_LAUNCH_MAX_TRIES", 2)))
             self._browser = None
             _err = None
-            for _att in range(1, _tries + 1):
+            _att = 0
+            _max_tries = _tries
+            while _att < _max_tries:
+                _att += 1
                 _t0 = time.monotonic()
                 try:
                     self._browser = await _launch_invisible_context(
                         self._invisible_pw, _lt
                     )
-                    logger.info(f"[LAUNCH] OK sau {time.monotonic()-_t0:.1f}s (lan {_att}/{_tries}).")
+                    logger.info(f"[LAUNCH] OK sau {time.monotonic()-_t0:.1f}s (lan {_att}/{_max_tries}).")
                     break
                 except Exception as e_l:
                     _err = e_l
                     _kind = "treo qua %ss" % _lt if isinstance(e_l, asyncio.TimeoutError) else str(e_l)[:70]
-                    logger.warning(f"[LAUNCH] Lan {_att}/{_tries} hong ({_kind}) -> don + mo lai.")
+                    # ⛔ A PROXY THAT DID NOT ANSWER THE EGRESS-IP LOOKUP IS
+                    # SLOW, NOT BROKEN. The lookup has a 15s budget; through
+                    # 209.145.57.39 it ran out on the 1st launch and passed on
+                    # the 2nd (adanavid168), and ran out twice for
+                    # mo91trow4_spau, failing the task (2026-09-18). One more
+                    # try, for this cause only.
+                    if "egress ip" in str(e_l).lower() and _max_tries == _tries:
+                        _max_tries += 1
+                    logger.warning(f"[LAUNCH] Lan {_att}/{_max_tries} hong ({_kind}) -> don + mo lai.")
                     # _launch_invisible_context already closes/reaps the failed
                     # attempt before releasing the global startup gate.
-                    if _att < _tries:
+                    if _att < _max_tries:
                         await asyncio.sleep(1.5)
                         self._invisible_pw = InvisiblePlaywright(
                             proxy=proxy_opts,
@@ -762,7 +773,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                             excluded_addon_ids
                         )
             if self._browser is None:
-                raise _err or RuntimeError(f"Khong mo duoc trinh duyet sau {_tries} lan.")
+                raise _err or RuntimeError(f"Khong mo duoc trinh duyet sau {_max_tries} lan.")
 
             # AN CUA SO NGAY SAU __aenter__, TRUOC moi thao tac page. Ban vua roi
             # tao/doi tab truoc khi an nen cua so lo ra lau va co the can focus.
