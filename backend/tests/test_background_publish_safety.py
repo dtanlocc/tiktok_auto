@@ -23,7 +23,7 @@ def test_background_mode_uses_invisible_playwright_cloak_not_native_headless():
 def test_stream_is_not_suspended_during_caption_or_publish_confirmation():
     source = inspect.getsource(InvisiblePlaywrightAdapter.upload_video)
     native_source = inspect.getsource(
-        InvisiblePlaywrightAdapter._set_files_via_native_dialog
+        InvisiblePlaywrightAdapter._attach_media_by_clicking_button
     )
 
     assert "self._stream_suspended" not in source
@@ -62,31 +62,70 @@ def test_native_trigger_opens_only_the_resolved_input():
     assert "event.stopImmediatePropagation()" in bridge_script
 
 
-def test_video_native_dialog_retries_once_after_cleanup(monkeypatch):
+def test_the_select_video_button_is_pressed_before_the_input_is_touched(monkeypatch):
+    """A person clicks Select video; set_input_files is only the last resort."""
     adapter = InvisiblePlaywrightAdapter()
-    attempts = []
+    order = []
 
-    async def attach(_paths, _media_kind):
-        attempts.append(True)
-        return len(attempts) == 2
+    async def click_button(_paths, _media_kind):
+        order.append("button")
+        return len(order) == 2          # the second press opens the chooser
+
+    async def input_channel(_paths, _media_kind):
+        order.append("input")
+        return True
 
     async def no_sleep(_seconds):
         return None
 
-    monkeypatch.setattr(adapter, "_set_files_via_native_dialog", attach)
+    monkeypatch.setattr(adapter, "_attach_media_by_clicking_button", click_button)
+    monkeypatch.setattr(adapter, "_attach_media_via_input_channel", input_channel)
     monkeypatch.setattr(adapter_module.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(adapter_module.os.path, "isfile", lambda _path: True)
 
     assert asyncio.run(adapter._set_file_via_native_dialog("video.mp4")) is True
-    assert len(attempts) == 2
+    assert order == ["button", "button"]
+
+
+def test_the_input_is_used_only_after_two_failed_button_presses(monkeypatch):
+    adapter = InvisiblePlaywrightAdapter()
+    order = []
+
+    async def click_button(_paths, _media_kind):
+        order.append("button")
+        raise RuntimeError("windows file chooser did not appear")
+
+    async def input_channel(_paths, _media_kind):
+        order.append("input")
+        return True
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(adapter, "_attach_media_by_clicking_button", click_button)
+    monkeypatch.setattr(adapter, "_attach_media_via_input_channel", input_channel)
+    monkeypatch.setattr(adapter_module.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(adapter_module.os.path, "isfile", lambda _path: True)
+
+    assert asyncio.run(adapter._set_file_via_native_dialog("video.mp4")) is True
+    assert order == ["button", "button", "input"]
 
 
 def test_video_upload_reselects_once_after_confirmed_server_failure(monkeypatch):
     adapter = InvisiblePlaywrightAdapter()
-    adapter._page = type(
-        "UploadPage",
-        (),
-        {"url": "https://www.tiktok.com/tiktokstudio/upload?lang=en"},
-    )()
+    class NoUploadButton:
+        """Studio without a clickable Upload control: the URL is the fallback."""
+
+        url = "https://www.tiktok.com/tiktokstudio/upload?lang=en"
+
+        def locator(self, _selector):
+            class Empty:
+                async def count(self):
+                    return 0
+
+            return Empty()
+
+    adapter._page = NoUploadButton()
     attachments = []
     navigations = []
     logs = []
@@ -545,3 +584,77 @@ def test_browser_close_timeout_reaps_only_its_session_and_returns_slot(monkeypat
     assert adapter._invisible_pw is None
     assert adapter._browser is None
     assert adapter._page is None
+
+
+class _UploadNavPage:
+    """A page whose Upload control opens the upload screen when clicked."""
+
+    def __init__(self, control_works=True):
+        self.url = "https://www.tiktok.com/foryou?lang=en"
+        self.control_works = control_works
+        self.clicked = 0
+
+    def locator(self, _selector):
+        page = self
+
+        class Candidate:
+            async def is_visible(self):
+                return True
+
+            async def bounding_box(self):
+                return {"x": 10, "y": 10, "width": 80, "height": 30}
+
+        class Group:
+            async def count(self):
+                return 1
+
+            def nth(self, _index):
+                return Candidate()
+
+        return Group()
+
+
+def _open_upload_page(monkeypatch, page, entry_after_click=True):
+    adapter = InvisiblePlaywrightAdapter()
+    adapter._page = page
+    navigations = []
+
+    async def human_click(_locator, timeout=5000):
+        page.clicked += 1
+        if page.control_works:
+            page.url = "https://www.tiktok.com/tiktokstudio/upload?lang=en"
+
+    async def entry_ready():
+        return entry_after_click and page.control_works
+
+    async def unobstructed(_candidate):
+        return True
+
+    async def navigate(url):
+        navigations.append(url)
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(adapter, "_human_click", human_click)
+    monkeypatch.setattr(adapter, "_video_upload_entry_ready", entry_ready)
+    monkeypatch.setattr(adapter, "_is_unobstructed", unobstructed)
+    monkeypatch.setattr(adapter, "navigate_to", navigate)
+    monkeypatch.setattr(adapter_module.asyncio, "sleep", no_sleep)
+    asyncio.run(adapter._open_studio_upload_page())
+    return page, navigations
+
+
+def test_the_upload_screen_is_opened_by_clicking_upload(monkeypatch):
+    page, navigations = _open_upload_page(monkeypatch, _UploadNavPage())
+
+    assert page.clicked == 1
+    assert navigations == []          # the URL was never typed
+
+
+def test_a_page_without_an_upload_control_falls_back_to_the_url(monkeypatch):
+    page, navigations = _open_upload_page(
+        monkeypatch, _UploadNavPage(control_works=False))
+
+    assert page.clicked == 1
+    assert navigations == ["https://www.tiktok.com/tiktokstudio/upload?lang=en"]

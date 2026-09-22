@@ -2830,7 +2830,18 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         return False
 
     async def _set_files_via_native_dialog(self, paths: List[str], media_kind: str) -> bool:
-        """Open the native chooser with one video or up to 35 photos."""
+        """Attach media the way a person does: click Select video, use the chooser.
+
+        ⛔ THE BUTTON IS THE PATH, NOT set_input_files. Handing the file
+        straight to the hidden input skips everything TikTok can see a person
+        doing - the pointer arriving at the button, the trusted click, the
+        Windows chooser opening and closing. The operator posts by hand
+        through this same browser and sees those posts distributed normally,
+        so the automated run must take the same route (2026-09-22). Attaching
+        to the input is kept only for the case where two button clicks cannot
+        open the chooser at all, because a post that did not happen helps
+        nobody; it is logged loudly when it happens.
+        """
         self._last_native_upload_error = None
         self._last_attached_media_names = []
         abs_paths = [os.path.abspath(os.path.expanduser(path)) for path in paths]
@@ -2840,11 +2851,35 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         if missing:
             raise FileNotFoundError(f"Khong tim thay file: {missing[0]}")
 
-        # Prefer the ordinary Playwright channel. B178 (invisible_playwright
-        # lacking a safe ElementHandle.setInputFiles dispatcher, so the attempt
-        # armed chooser interception and swallowed the trusted click the native
-        # fallback needs) was fixed upstream in 0.16.1; the native dialog stays
-        # as the fallback below.
+        last_error = None
+        for attempt in (1, 2):
+            try:
+                if await self._attach_media_by_clicking_button(abs_paths, media_kind):
+                    return True
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "[Upload] Lan %d bam nut chon %s khong mo duoc hop thoai: %s",
+                    attempt,
+                    media_kind,
+                    exc,
+                )
+            await asyncio.sleep(0.6)
+
+        logger.warning(
+            "[Upload] Hai lan bam nut chon %s deu hong; gan thang file vao input "
+            "(du phong, khong giong thao tac nguoi). Loi cuoi: %s",
+            media_kind,
+            last_error,
+        )
+        if await self._attach_media_via_input_channel(abs_paths, media_kind):
+            return True
+        if last_error is not None:
+            self._last_native_upload_error = f"{type(last_error).__name__}: {last_error}"
+        return False
+
+    async def _attach_media_via_input_channel(self, abs_paths: List[str], media_kind: str) -> bool:
+        """Fallback only: hand the files to the hidden input (no button click)."""
         last_error = None
         for attempt in range(1, 2):
             try:
@@ -2922,11 +2957,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     except Exception:
                         pass
 
-        logger.warning(
-            "[Upload] Playwright path channel bi patched-Firefox B178; "
-            "chuyen sang native chooser DWM-cloaked. Loi: %s",
-            last_error,
-        )
+        return False
 
         # B178: the real-path protocol command is still broken in firefox-21.
         # Use the helper kept in our vendored invisible_playwright build
@@ -2962,6 +2993,10 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             owner_process_ids = await asyncio.to_thread(
                 self._native_upload_process_ids
             )
+    async def _attach_media_by_clicking_button(
+        self, abs_paths: List[str], media_kind: str
+    ) -> bool:
+        """Click TikTok's own Select button and fill the Windows chooser."""
             owner_session_token = getattr(
                 self._invisible_pw, "_session_token", None
             )
@@ -3038,7 +3073,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 "[Upload] Native chooser that bai: %s (%r)", exc, exc,
                 exc_info=True,
             )
-            return False
+            # The caller decides whether to press the button again or fall
+            # back; it cannot do that from a bare False.
+            raise
 
     def _stage_native_upload_paths(self, paths: List[str]) -> List[str]:
         """Keep original media paths, including supplementary Unicode.
@@ -3050,18 +3087,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         return list(paths)
 
     async def _set_file_via_native_dialog(self, video_path: str) -> bool:
-        """Attach a video, retrying once after native-dialog cleanup."""
-        for attempt in range(1, 3):
-            if await self._set_files_via_native_dialog([video_path], "video"):
-                return True
-            if attempt == 1:
-                logger.warning(
-                    "[Upload] Lan chon video dau tien that bai (%s); "
-                    "dialog da duoc don, thu lai mot lan.",
-                    self._last_native_upload_error or "khong co chi tiet",
-                )
-                await asyncio.sleep(0.5)
-        return False
+        """Attach one video. The retries live in _set_files_via_native_dialog:
+        the Select video button twice, then the input channel as a last resort."""
+        return await self._set_files_via_native_dialog([video_path], "video")
 
     async def _human_click(self, locator, timeout: int = 5000) -> None:
         """Approach a control with the pointer, pause briefly, then click it."""
@@ -3391,6 +3419,66 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             ).first
             return bool(
                 await editor.count()
+    #: The controls a person clicks to reach the upload screen: the sidebar
+    #: entry on For You, Studio's own Upload button, or a link to either page.
+    _UPLOAD_ENTRY_SELECTOR = (
+        '[data-e2e="nav-upload"], [data-e2e="upload-icon"], '
+        'a[href*="/tiktokstudio/upload"], a[href="/upload"], a[href^="/upload?"], '
+        'button:has-text("Upload"), div[role="button"]:has-text("Upload")'
+    )
+
+    async def _wait_upload_page_open(self, timeout_seconds: float = 25.0) -> bool:
+        """The upload screen is open when its own file entry is mounted."""
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            url = str(getattr(self._page, "url", "") or "").casefold()
+            if "/login" in url and "redirect_url" in url:
+                return False
+            if "/upload" in url and await self._video_upload_entry_ready():
+                return True
+            await asyncio.sleep(0.5)
+        return False
+
+    async def _open_studio_upload_page(self, step_logger=None) -> None:
+        """Reach the upload screen by clicking Upload, as a person does.
+
+        ⛔ TYPING THE URL IS NOT A VISIT. A person arrives at the upload
+        screen from the page they were on, by pointing at Upload and
+        clicking it; the app used to jump straight to
+        /tiktokstudio/upload, which no session of a real account ever does.
+        The URL stays as the fallback, because an account that cannot find
+        the button must still be able to post.
+        """
+        async def log(message):
+            if step_logger:
+                await step_logger(message)
+
+        candidates = self._page.locator(self._UPLOAD_ENTRY_SELECTOR)
+        try:
+            count = await asyncio.wait_for(candidates.count(), timeout=3.0)
+        except Exception:
+            count = 0
+        for index in range(min(count, 6)):
+            candidate = candidates.nth(index)
+            try:
+                if not await asyncio.wait_for(candidate.is_visible(), timeout=2.0):
+                    continue
+                if not await self._is_unobstructed(candidate):
+                    continue
+                await log("Đang bấm nút Upload trên TikTok để mở màn đăng bài...")
+                await self._human_click(candidate, timeout=10000)
+            except Exception as exc:
+                logger.debug("[Upload] Nut Upload thu %d khong bam duoc: %s", index, exc)
+                continue
+            if await self._wait_upload_page_open():
+                logger.info("[Upload] Da vao man dang bai bang nut Upload.")
+                return
+        logger.warning(
+            "[Upload] Khong bam duoc nut Upload nao; mo thang URL man dang bai."
+        )
+        await log("Không thấy nút Upload trên trang; mở thẳng màn đăng bài...")
+        await self.navigate_to("https://www.tiktok.com/tiktokstudio/upload?lang=en")
+
                 and await editor.is_visible()
             )
         except Exception:
@@ -5235,7 +5323,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
         self._consume_foryou_upload_ticket()
         await log(f"Mở TikTok Studio và chọn tab Photos ({len(image_paths)} ảnh)...")
-        await self.navigate_to("https://www.tiktok.com/tiktokstudio/upload?lang=en")
+        await self._open_studio_upload_page(step_logger=step_logger)
         photo_tab = self._page.get_by_role("tab", name=re.compile(r"^(Photos|Ảnh)$", re.I), exact=True).first
         tab_deadline = time.monotonic() + 45.0
         photo_tab_seen = False
@@ -5339,7 +5427,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if continue_session
             else "Mở TikTok Studio Upload..."
         )
-        await self.navigate_to("https://www.tiktok.com/tiktokstudio/upload?lang=en")
+        await self._open_studio_upload_page(step_logger=step_logger)
         page = self._page
         if not page:
             raise RuntimeError("Trang upload không còn khả dụng sau khi điều hướng.")
