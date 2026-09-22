@@ -2005,14 +2005,11 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 timeout_seconds=25.0,
             )
 
-        if profile_href:
-            edit_button = await navigate_profile(str(profile_href))
-            if edit_button is not None:
-                return edit_button
-
-        # If hydration/nav discovery is unavailable, click whichever profile
-        # control is actually visible. Iterating every match avoids the hidden
-        # responsive template that caused the reported timeout.
+        # ⛔ CLICK THE PROFILE BUTTON FIRST. It opens whoever is actually signed
+        # in; a URL built from the saved username opens that name's page, which
+        # is someone else's when the saved name is out of date (mo91trow4_spau
+        # vs @maryannfranze, 2026-09-18) - and reading the username there is
+        # the whole point of the check.
         profile_controls = self._page.locator(
             '[data-e2e="nav-profile"], [data-e2e="profile-icon"]'
         )
@@ -2143,6 +2140,15 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
                     await apply_btn.wait_for(state="visible", timeout=15000)
 
+        # The same button's own link, when the button could not be clicked
+        # (a hidden responsive duplicate is common).
+        if profile_href:
+            edit_button = await navigate_profile(str(profile_href))
+            if edit_button is not None:
+                return edit_button
+
+        # Last resort only. "Edit profile" appears on one's own page alone, so
+        # a wrong saved name fails here instead of editing someone else.
                     if step_logger:
                         await step_logger("Dang nhan nut Apply...")
 
@@ -2380,6 +2386,14 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 continue
         return False
 
+            if not avatar_path and bio is None and not username_needs_confirm:
+                # Nothing was changed - the username sync after login only
+                # READ the name. Save is disabled then, and pressing it would
+                # leave the dialog open, which _confirm_profile_saved rightly
+                # calls a refused save. Close the dialog instead.
+                await self._close_edit_profile_dialog()
+                return (True, username_for_db)
+
     _EDIT_PROFILE_DIALOG_PARTS = (
         '[data-e2e="edit-profile-save"], [data-e2e="edit-profile-avatar"]'
     )
@@ -2510,6 +2524,24 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     """el => {
                         const r = el.getBoundingClientRect();
                         if (!r.width || !r.height) return false;
+    async def _close_edit_profile_dialog(self) -> None:
+        """Leave the edit dialog without saving (Cancel, else Escape)."""
+        try:
+            cancel = self._page.locator(
+                'div[role="dialog"] button:has-text("Cancel"), '
+                'div[role="dialog"] button:has-text("Hủy")'
+            )
+            if await cancel.count() and await cancel.first.is_visible():
+                await cancel.first.click(timeout=4000)
+            else:
+                await self._page.keyboard.press("Escape")
+        except Exception:
+            try:
+                await self._page.keyboard.press("Escape")
+            except Exception:
+                pass
+        await self._edit_profile_dialog_closed(timeout_seconds=5.0)
+
                         const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
                         return !!top && (top === el || el.contains(top));
                     }"""
