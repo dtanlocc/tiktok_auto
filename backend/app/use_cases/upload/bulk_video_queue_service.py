@@ -7,7 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from app.use_cases.upload.video_library import archive_posted_video
+from app.use_cases.upload.video_library import (
+    archive_posted_video,
+    archive_refused_video,
+)
 
 
 logger = logging.getLogger("BulkVideoQueue")
@@ -22,11 +25,13 @@ class BulkVideoQueueService:
         poll_seconds: float = 1.0,
         result_resolver: Optional[Callable[[str], dict[str, str]]] = None,
         archive_handler: Optional[Callable[[str, str], str]] = None,
+        refusal_handler: Optional[Callable[[str, str, str], str]] = None,
     ):
         self.dispatcher = dispatcher
         self.poll_seconds = poll_seconds
         self.result_resolver = result_resolver
         self.archive_handler = archive_handler or archive_posted_video
+        self.refusal_handler = refusal_handler or archive_refused_video
         self._batches: dict[str, dict[str, Any]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._batch_lock = asyncio.Lock()
@@ -155,6 +160,8 @@ class BulkVideoQueueService:
             "archived": 0,
             "archive_failed": 0,
             "duplicates": 0,
+            "refused_parked": 0,
+            "refused_park_failed": 0,
             "swallowed": 0,
             "replacements": 0,
             "cancel_requested": False,
@@ -230,6 +237,34 @@ class BulkVideoQueueService:
                 spare["account_email"] = email
                 return spare
         return None
+
+    async def _park_refused_video(
+        self, batch: dict[str, Any], email: str, refusal: dict[str, Any]
+    ) -> None:
+        """Move a refused video out of the library; never fail the batch."""
+        video_path = str(refusal.get("video_path") or "")
+        reason = str(refusal.get("error") or refusal.get("code") or "")
+        try:
+            refusal["parked_path"] = await asyncio.to_thread(
+                self.refusal_handler, video_path, email, reason
+            )
+        except FileNotFoundError:
+            # Already gone - another run moved it, or the operator did.
+            logger.info("Refused video is no longer in the library: %s", video_path)
+            return
+        except Exception as park_exc:
+            batch["refused_park_failed"] += 1
+            refusal["park_error"] = str(park_exc)
+            logger.exception(
+                "Cannot move the refused video out of the library: %s", video_path
+            )
+            return
+        batch["refused_parked"] += 1
+        logger.info(
+            "Refused video moved out of the library: %s -> %s",
+            video_path,
+            refusal["parked_path"],
+        )
 
     @staticmethod
     def _detail_result(
@@ -308,11 +343,16 @@ class BulkVideoQueueService:
                     )
                     if not succeeded and code == "VIDEO_DUPLICATE":
                         batch["duplicates"] += 1
-                        item.setdefault("replacement_history", []).append({
+                        refusal = {
                             "video_path": item["video_path"],
                             "error": error,
                             "code": code,
-                        })
+                        }
+                        item.setdefault("replacement_history", []).append(refusal)
+                        # TikTok refused the VIDEO. Take it out of the library
+                        # now, before the pool can hand the same file to the
+                        # next account for the same verdict.
+                        await self._park_refused_video(batch, email, refusal)
                         spare = await self._take_spare(batch, email)
                         if spare is None:
                             error = (
