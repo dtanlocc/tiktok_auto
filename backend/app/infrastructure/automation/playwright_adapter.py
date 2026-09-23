@@ -67,6 +67,28 @@ def _browser_launch_lock() -> asyncio.Lock:
     return lock
 
 
+def _browser_pipe_dead(error: BaseException) -> bool:
+    """True when the engine process is gone, not when a call merely failed.
+
+    Playwright reports this as TargetClosedError with "the pipe is closed":
+    the launch returned a context, then the firefox process died before the
+    first tab existed. Seen 23/09/2026 on a cookie login through
+    209.145.57.39, where it failed the account while every other account on
+    the same proxy went through.
+    """
+    text = f"{type(error).__name__}: {error}".casefold()
+    return any(
+        marker in text
+        for marker in (
+            "the pipe is closed",
+            "targetclosederror",
+            "target page, context or browser has been closed",
+            "browser has been closed",
+            "connection closed",
+        )
+    )
+
+
 _PLAYWRIGHT_COOKIE_FIELDS = {
     "name",
     "value",
@@ -528,7 +550,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             return
         await gate.wait()
 
-    async def initialize(self, proxy_config: Optional[Dict[str, Any]] = None, seed: Optional[int] = None, force_visible: bool = False) -> None:
+    async def initialize(self, proxy_config: Optional[Dict[str, Any]] = None, seed: Optional[int] = None, force_visible: bool = False,
+                         _launch_retry: int = 0) -> None:
         # force_visible=True (che do DEBUG): dua cua so ra HIEN + foreground de user
         # thao tac tay, KHONG day off-screen. Mac dinh False -> theo cau hinh (an off-screen).
         # Luu tham so launch -> co the RE-LAUNCH khi browser CHET giua chung (navigate_to
@@ -876,10 +899,36 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             # patched Firefox co luc chua co browsingContext; tai su dung no se lam
             # task dung ngay lan goto dau tien.
             _default_pages = list(getattr(self._browser, "pages", None) or [])
-            self._page = await self._browser.new_page()
-            locale_state = await self._page.evaluate(
-                "() => ({ language: navigator.language, languages: navigator.languages })"
-            )
+            try:
+                self._page = await self._browser.new_page()
+                locale_state = await self._page.evaluate(
+                    "() => ({ language: navigator.language, languages: navigator.languages })"
+                )
+            except Exception as exc_first_page:
+                # ⛔ A DEAD PIPE HERE IS A FAILED LAUNCH, NOT A FAILED ACCOUNT.
+                # The launch loop above only guards the launch call itself; the
+                # process can still die between it and the first tab, and the
+                # account then fails with "BrowserContext.new_page: the pipe is
+                # closed" while its cookies and proxy are perfectly good.
+                if not _browser_pipe_dead(exc_first_page) or _launch_retry >= 1:
+                    raise
+                logger.warning(
+                    "[LAUNCH] Trinh duyet chet truoc khi mo tab dau (%s) -> "
+                    "dong sach va mo lai 1 lan.",
+                    str(exc_first_page)[:140],
+                )
+                try:
+                    await self.close()
+                except Exception:
+                    pass
+                await asyncio.sleep(2.0)
+                await self.initialize(
+                    proxy_config=proxy_config,
+                    seed=seed,
+                    force_visible=force_visible,
+                    _launch_retry=_launch_retry + 1,
+                )
+                return
             if not str(locale_state.get("language") or "").casefold().startswith("en"):
                 raise RuntimeError(
                     f"TikTok browser locale was not applied: {locale_state!r}"

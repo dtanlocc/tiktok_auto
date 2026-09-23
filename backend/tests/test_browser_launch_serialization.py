@@ -1,6 +1,7 @@
 import asyncio
 
 from app.infrastructure.automation.playwright_adapter import (
+    _browser_pipe_dead,
     _launch_invisible_context,
 )
 
@@ -79,3 +80,24 @@ def test_failed_startup_finishes_cleanup_before_next_start():
         assert events == ["failing-start", "failing-cleanup", "working-start"]
 
     asyncio.run(scenario())
+
+
+def test_a_dead_pipe_is_read_as_a_dead_engine():
+    """The wording Playwright uses when the firefox process is already gone."""
+    class TargetClosedError(Exception):
+        pass
+
+    assert _browser_pipe_dead(
+        TargetClosedError("BrowserContext.new_page: the pipe is closed")
+    )
+    assert _browser_pipe_dead(
+        Exception("Target page, context or browser has been closed")
+    )
+
+
+def test_an_ordinary_page_error_is_not_a_dead_engine():
+    """A relaunch must not be triggered by a plain timeout or a bad locale."""
+    assert not _browser_pipe_dead(TimeoutError("Timeout 30000ms exceeded"))
+    assert not _browser_pipe_dead(
+        RuntimeError("TikTok browser locale was not applied: {'language': 'vi'}")
+    )
