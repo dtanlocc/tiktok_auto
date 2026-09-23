@@ -2755,6 +2755,18 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             re.I,
         )
         semantic_candidates = []
+        # Studio names this button itself. Measured 23/09/2026 on the upload
+        # screen: BUTTON[data-e2e="select_video_button"] is the control a
+        # person clicks, and it keeps that name across label translations.
+        own_name = (
+            '[data-e2e="select_video_button"]'
+            if media_kind == "video"
+            else '[data-e2e="select_photo_button"], [data-e2e="select_image_button"]'
+        )
+        try:
+            semantic_candidates.append(self._page.locator(own_name).first)
+        except Exception:
+            pass
         try:
             semantic_candidates.append(
                 self._page.get_by_role("button", name=semantic_pattern).first
@@ -3552,9 +3564,21 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             except Exception as exc:
                 logger.debug("[Upload] Nut Upload thu %d khong bam duoc: %s", index, exc)
                 continue
-            if await self._wait_upload_page_open():
+            if await self._wait_upload_page_open(timeout_seconds=45.0):
                 logger.info("[Upload] Da vao man dang bai bang nut Upload.")
                 return
+            # The click did land on the upload screen and only its file entry
+            # is slow to mount (a throttled proxy does this). Typing the URL
+            # now would reload the same page as a stranger; keep waiting on
+            # the page the click opened.
+            if "/upload" in str(getattr(self._page, "url", "") or "").casefold():
+                logger.info(
+                    "[Upload] Da o man dang bai nhung o chon video chua mount; "
+                    "cho them thay vi go URL."
+                )
+                await log("Màn đăng bài đang tải, chờ thêm một chút...")
+                if await self._wait_upload_page_open(timeout_seconds=60.0):
+                    return
         logger.warning(
             "[Upload] Khong bam duoc nut Upload nao; mo thang URL man dang bai."
         )
@@ -4547,6 +4571,151 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             "failure_text": None,
             "timed_out": True,
             "state": None,
+        }
+
+    #: The two lines a person watches before posting: the upload state
+    #: ("Uploaded（79.55MB）") and the checks ("Music copyright check - No
+    #: issues found."). Read by class fragment because Studio ships them with
+    #: generated jsx-* prefixes that change between releases.
+    _PUBLISH_CHECK_JS = r"""() => {
+      const vis = (el) => !!(el && (el.offsetParent !== null || el.getClientRects().length));
+      const rows = (fragment) => {
+        const out = [];
+        for (const el of document.querySelectorAll('[class*="' + fragment + '"]')) {
+          if (!vis(el)) continue;
+          const text = (el.innerText || '').replace(/\s+/g, ' ').trim();
+          if (text && !out.includes(text)) out.push(text.slice(0, 200));
+        }
+        return out;
+      };
+      return {
+        status: rows('info-status'),
+        checks: rows('content-check').concat(rows('copyright-check')),
+      };
+    }"""
+
+    #: Studio's wording while a check is still running, and once it is done.
+    _CHECK_PENDING_RE = re.compile(
+        r"(checking in progress|checks can only start|checking your|"
+        r"đang kiểm tra|chưa thể kiểm tra)",
+        re.I,
+    )
+    _CHECK_CLEAR_RE = re.compile(
+        r"(no issues found|không phát hiện vấn đề|không có vấn đề)", re.I
+    )
+    _UPLOAD_BUSY_RE = re.compile(
+        r"(\d[\d.,]*\s*(?:KB|MB|GB)\s*/|\bleft\b|còn lại|uploading|đang tải)", re.I
+    )
+    _UPLOAD_DONE_RE = re.compile(r"(uploaded|đã tải lên)", re.I)
+
+    async def _wait_publish_checks(
+        self,
+        *,
+        timeout_seconds: float = 120.0,
+        step_logger=None,
+    ) -> Dict[str, Any]:
+        """After the caption, hold until Studio's two ticks stop moving.
+
+        ⛔ AN ENABLED POST BUTTON IS NOT READINESS. Measured 23/09/2026: Post
+        is already enabled while the file line reads "70.95MB/79.55MB, 3
+        seconds left" and while the music check still says "Checking in
+        progress". A person never posts there - they type the caption, watch
+        "Uploaded（…）" and "No issues found." settle, then click Post. This
+        waits for those same two lines, requires them stable twice, then
+        pauses a beat like a hand moving to the button.
+
+        Never raises: a check that stays busy is reported and the caller keeps
+        its own decision about posting.
+        """
+        async def log(message: str) -> None:
+            if step_logger:
+                await step_logger(message)
+
+        page = self._page
+        if page is None:
+            return {"settled": False, "status": "", "checks": [], "waited": 0.0}
+
+        started = time.monotonic()
+        deadline = started + max(1.0, float(timeout_seconds))
+        stable = 0
+        announced = False
+        state: Dict[str, Any] = {"status": [], "checks": []}
+        while time.monotonic() < deadline:
+            await self._wait_automation_gate()
+            if await self._handle_upload_interruptions(step_logger=step_logger):
+                stable = 0
+            try:
+                state = await asyncio.wait_for(
+                    page.evaluate(self._PUBLISH_CHECK_JS), timeout=8.0
+                )
+            except Exception as exc:
+                logger.debug("[Upload] Khong doc duoc trang thai kiem tra: %s", exc)
+                await asyncio.sleep(1.2)
+                continue
+
+            status_text = " ".join(state.get("status") or [])
+            check_texts = list(state.get("checks") or [])
+            upload_busy = bool(
+                status_text
+                and self._UPLOAD_BUSY_RE.search(status_text)
+                and not self._UPLOAD_DONE_RE.search(status_text)
+            )
+            checks_busy = any(
+                self._CHECK_PENDING_RE.search(text) for text in check_texts
+            )
+            if upload_busy or checks_busy:
+                if not announced:
+                    announced = True
+                    await log(
+                        "Đợi TikTok chạy xong phần kiểm tra nội dung/bản quyền "
+                        "trước khi đăng..."
+                    )
+                stable = 0
+                await asyncio.sleep(1.2)
+                continue
+
+            stable += 1
+            if stable >= 2:
+                cleared = [
+                    text for text in check_texts if self._CHECK_CLEAR_RE.search(text)
+                ]
+                waited = time.monotonic() - started
+                logger.info(
+                    "[Upload] Hai muc kiem tra da dung yen sau %.1fs | status=%s | checks=%s",
+                    waited,
+                    status_text[:80],
+                    " | ".join(text[:80] for text in check_texts),
+                )
+                if cleared:
+                    await log("TikTok kiểm tra xong: không phát hiện vấn đề.")
+                elif check_texts:
+                    await log(f"TikTok kiểm tra xong: {check_texts[0][:120]}")
+                # A person's hand does not leave the caption and hit Post in
+                # the same instant; give the page the same short beat.
+                await asyncio.sleep(random.uniform(1.2, 2.6))
+                return {
+                    "settled": True,
+                    "status": status_text,
+                    "checks": check_texts,
+                    "waited": waited,
+                }
+            await asyncio.sleep(1.2)
+
+        status_text = " ".join(state.get("status") or [])
+        check_texts = list(state.get("checks") or [])
+        logger.warning(
+            "[Upload] Phan kiem tra van chua dung yen sau %.0fs; van tiep tuc dang "
+            "| status=%s | checks=%s",
+            timeout_seconds,
+            status_text[:80],
+            " | ".join(text[:80] for text in check_texts),
+        )
+        await log("TikTok kiểm tra lâu hơn thường lệ; tiếp tục đăng như thao tác tay.")
+        return {
+            "settled": False,
+            "status": status_text,
+            "checks": check_texts,
+            "waited": time.monotonic() - started,
         }
 
     async def _wait_publish_ready(
@@ -5691,6 +5860,10 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             step_logger=step_logger
         )
         await self._handle_upload_interruptions(step_logger=step_logger)
+
+        # 4b) The pause a person takes after typing: let the upload line read
+        # "Uploaded（…）" and the content/music checks settle before Post.
+        await self._wait_publish_checks(step_logger=step_logger)
 
         # Keep account defaults for privacy/comments/reuse. Those controls are
         # only touched when they become explicit inputs in a future UI.
