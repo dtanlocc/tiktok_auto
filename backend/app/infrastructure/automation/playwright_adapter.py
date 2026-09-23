@@ -473,10 +473,21 @@ async def _launch_invisible_context(instance: InvisiblePlaywright, timeout: int)
             # Juggler is still closing the failed pipe is what created orphaned
             # Firefox trees and made the following launch hang as well.
             token = getattr(instance, "_session_token", None)
+            # Same backstop as InvisiblePlaywrightAdapter.close(): a teardown
+            # that blocks its own thread takes the event loop with it, and no
+            # timeout living on that loop can fire. A thread still can.
+            watchdog = None
+            if token:
+                watchdog = _threading.Timer(11.0, _reap_session_tree, args=(token,))
+                watchdog.daemon = True
+                watchdog.start()
             try:
                 await asyncio.wait_for(instance.__aexit__(None, None, None), timeout=10)
             except BaseException:
                 pass
+            finally:
+                if watchdog is not None:
+                    watchdog.cancel()
             if token:
                 try:
                     await asyncio.to_thread(_reap_session_tree, token)
@@ -5944,6 +5955,23 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     0.1,
                     float(getattr(settings, "BROWSER_CLOSE_TIMEOUT", 15.0)),
                 )
+                # ⛔ A TIMEOUT ON THE LOOP CANNOT RESCUE A BLOCKED LOOP.
+                # Measured 23/09/2026: the driver's shutdown stopped inside
+                # os.close() on the browser pipe, which on Windows waits for
+                # the reader thread sitting in that descriptor - and because
+                # that ran on the event loop, every account, the API and the
+                # UI froze behind this one await for as long as the backend
+                # was left running. asyncio.wait_for below cannot fire while
+                # the loop it lives on is the thing that is stuck, so the
+                # backstop is an ordinary thread: it reaps this session's own
+                # process tree, the blocked read ends, and close returns.
+                watchdog = None
+                if token:
+                    watchdog = _threading.Timer(
+                        close_timeout + 1.0, _reap_session_tree, args=(token,)
+                    )
+                    watchdog.daemon = True
+                    watchdog.start()
                 try:
                     await asyncio.wait_for(
                         instance.__aexit__(None, None, None),
@@ -5974,6 +6002,8 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                         except Exception:
                             pass
                 finally:
+                    if watchdog is not None:
+                        watchdog.cancel()
                     self._invisible_pw = None
                     self._browser = None
                     self._page = None
