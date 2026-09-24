@@ -722,13 +722,15 @@ class ConcurrentTaskDispatcher:
                     )
                 return current_account
 
-            async def log_step(step_desc: str):
+            async def log_step(step_desc: str, persist: bool = True):
                 # CHECKPOINT PAUSE: neu dang bi tam dung (toan cuc hoac rieng
                 # account nay), worker se dung ngay tai day cho toi khi duoc
                 # resume, truoc khi ghi log va tiep tuc buoc tiep theo.
                 ensure_account_is_operational()
                 await self._wait_if_paused(account_id)
-                await self._update_step_log(account_id, step_desc, session)
+                await self._update_step_log(
+                    account_id, step_desc, session, persist=persist
+                )
 
             try:
                 # 1. Truy vấn thông tin tài khoản và cấu hình Proxy động liên kết
@@ -1175,7 +1177,8 @@ class ConcurrentTaskDispatcher:
                 self.paused_account_ids.discard(account_id)
                 try:
                     await log_step(
-                        "Đã đóng trình duyệt; luồng và proxy của account đã được giải phóng."
+                        "Đã đóng trình duyệt; luồng và proxy của account đã được giải phóng.",
+                        persist=False,
                     )
                 except Exception:
                     pass
@@ -1247,11 +1250,28 @@ class ConcurrentTaskDispatcher:
             }
         })
 
-    async def _update_step_log(self, account_id: str, step_description: str, session: Session) -> None:
-        """Ghi log ngắn gọn lên bảng và bắn log chi tiết xuống terminal (Đã thụt lề 4 khoảng trắng chuẩn phương thức Class)"""
+    async def _update_step_log(
+        self,
+        account_id: str,
+        step_description: str,
+        session: Session,
+        persist: bool = True,
+    ) -> None:
+        """Ghi log ngắn gọn lên bảng và bắn log chi tiết xuống terminal.
+
+        ⛔ HOUSEKEEPING IS NOT THE ACCOUNT'S STATE. Measured 24/09/2026: the
+        login use case wrote why TikTok refused - "Sai mật khẩu, còn 5 lượt" -
+        and the line this worker logs after closing the browser overwrote it
+        seconds later, so the account list read "Đã đóng trình duyệt; luồng và
+        proxy của account đã được giải phóng." for every outcome alike. Lines
+        about our own cleanup travel to the terminal with persist=False and
+        leave the verdict where the operator can act on it.
+        """
+        # The row is read either way: the terminal line below names the
+        # account. Only the WRITE is conditional.
         repo = SQLiteAccountRepository(session)
         account = repo.get_by_id(account_id)
-        if account:
+        if persist and account:
             account.current_step = step_description
             repo.save(account)
 

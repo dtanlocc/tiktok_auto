@@ -359,6 +359,31 @@ async def _submit_login(
     for press in range(transient_retries + 1):
         if press and await _moved_past_login_form(page):
             return ""   # the last press went through while its old error line stayed
+        if press:
+            # ⛔ THE RETRY MUST NOT SUBMIT AN EMPTY FORM. Measured 24/09/2026
+            # on the THAITEST batch: press one answered "Internal server
+            # error", TikTok rebuilt the form during the 20-35s pause and
+            # wiped both fields, and the second press sent nothing - so the
+            # form closed, the feed came back signed out, and the account
+            # waited 150s for a code that was never requested. Four accounts
+            # in a row, none of them with anything wrong.
+            try:
+                if await page.evaluate(_LOGIN_INPUTS_GONE_JS):
+                    if not await _has_session_cookie(browser):
+                        return (
+                            "TikTok dong form dang nhap truoc khi bam lai "
+                            "(chua dang nhap)."
+                        )
+                elif await page.evaluate(_LOGIN_FIELDS_EMPTY_JS) and refill is not None:
+                    if step_logger:
+                        await step_logger(
+                            "[!] Form dang nhap da bi dung lai va xoa trang; "
+                            "go lai Email/Password truoc khi bam Log in..."
+                        )
+                    await refill()
+                    refill = None
+            except Exception as exc:
+                logger.debug("[Login] Khong kiem tra duoc form truoc khi bam lai: %s", exc)
         if not await _wait_submit_enabled(login_btn):
             # A dead button is a form React had not bound yet, not a dead end.
             # Type it again now the page has had longer, and give up only if it
@@ -497,11 +522,34 @@ _NEXT_SCREEN_JS = r"""() => {
 
 #: The inputs alone, with no opinion about the URL. TikTok can close the form
 #: and leave the address at /login with the feed showing behind it.
+_LOGIN_FIELDS = (
+    'input[name="username"], input[autocomplete="username"], '
+    'input[placeholder*="Email" i], input[type="password"], '
+    'input[placeholder*="code" i]'
+)
+
+#: ⛔ THE CONTAINER IS NOT THE FORM. The first version of this check also
+#: looked for [data-e2e="login-modal"], and TikTok leaves that element in the
+#: page after closing the form - so on 24/09/2026 the check never fired, and
+#: three accounts in a row still sat through the full 150s wait on a feed
+#: they were not signed into. Only the fields count.
 _LOGIN_INPUTS_GONE_JS = r"""() => {
   const vis = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
   return ![...document.querySelectorAll(
-    '[data-e2e="login-modal"], input[name="username"], input[type="password"], '
+    'input[name="username"], input[autocomplete="username"], '
+    + 'input[placeholder*="Email" i], input[type="password"], '
     + 'input[placeholder*="code" i]')].some(vis);
+}"""
+
+#: A form that is on screen but has lost what we typed into it.
+_LOGIN_FIELDS_EMPTY_JS = r"""() => {
+  const vis = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
+  const pick = (sel) => [...document.querySelectorAll(sel)].filter(vis)[0] || null;
+  const user = pick('input[name="username"], input[autocomplete="username"], '
+                    + 'input[placeholder*="Email" i]');
+  const pass = pick('input[type="password"]');
+  if (!user && !pass) return false;          // no form on screen at all
+  return !(user && user.value) || !(pass && pass.value);
 }"""
 
 _LOGIN_FORM_GONE_JS = r"""() => {
