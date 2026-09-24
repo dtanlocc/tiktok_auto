@@ -156,7 +156,19 @@ async def _open_email_login_form(
     )
     page = browser._page
     email_input = page.locator(email_selector)
-    await email_input.first.wait_for(state="visible", timeout=20000)
+    # ⛔ TWENTY SECONDS WAS THE EDGE OF THE MEASUREMENT, NOT A MARGIN. On
+    # 151.244.238.42 the login page binds its form at ~17.6s with 36 scripts
+    # (measured 24/09/2026 across four loads), so one slow response put the
+    # account past the limit and the run ended with "the selector matches
+    # nothing" - a page that was about to be ready, called dead. Sixty
+    # seconds still fails fast against a page that never renders at all.
+    try:
+        await email_input.first.wait_for(state="visible", timeout=60000)
+    except Exception:
+        raise AuthenticationPageNotReady(
+            "Trang dang nhap Email khong hien o nhap trong 60s "
+            f"(URL: {str(getattr(page, 'url', ''))[:120]})."
+        )
     return page, email_input
 
 _LOGIN_SUBMIT_SELECTOR = (
@@ -1129,6 +1141,8 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             raise e_ban
 
         except Exception as e:
+            if not self.last_refusal:
+                self.last_refusal = f"{type(e).__name__}: {str(e)[:160]}"
             if step_logger:
                 await step_logger(f"Loi luong dang nhap Form: {str(e)}")
             logger.error(f"[-] Loi dang nhap Form: {str(e)}")

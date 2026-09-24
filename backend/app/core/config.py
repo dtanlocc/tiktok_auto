@@ -139,15 +139,21 @@ class Settings(BaseSettings):
     # VAN DI QUA PROXY - chung la thu TikTok noi voi account/thiet bi.
     # Cu phap la cua engine (kieu Firefox no_proxies_on): ".domain" khop ca
     # subdomain. De rong = moi thu di qua proxy nhu truoc.
-    # MAC DINH TAT (chuoi rong = moi thu di qua proxy). Bat len chi khi proxy
-    # that su nghen: request tinh KHONG mang cookie va khong mang device_id/
-    # webid/msToken (da soi tung URL 24/09/2026), NHUNG chung van gui Referer
-    # cua dung trang login + User-Agent tu IP THAT, va moi account tren may
-    # nay se dung chung IP that do. Do la mot moi noi yeu nhung co that, nen
-    # nguoi van hanh quyet dinh, khong phai mac dinh.
-    # Gia tri khuyen nghi khi can bat:
-    #   ".ttwstatic.com, .tiktokcdn.com, .tiktokcdn-us.com"
-    PROXY_DIRECT_STATIC_HOSTS: str = ""
+    # Host TINH duoc di thang qua mang that (dang chay sau VPN), de DANH
+    # bang thong ket noi cua proxy cho thu thuc su can danh tinh.
+    # Do that 24/09/2026 tren 1 phien mo trang login qua 151.244.238.42:
+    #   - 260/430 request la bundle JS/CSS cua trang login tren
+    #     sf16-website-login.neutral.ttwstatic.com, 11 cai bi proxy tu choi;
+    #   - soi tung URL: KHONG co cookie, KHONG co device_id/webid/msToken,
+    #     chi co _default_font/v/globalName/bid va cache key;
+    #   - A/B 4 lan tai trang: bat bypass -> form song 2/2 lan (1 request bi
+    #     tu choi), tat bypass -> 1/2 lan (3,5 request bi tu choi).
+    # Thu KHONG duoc phep roi proxy: moi thu *.tiktok.com (trang, passport,
+    # login-us/eu, mssdk, web-sg, video) va do tele *.tiktokv.com (mcs, mon,
+    # starling, libraweb) - chung mang device id, doi IP giua phien la tu sat.
+    # Cu phap la cua engine (kieu Firefox no_proxies_on): ".domain" khop ca
+    # subdomain. De rong = moi thu di qua proxy.
+    PROXY_DIRECT_STATIC_HOSTS: str = ".ttwstatic.com, .tiktokcdn.com, .tiktokcdn-us.com"
 
     # Truoc khi dang bai: do IP ra cua duong mang (proxy hoac mang that) qua
     # vai ket noi moi. Neu IP doi theo tung ket noi (VPN xoay IP), TikTok huy phien
