@@ -38,6 +38,11 @@ _REFUSAL_LINES = (
      "Tài khoản không tồn tại trên TikTok"),
     (r"không tìm thấy thư|khong tim thay thu",
      "Không lấy được mã OTP từ hòm thư"),
+    # Measured 24/09/2026: this is what TikTok answered for a whole batch,
+    # with the fields still filled and the button still enabled. It is not
+    # our side and pressing again does not move it.
+    (r"internal server error",
+     "TikTok trả lời lỗi máy chủ cho tài khoản này - đợi rồi thử lại"),
 )
 
 

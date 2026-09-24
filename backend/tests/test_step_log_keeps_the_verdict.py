@@ -77,3 +77,31 @@ def test_an_ordinary_step_still_becomes_the_account_state(wired):
 
     assert account.current_step == "Đang tải video lên máy chủ TikTok..."
     assert repo.writes == 1
+
+
+class _Failed:
+    def __init__(self, status, step):
+        self.status = status
+        self.current_step = step
+
+
+def test_a_login_verdict_is_kept_instead_of_the_placeholder():
+    account = _Failed("ERROR", "TikTok trả lời lỗi máy chủ cho tài khoản này - đợi rồi thử lại")
+    kept = dispatcher_module.failure_step_for("LOGIN_CREDENTIAL", account)
+    assert kept == account.current_step
+
+
+def test_an_upload_batch_keeps_its_own_summary_as_before():
+    account = _Failed("RUNNING", "⚠️ VIDEO_TRUNG · Đã đăng 0/1")
+    kept = dispatcher_module.failure_step_for("UPLOAD_MEDIA_BATCH", account)
+    assert kept == account.current_step
+
+
+def test_a_task_that_fell_over_mid_step_does_not_keep_a_progress_line():
+    account = _Failed("RUNNING", "Dang nhap Password tu tu...")
+    assert dispatcher_module.failure_step_for("LOGIN_CREDENTIAL", account) == "Thất bại"
+
+
+def test_nothing_recorded_falls_back_to_the_placeholder():
+    assert dispatcher_module.failure_step_for("LOGIN_CREDENTIAL", _Failed("ERROR", "")) == "Thất bại"
+    assert dispatcher_module.failure_step_for("LOGIN_CREDENTIAL", None) == "Thất bại"

@@ -128,3 +128,10 @@ def test_the_combined_strategy_hands_the_reason_up(monkeypatch):
     )
     assert ok is False
     assert strategy.last_refusal == "Maximum number of attempts reached."
+
+
+def test_a_server_error_that_will_not_clear_is_named_for_what_it_is():
+    """Measured on a whole batch: fields filled, button live, this line stuck."""
+    line = login_failure_step("Internal server error. Please try again later.")
+    assert "lỗi máy chủ" in line
+    assert "Đăng nhập thất bại" not in line

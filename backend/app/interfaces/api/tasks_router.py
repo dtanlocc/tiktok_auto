@@ -690,11 +690,25 @@ async def resume_global(
 
 @router.post("/stop-global")
 async def stop_global(
+    request: Request,
     dispatcher: ConcurrentTaskDispatcher = Depends(get_task_dispatcher),
 ):
     """DỪNG KHẨN CẤP: hủy ngay lập tức mọi luồng đang chạy (đóng browser của
     từng luồng) và xóa sạch các tác vụ còn đang chờ trong hàng đợi. Hệ thống
-    vẫn sẵn sàng nhận tác vụ MỚI ngay sau đó (không tắt hẳn dispatcher)."""
+    vẫn sẵn sàng nhận tác vụ MỚI ngay sau đó (không tắt hẳn dispatcher).
+
+    ⛔ WHO ASKED IS PART OF THE EVENT. 24/09/2026 a batch of 34 queued tasks
+    was wiped by this endpoint and the operator had not pressed the button;
+    the log said only that the stop happened, so there was nothing to trace.
+    One line naming the caller turns "something stopped it" into a fact."""
+    client = request.client
+    logger.warning(
+        "[STOP-GLOBAL] Yeu cau dung khan cap tu %s:%s | user-agent=%r | referer=%r",
+        getattr(client, "host", "?"),
+        getattr(client, "port", "?"),
+        request.headers.get("user-agent", "")[:120],
+        request.headers.get("referer", "")[:120],
+    )
     await dispatcher.emergency_stop_all()
     return {"status": "SUCCESS", "message": "Đã dừng khẩn cấp toàn bộ hệ thống."}
 

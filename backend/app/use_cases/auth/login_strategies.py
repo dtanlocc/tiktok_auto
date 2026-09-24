@@ -416,7 +416,20 @@ async def _submit_login(
         await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
         # After a re-press the previous line may still be on screen; only a
         # different message (or the same one after TikTok cleared it) counts.
-        error = await _await_login_response(page, ignore_error=previous_error)
+        # ⛔ ON THE LAST PRESS, A LINE THAT IS STILL THERE IS THE ANSWER.
+        # `ignore_error` exists so a hiccup left over from an earlier press is
+        # not read as a refusal - that press may be the one that went through.
+        # But once there are no presses left to redeem it, ignoring it hides
+        # the verdict: measured 24/09/2026, TikTok kept "Internal server
+        # error. Please try again later." on a form whose fields were still
+        # filled and whose button was still enabled, and the flow read that as
+        # "no error" and then waited 150s for a code screen that had no reason
+        # to come. A login that moved on shows no line at all, so this cannot
+        # turn a success into a refusal.
+        error = await _await_login_response(
+            page,
+            ignore_error="" if press == transient_retries else previous_error,
+        )
         if not is_transient_login_error(error) or press == transient_retries:
             return error
         previous_error = error
@@ -541,6 +554,26 @@ _LOGIN_INPUTS_GONE_JS = r"""() => {
     + 'input[placeholder*="code" i]')].some(vis);
 }"""
 
+#: Everything the operator needs to tell "TikTok ignored us" from "our text
+#: is gone": whether each field still holds something, and whether the button
+#: is still pressable.
+_LOGIN_FORM_STATE_JS = r"""() => {
+  const vis = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
+  const pick = (sel) => [...document.querySelectorAll(sel)].filter(vis)[0] || null;
+  const user = pick('input[name="username"], input[autocomplete="username"], '
+                    + 'input[placeholder*="Email" i]');
+  const pass = pick('input[type="password"]');
+  const button = pick('[data-e2e="login-button"], button[type="submit"]');
+  const box = document.querySelector('[data-e2e="login-modal"]') || document.body;
+  return {
+    user_filled: !!(user && user.value),
+    pass_filled: !!(pass && pass.value),
+    button_disabled: button ? !!button.disabled : null,
+    button_text: button ? (button.innerText || '').trim().slice(0, 30) : null,
+    form_text: (box.innerText || '').replace(/\s+/g, ' ').trim().slice(-260),
+  };
+}"""
+
 #: A form that is on screen but has lost what we typed into it.
 _LOGIN_FIELDS_EMPTY_JS = r"""() => {
   const vis = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
@@ -652,6 +685,7 @@ async def _wait_verification_screen(
     started = loop.time()
     next_note = started + 15.0
     dismissed = 0          # consecutive looks with no login inputs on screen
+    observed: dict = {}    # what the checks below actually answered
     while True:
         captcha_present = getattr(browser, "is_captcha_present", None)
         if captcha_present is not None:
@@ -671,7 +705,8 @@ async def _wait_verification_screen(
         if error and not is_transient_login_error(error):
             return f"error:{error}"
         try:
-            if await page.evaluate(_LOGIN_FORM_GONE_JS):
+            observed["form_gone"] = await page.evaluate(_LOGIN_FORM_GONE_JS)
+            if observed["form_gone"]:
                 return "none"   # signed straight in, no code asked
             # ⛔ AND THE FORM CAN VANISH WITHOUT THE URL MOVING. Measured
             # 24/09/2026 on @spou70_we10shan: after the press TikTok closed
@@ -680,7 +715,8 @@ async def _wait_verification_screen(
             # false and this wait ran its full 150s for a code screen that
             # was never coming. No inputs and no session is a login that went
             # nowhere, and it is decidable right here.
-            if await page.evaluate(_LOGIN_INPUTS_GONE_JS):
+            observed["inputs_gone"] = await page.evaluate(_LOGIN_INPUTS_GONE_JS)
+            if observed["inputs_gone"]:
                 dismissed += 1
                 if dismissed >= 3 and not await _has_session_cookie(browser):
                     return (
@@ -689,8 +725,12 @@ async def _wait_verification_screen(
                     )
             else:
                 dismissed = 0
-        except Exception:
-            pass
+        except Exception as exc:
+            # ⛔ A SWALLOWED CHECK LOOKS EXACTLY LIKE A CHECK THAT SAID NO.
+            # 24/09/2026 the two checks above were added to stop this wait
+            # early and neither ever fired; without this line there was no way
+            # to tell a false answer from an evaluate that never returned one.
+            observed["error"] = f"{type(exc).__name__}: {str(exc)[:80]}"
         now = loop.time()
         if now - started >= timeout_seconds:
             # ⛔ SAY WHAT WAS ON SCREEN INSTEAD. Measured 24/09/2026 on
@@ -700,6 +740,20 @@ async def _wait_verification_screen(
             # page that never finished loading. The text the account was
             # actually looking at costs one evaluate and settles it.
             on_screen = await _page_summary(page)
+            try:
+                form_state = await page.evaluate(_LOGIN_FORM_STATE_JS)
+            except Exception as exc:
+                form_state = {"error": f"{type(exc).__name__}: {str(exc)[:60]}"}
+            logger.warning("[Login] Form luc bo cuoc: %s", form_state)
+            logger.warning(
+                "[Login] Trang thai luc bo cuoc: form_gone=%s inputs_gone=%s "
+                "dismissed=%d session=%s loi_kiem_tra=%s",
+                observed.get("form_gone"),
+                observed.get("inputs_gone"),
+                dismissed,
+                await _has_session_cookie(browser),
+                observed.get("error"),
+            )
             logger.warning(
                 "[Login] Khong thay lua chon Email / o nhap ma sau %.0fs. Man hinh dang hien: %s",
                 timeout_seconds,

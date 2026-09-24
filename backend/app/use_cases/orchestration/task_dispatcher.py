@@ -78,6 +78,30 @@ def _uuid_to_seed(uuid_str: str) -> int:
     #    vùng an toàn. Vẫn cố định theo account (cùng account -> cùng seed).
     return int(hex_dig[:8], 16) & 0x7FFFFFFF
 
+def failure_step_for(task_type: str, account) -> str:
+    """The line an account keeps after a task returned False.
+
+    ⛔ A VERDICT OUTRANKS A PLACEHOLDER. Only UPLOAD_MEDIA_BATCH used to keep
+    what the use case had written; every other task, login included, was
+    overwritten with "Thất bại". Measured 24/09/2026: the login use case
+    recorded "TikTok trả lời lỗi máy chủ cho tài khoản này - đợi rồi thử lại"
+    and the account list showed "Thất bại" a second later, so the whole point
+    of reading TikTok's answer was lost on the way to the screen.
+
+    A use case that reached a verdict has already set the account to ERROR, so
+    that is the signal: keep what it wrote. A task that fell over mid-step
+    leaves a progress line and a RUNNING status, and that is not a verdict.
+    """
+    recorded = str(getattr(account, "current_step", "") or "").strip()
+    if not account or not recorded:
+        return "Thất bại"
+    if task_type == "UPLOAD_MEDIA_BATCH":
+        return recorded
+    if str(getattr(account, "status", "") or "") == "ERROR":
+        return recorded
+    return "Thất bại"
+
+
 class ConcurrentTaskDispatcher:
     """Hệ thống điều phối, xếp hàng và khống chế giới hạn số luồng chạy song song"""
     def __init__(
@@ -447,13 +471,34 @@ class ConcurrentTaskDispatcher:
 
         # Xoa sach hang doi cac task CHUA duoc lay ra xu ly
         drained_count = 0
+        drained_accounts: list[str] = []
         while not self.queue.empty():
             try:
-                self.queue.get_nowait()
+                payload = self.queue.get_nowait()
                 self.queue.task_done()
                 drained_count += 1
+                account_id = str((payload or {}).get("account_id") or "")
+                if account_id:
+                    drained_accounts.append(account_id)
             except asyncio.QueueEmpty:
                 break
+
+        # ⛔ A CLEARED QUEUE MUST NOT LEAVE ROWS SAYING "QUEUED". Measured
+        # 24/09/2026: an emergency stop dropped 34 waiting tasks and every one
+        # of those accounts kept the QUEUED label, so the screen read "waiting
+        # its turn" for a queue that no longer existed and the operator had no
+        # way to tell that from a dispatcher that had stalled.
+        for account_id in drained_accounts:
+            try:
+                await self._update_account_status(
+                    account_id,
+                    "IDLE",
+                    step_desc="Đã hủy khỏi hàng đợi (Dừng khẩn cấp)",
+                )
+            except Exception as exc:
+                logger.debug(
+                    "[EMERGENCY STOP] Khong cap nhat duoc %s: %s", account_id, exc
+                )
 
         # Xoa sach _pending_accounts: task dang chay se tu discard trong finally,
         # nhung task da bi drain khoi hang doi thi khong bao gio toi finally ->
@@ -1050,13 +1095,7 @@ class ConcurrentTaskDispatcher:
                     except Exception:
                         pass
                     failed_account = account_repo.get_by_id(account_id)
-                    failure_step = (
-                        failed_account.current_step
-                        if task_type == "UPLOAD_MEDIA_BATCH"
-                        and failed_account
-                        and failed_account.current_step
-                        else "Thất bại"
-                    )
+                    failure_step = failure_step_for(task_type, failed_account)
                     await self._update_account_status(
                         account_id, "ERROR", step_desc=failure_step, session=session
                     )
