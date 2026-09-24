@@ -582,6 +582,27 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     proxy_opts["username"] = proxy_config.get("username")
                 if proxy_config.get("password"):
                     proxy_opts["password"] = proxy_config.get("password")
+                # ⛔ THE SESSION GOES THROUGH THE PROXY; THE FILES DO NOT HAVE
+                # TO. Measured 24/09/2026 on one login page through
+                # 151.244.238.42: 260 of ~430 requests were the login bundle on
+                # sf16-website-login.neutral.ttwstatic.com and NOT ONE of them
+                # carried a cookie, while eleven were refused outright - that
+                # single cookieless host is what spends the proxy's connection
+                # allowance and leaves the form as dead HTML. Everything TikTok
+                # can tie to the account still goes through the proxy:
+                # *.tiktok.com (page, passport, login-us/eu, mssdk, web-sg,
+                # video) and the telemetry on *.tiktokv.com.
+                direct_hosts = str(
+                    proxy_config.get("bypass")
+                    or getattr(settings, "PROXY_DIRECT_STATIC_HOSTS", "")
+                    or ""
+                ).strip()
+                if direct_hosts:
+                    proxy_opts["bypass"] = direct_hosts
+                    logger.info(
+                        "[PROXY] Cac host tinh di thang, khong qua proxy: %s",
+                        direct_hosts,
+                    )
 
             # QUAN TRONG: tao profile tam O NGOAI thu muc project (trong %TEMP%),
             # KHONG dat trong ./profiles/ nua. Ly do: uvicorn --reload quet de quy

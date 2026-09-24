@@ -130,6 +130,25 @@ class Settings(BaseSettings):
     # 0 = khong gioi han (hanh vi cu).
     PROXY_BROWSER_MAX_CONNECTIONS: int = 10
 
+    # Nhung host duoc phep DI THANG, khong qua proxy. Do that 24/09/2026 tren
+    # mot phien mo trang login qua 151.244.238.42: 260/430 request la cua
+    # sf16-website-login.neutral.ttwstatic.com (bundle JS/CSS cua trang login)
+    # va KHONG request nao mang cookie; chinh no lam trang chet vi an het cap
+    # ket noi cua proxy (11 request bi tu choi). Cac host mang cookie/danh tinh
+    # (*.tiktok.com) va do tele (*.tiktokv.com: mcs, mon, starling, libraweb)
+    # VAN DI QUA PROXY - chung la thu TikTok noi voi account/thiet bi.
+    # Cu phap la cua engine (kieu Firefox no_proxies_on): ".domain" khop ca
+    # subdomain. De rong = moi thu di qua proxy nhu truoc.
+    # MAC DINH TAT (chuoi rong = moi thu di qua proxy). Bat len chi khi proxy
+    # that su nghen: request tinh KHONG mang cookie va khong mang device_id/
+    # webid/msToken (da soi tung URL 24/09/2026), NHUNG chung van gui Referer
+    # cua dung trang login + User-Agent tu IP THAT, va moi account tren may
+    # nay se dung chung IP that do. Do la mot moi noi yeu nhung co that, nen
+    # nguoi van hanh quyet dinh, khong phai mac dinh.
+    # Gia tri khuyen nghi khi can bat:
+    #   ".ttwstatic.com, .tiktokcdn.com, .tiktokcdn-us.com"
+    PROXY_DIRECT_STATIC_HOSTS: str = ""
+
     # Truoc khi dang bai: do IP ra cua duong mang (proxy hoac mang that) qua
     # vai ket noi moi. Neu IP doi theo tung ket noi (VPN xoay IP), TikTok huy phien
     # dang nhap ngay sau khi bam Post (do 2026-09-19, 4/4 account). Mac dinh chi
