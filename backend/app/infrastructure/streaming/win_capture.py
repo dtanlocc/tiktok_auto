@@ -21,6 +21,7 @@ import io
 import json
 import os
 import sys
+import threading
 
 import ctypes
 import logging
@@ -75,16 +76,20 @@ def thread_on_desktop(desktop: Optional[str]):
     previous = user32.GetThreadDesktop(kernel32.GetCurrentThreadId())
     handle = user32.OpenDesktopW(desktop, 0, False, _DESKTOP_ALL)
     if not handle:
-        logger.debug(
-            "Khong mo duoc desktop %s (WinError %d)",
+        # ⛔ A FAILED ATTACH IS NOT A DETAIL. Measured 24/09/2026: this failed
+        # silently at debug level and every caller carried on enumerating the
+        # WRONG desktop, so the browser window was "not found" for a whole
+        # batch and the live screen stayed blank with no reason anywhere.
+        logger.warning(
+            "[DESKTOP] Khong mo duoc desktop %s (WinError %d)",
             desktop, ctypes.get_last_error(),
         )
         yield False
         return
     attached = bool(user32.SetThreadDesktop(handle))
     if not attached:
-        logger.debug(
-            "Khong gan duoc luong vao desktop %s (WinError %d)",
+        logger.warning(
+            "[DESKTOP] Khong gan duoc luong vao desktop %s (WinError %d)",
             desktop, ctypes.get_last_error(),
         )
     try:
@@ -159,11 +164,46 @@ def enum_moz_hwnds(desktop: Optional[str] = None) -> set:
         return True
 
     try:
-        with thread_on_desktop(desktop):
-            win32gui.EnumWindows(_cb, None)
+        run_on_desktop(desktop, lambda: win32gui.EnumWindows(_cb, None))
     except Exception:
         pass
     return found
+
+
+def run_on_desktop(desktop: Optional[str], work, default=None):
+    """Run ``work()`` on a thread attached to ``desktop``.
+
+    ⛔ A POOL THREAD CANNOT BE TRUSTED WITH A DESKTOP. `SetThreadDesktop`
+    refuses a thread that still holds windows or hooks, and the threads behind
+    `asyncio.to_thread` are reused across sessions whose desktops have since
+    been destroyed. Measured 24/09/2026 in a backend that had run several
+    accounts: an outside process attached to the live session's desktop and
+    saw its Firefox window at once, while the backend's own lookup found
+    nothing and the stream stayed blank for the whole batch. A thread created
+    for this one call has no history to refuse.
+
+    Returns ``default`` when the desktop cannot be attached, so a caller can
+    tell "not there" from "could not look".
+    """
+    if sys.platform != "win32" or not desktop:
+        return work()
+
+    outcome = {"value": default, "attached": False}
+
+    def runner():
+        with thread_on_desktop(desktop) as attached:
+            if not attached:
+                return
+            outcome["attached"] = True
+            outcome["value"] = work()
+
+    thread = threading.Thread(target=runner, daemon=True, name="desktop-work")
+    thread.start()
+    thread.join(timeout=30)
+    if thread.is_alive():
+        logger.warning("[DESKTOP] Viec tren desktop %s qua 30s; bo qua.", desktop)
+        return default
+    return outcome["value"]
 
 
 def find_session_moz_hwnd(session_token, desktop: Optional[str] = None) -> Optional[int]:
@@ -202,8 +242,7 @@ def find_session_moz_hwnd(session_token, desktop: Optional[str] = None) -> Optio
         return True
 
     try:
-        with thread_on_desktop(desktop):
-            win32gui.EnumWindows(_cb, None)
+        run_on_desktop(desktop, lambda: win32gui.EnumWindows(_cb, None))
     except Exception:
         return None
     return max(candidates)[1] if candidates else None
@@ -325,8 +364,9 @@ def downscale_jpeg(raw: bytes, max_width: int = 1280, quality: int = 82) -> byte
 def capture_hwnd_jpeg(hwnd: int, max_width: int = 1280, quality: int = 82,
                       desktop: Optional[str] = None) -> Optional[bytes]:
     """Same as before, run on the desktop the window lives on."""
-    with thread_on_desktop(desktop):
-        return _capture_hwnd_jpeg(hwnd, max_width, quality)
+    return run_on_desktop(
+        desktop, lambda: _capture_hwnd_jpeg(hwnd, max_width, quality)
+    )
 
 
 def _capture_hwnd_jpeg(hwnd: int, max_width: int = 1280,
