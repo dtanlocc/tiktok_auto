@@ -767,6 +767,30 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     "network.prefetch-next": False,
                 })
 
+            # ⛔ THE FEED'S VIDEO IS THE LAST BIG THING THE PROXY CARRIES.
+            # Measured 24/09/2026 over one signed-in session (For You, profile,
+            # Studio upload): after the static hosts were routed off the proxy
+            # it still carried 10.9 MB, and 10.67 MB of that was For You
+            # playing videos through v16/v19-webapp-prime. Those requests
+            # carry the session cookie, so they can never leave the proxy the
+            # way a stylesheet can - the only way to stop paying for them is
+            # not to play the video. Without autoplay the proxy carries
+            # 0.25 MB per session.
+            #
+            # What this costs: a browser that never starts a video is not what
+            # a person's browser does. It is a behaviour difference, not an
+            # identity one - no cookie, address or region signal changes - and
+            # blocking autoplay is a setting real people use. Off by default is
+            # still one line away for whoever disagrees.
+            if bool(getattr(settings, "BROWSER_BLOCK_VIDEO_AUTOPLAY", False)):
+                firefox_prefs.update({
+                    "media.autoplay.default": 5,          # block audio and video
+                    "media.autoplay.blocking_policy": 2,  # no click-through grace
+                })
+                logger.info(
+                    "[MEDIA] Chan video tu phat de tiet kiem bang thong proxy."
+                )
+
             # TikTok Studio reads Canvas2D pixels while preparing crops and
             # thumbnails. The default anti-fingerprint substitution would
             # otherwise become visible speckle in the resulting media. Apply

@@ -171,6 +171,14 @@ class Settings(BaseSettings):
     # subdomain. De rong = moi thu di qua proxy.
     PROXY_DIRECT_STATIC_HOSTS: str = ".ttwstatic.com, .tiktokcdn.com, .tiktokcdn-us.com"
 
+    # Chan video tu phat tren For You. Do 24/09/2026: sau khi da cho host tinh
+    # di thang, proxy con phai tai 10,9 MB moi phien thi 10,67 MB la video
+    # webapp-prime - ma video MANG COOKIE nen khong duoc phep roi proxy. Tat
+    # autoplay thi proxy chi con 0,25 MB/phien. Cai gia: trinh duyet khong bao
+    # gio phat video - khac hanh vi nguoi that, nhung KHONG doi bat ky tin hieu
+    # danh tinh/vung mien nao.
+    BROWSER_BLOCK_VIDEO_AUTOPLAY: bool = True
+
     # Truoc khi dang bai: do IP ra cua duong mang (proxy hoac mang that) qua
     # vai ket noi moi. Neu IP doi theo tung ket noi (VPN xoay IP), TikTok huy phien
     # dang nhap ngay sau khi bam Post (do 2026-09-19, 4/4 account). Mac dinh chi

@@ -22,7 +22,9 @@ from app.infrastructure.database.sqlite_repository import (
     SQLiteAccountRepository,
     SQLiteProxyRepository,
 )
+from app.core.config import settings
 from app.infrastructure.automation.playwright_adapter import InvisiblePlaywrightAdapter
+from app.infrastructure.streaming.screen_streamer import stream_browser_frames
 from app.infrastructure.websocket.socket_manager import ws_manager
 
 logger = logging.getLogger("DebugLoginService")
@@ -135,6 +137,7 @@ class DebugLoginService:
             email_service = create_email_service()
             browser = InvisiblePlaywrightAdapter()
             self._sessions[account_id] = browser
+            streamer_task: Optional[asyncio.Task] = None
 
             async def slog(msg: str):
                 await self._broadcast_log(account_id, uname, msg)
@@ -151,6 +154,27 @@ class DebugLoginService:
                 seed_val = _uuid_to_seed(account_id)
                 # force_visible=True: cua so ra HIEN + foreground, KHONG day off-screen.
                 await browser.initialize(proxy_config=proxy_config, seed=seed_val, force_visible=True)
+
+                # ⛔ A DEBUG SESSION IS THE ONE THE OPERATOR MOST WANTS TO SEE,
+                # and it was the only browser in the app that was never
+                # streamed: stream_browser_frames ran solely inside the
+                # dispatcher's worker. That did not matter while force_visible
+                # put the window on the operator's own screen, but from
+                # invisible_playwright 0.24 the session builds its window on a
+                # private Win32 desktop, so "visible" is visible to nobody.
+                # Measured 24/09/2026: debug session open, browser running,
+                # live screen blank, and no streamer had ever been started
+                # for it.
+                if settings.SCREEN_STREAM_ENABLED:
+                    streamer_task = asyncio.create_task(stream_browser_frames(
+                        lambda: browser._page,
+                        account_id,
+                        uname,
+                        get_hwnd=lambda: getattr(browser, "_hwnd", None),
+                        recover_hwnd=browser.recover_stream_hwnd,
+                        get_desktop=lambda: getattr(browser, "_browser_desktop", None),
+                        capture_allowed=lambda: not browser.stream_suspended,
+                    ))
 
                 await slog("🐛 DEBUG: Đang đăng nhập (ưu tiên cookie, fallback OTP)...")
                 login_strategy = CookieThenCredentialLoginStrategy()
@@ -218,6 +242,12 @@ class DebugLoginService:
                 await slog(f"❌ DEBUG lỗi: {type(e).__name__}: {str(e)}")
                 await self._broadcast_status(account_id, "ERROR", f"Debug lỗi: {str(e)[:60]}")
             finally:
+                if streamer_task is not None:
+                    streamer_task.cancel()
+                    try:
+                        await streamer_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
                 try:
                     await browser.close()
                 except Exception:
