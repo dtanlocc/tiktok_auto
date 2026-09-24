@@ -130,6 +130,12 @@ class Settings(BaseSettings):
     # 0 = khong gioi han (hanh vi cu).
     PROXY_BROWSER_MAX_CONNECTIONS: int = 10
 
+    # Loi vao form dang nhap: "login_page" mo thang trang dang nhap cua
+    # TikTok; "foryou" bam nut Log in tren trang chu roi dung modal (duong
+    # mot nguoi that di). Cai nao TikTok doi xu tot hon chi co do moi biet,
+    # nen day la cong tac de chay so sanh; cai con lai luon la duong lui.
+    LOGIN_ENTRY_MODE: str = "login_page"
+
     # Nhung host duoc phep DI THANG, khong qua proxy. Do that 24/09/2026 tren
     # mot phien mo trang login qua 151.244.238.42: 260/430 request la cua
     # sf16-website-login.neutral.ttwstatic.com (bundle JS/CSS cua trang login)

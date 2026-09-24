@@ -680,6 +680,10 @@ class _ModalLocator:
 
 
 def test_the_for_you_modal_is_walked_before_any_direct_url(monkeypatch):
+    """The For You door, pinned. Which door is tried first is now a setting
+    (LOGIN_ENTRY_MODE), so this states the mode it belongs to instead of
+    assuming it; the walk itself - press, wait, press again - is unchanged."""
+    monkeypatch.setattr(login_strategies.settings, "LOGIN_ENTRY_MODE", "foryou")
     _clock_only(monkeypatch)
     navigated = []
 

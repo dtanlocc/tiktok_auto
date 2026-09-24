@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 from app.domain.ports.browser import IBrowserService
 from app.domain.ports.email import IEmailService
 from app.domain.entities.account import TikTokAccount
+from app.core.config import settings
 from app.core.exceptions import AccountBannedException, AuthenticationPageNotReady
 from app.core.tiktok_cookies import has_tiktok_auth_cookies
 logger = logging.getLogger("LoginStrategies")
@@ -65,6 +66,40 @@ async def _wait_page_fully_loaded(
         await asyncio.sleep(0.5)
 
 
+def _login_entry_mode() -> str:
+    """"foryou" (the modal a person clicks) or "login_page" (TikTok's own)."""
+    value = str(getattr(settings, "LOGIN_ENTRY_MODE", "foryou") or "foryou")
+    return value.strip().lower()
+
+
+async def _open_login_page_directly(browser, step_logger=None):
+    """Load TikTok's login page and return (page, email input), or None.
+
+    ⛔ SIXTY SECONDS, NOT TWENTY. Measured 24/09/2026 on 151.244.238.42: the
+    login page binds its form at ~17.6s with 36 scripts, so a twenty-second
+    limit put a page that was about to be ready on the wrong side of the line
+    and the run ended with "the selector matches nothing". A page that never
+    renders still fails inside a minute.
+    """
+    await browser.navigate_to(
+        "https://www.tiktok.com/login/phone-or-email/email?lang=en&enter_method=direct"
+    )
+    page = browser._page
+    email_input = page.locator(
+        'input[placeholder*="Email"], input[name="username"], '
+        'input[autocomplete="username"], .eapcad11'
+    )
+    try:
+        await email_input.first.wait_for(state="visible", timeout=60000)
+    except Exception:
+        logger.warning(
+            "[Login] Trang dang nhap truc tiep khong hien o nhap trong 60s (URL: %s).",
+            str(getattr(page, "url", ""))[:120],
+        )
+        return None
+    return page, email_input
+
+
 async def _open_email_login_form(
     browser: IBrowserService,
     step_logger: Optional[Any] = None,
@@ -87,6 +122,23 @@ async def _open_email_login_form(
     existing = await visible_email_input(1500)
     if existing is not None:
         return page, existing
+
+    # Which door to try first is an operator setting, because the two are not
+    # obviously equal and only a measurement can say which TikTok treats
+    # better. "foryou" keeps the modal first (the path a person walks);
+    # "login_page" opens TikTok's own login page first and falls back to the
+    # modal if that page does not render.
+    if _login_entry_mode() == "login_page":
+        if step_logger:
+            await step_logger("Mo thang trang dang nhap Email cua TikTok...")
+        opened = await _open_login_page_directly(browser, step_logger)
+        if opened is not None:
+            return opened
+        if step_logger:
+            await step_logger(
+                "[!] Trang dang nhap khong hien o nhap; quay ve loi vao tu For You..."
+            )
+        page = browser._page
 
     # ⛔ THE FOR YOU MODAL IS THE MAIN WAY IN; the direct URL below is only
     # the fallback. Measured 2026-09-18 through 209.145.57.39: with For You
@@ -154,22 +206,14 @@ async def _open_email_login_form(
     await browser.navigate_to(
         "https://www.tiktok.com/login/phone-or-email/email?lang=en&enter_method=direct"
     )
-    page = browser._page
-    email_input = page.locator(email_selector)
-    # ⛔ TWENTY SECONDS WAS THE EDGE OF THE MEASUREMENT, NOT A MARGIN. On
-    # 151.244.238.42 the login page binds its form at ~17.6s with 36 scripts
-    # (measured 24/09/2026 across four loads), so one slow response put the
-    # account past the limit and the run ended with "the selector matches
-    # nothing" - a page that was about to be ready, called dead. Sixty
-    # seconds still fails fast against a page that never renders at all.
-    try:
-        await email_input.first.wait_for(state="visible", timeout=60000)
-    except Exception:
+    opened = await _open_login_page_directly(browser, step_logger)
+    if opened is None:
+        page = browser._page
         raise AuthenticationPageNotReady(
             "Trang dang nhap Email khong hien o nhap trong 60s "
             f"(URL: {str(getattr(page, 'url', ''))[:120]})."
         )
-    return page, email_input
+    return opened
 
 _LOGIN_SUBMIT_SELECTOR = (
     '[data-e2e="login-button"]:visible, '
