@@ -148,9 +148,19 @@ class Settings(BaseSettings):
     #     chi co _default_font/v/globalName/bid va cache key;
     #   - A/B 4 lan tai trang: bat bypass -> form song 2/2 lan (1 request bi
     #     tu choi), tat bypass -> 1/2 lan (3,5 request bi tu choi).
+    # Do sau 24/09/2026 tren ca phien (For You + Profile + Studio upload,
+    # 1502 request / 39,1 MB / dinh 117 request cung luc):
+    #   - nhom TINH  903 req (60,1%), 28,2 MB (72,1%), set-cookie = 0, khong
+    #     mot id-key nao; rieng lf16-tiktok-web.tiktokcdn-us.com la 744 req,
+    #     22,2 MB va DINH 103 KET NOI SONG SONG - chinh no lam vo cap proxy;
+    #   - nhom DANH TINH 263 req nhung giu TOAN BO 112 set-cookie va moi
+    #     id-key (device_id, msToken, X-Bogus, X-Gnarly, WebIdLastTime, fpid);
+    #   - nhom TELEMETRY 336 req, 0,03 MB, khong cookie - nhung than request
+    #     mang device id nen VAN di qua proxy.
     # Thu KHONG duoc phep roi proxy: moi thu *.tiktok.com (trang, passport,
-    # login-us/eu, mssdk, web-sg, video) va do tele *.tiktokv.com (mcs, mon,
-    # starling, libraweb) - chung mang device id, doi IP giua phien la tu sat.
+    # login-us/eu, mssdk, webcast, im-ws, video webapp-prime) va do tele tren
+    # *.tiktokv.com / *.tiktokv.us / *.tiktokw.us (mcs, mon, starling,
+    # libraweb) - chung mang device id, doi IP giua phien la tu sat.
     # Cu phap la cua engine (kieu Firefox no_proxies_on): ".domain" khop ca
     # subdomain. De rong = moi thu di qua proxy.
     PROXY_DIRECT_STATIC_HOSTS: str = ".ttwstatic.com, .tiktokcdn.com, .tiktokcdn-us.com"
