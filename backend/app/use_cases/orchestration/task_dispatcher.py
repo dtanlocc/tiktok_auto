@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.infrastructure.database.connection import engine
 from app.infrastructure.database.sqlite_repository import SQLiteAccountRepository, SQLiteProxyRepository
 from app.infrastructure.automation.playwright_adapter import InvisiblePlaywrightAdapter
+from app.infrastructure.automation.browser_factory import create_browser_service
 from app.infrastructure.websocket.socket_manager import ws_manager
 from app.use_cases.auth.tiktok_login import TikTokLoginUseCase
 from app.domain.account_rules import is_sold_account
@@ -741,7 +742,7 @@ class ConcurrentTaskDispatcher:
         with Session(engine) as session:
             account_repo = SQLiteAccountRepository(session)
             proxy_repo = SQLiteProxyRepository(session)
-            browser_service = InvisiblePlaywrightAdapter()
+            browser_service = create_browser_service()
             
             # Khởi tạo hòm thư dongvanfb chuyên dụng để sẵn sàng quét OTP
             from app.infrastructure.email.email_service_factory import create_email_service

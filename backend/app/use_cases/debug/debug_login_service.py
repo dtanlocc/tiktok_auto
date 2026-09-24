@@ -24,6 +24,7 @@ from app.infrastructure.database.sqlite_repository import (
 )
 from app.core.config import settings
 from app.infrastructure.automation.playwright_adapter import InvisiblePlaywrightAdapter
+from app.infrastructure.automation.browser_factory import create_browser_service
 from app.infrastructure.streaming.screen_streamer import stream_browser_frames
 from app.infrastructure.websocket.socket_manager import ws_manager
 
@@ -135,7 +136,7 @@ class DebugLoginService:
             from app.use_cases.auth.login_strategies import CookieThenCredentialLoginStrategy
 
             email_service = create_email_service()
-            browser = InvisiblePlaywrightAdapter()
+            browser = create_browser_service()
             self._sessions[account_id] = browser
             streamer_task: Optional[asyncio.Task] = None
 
@@ -279,7 +280,7 @@ class DebugLoginService:
 
     async def _run_blank(self, url: str, proxy_id: Optional[str] = None) -> None:
         import random
-        browser = InvisiblePlaywrightAdapter()
+        browser = create_browser_service()
         self._sessions[self._BLANK_ID] = browser
         uname = "Trình duyệt trắng"
         try:
