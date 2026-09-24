@@ -483,6 +483,15 @@ _NEXT_SCREEN_JS = r"""() => {
   return !form && !/\/login/.test(location.pathname);
 }"""
 
+#: The inputs alone, with no opinion about the URL. TikTok can close the form
+#: and leave the address at /login with the feed showing behind it.
+_LOGIN_INPUTS_GONE_JS = r"""() => {
+  const vis = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
+  return ![...document.querySelectorAll(
+    '[data-e2e="login-modal"], input[name="username"], input[type="password"], '
+    + 'input[placeholder*="code" i]')].some(vis);
+}"""
+
 _LOGIN_FORM_GONE_JS = r"""() => {
   const vis = el => !!(el && (el.offsetParent !== null || el.getClientRects().length));
   const form = [...document.querySelectorAll(
@@ -582,6 +591,7 @@ async def _wait_verification_screen(
     loop = asyncio.get_running_loop()
     started = loop.time()
     next_note = started + 15.0
+    dismissed = 0          # consecutive looks with no login inputs on screen
     while True:
         captcha_present = getattr(browser, "is_captcha_present", None)
         if captcha_present is not None:
@@ -603,6 +613,22 @@ async def _wait_verification_screen(
         try:
             if await page.evaluate(_LOGIN_FORM_GONE_JS):
                 return "none"   # signed straight in, no code asked
+            # ⛔ AND THE FORM CAN VANISH WITHOUT THE URL MOVING. Measured
+            # 24/09/2026 on @spou70_we10shan: after the press TikTok closed
+            # the login form and left the For You feed showing, signed out,
+            # with the address still on /login - so the check above stayed
+            # false and this wait ran its full 150s for a code screen that
+            # was never coming. No inputs and no session is a login that went
+            # nowhere, and it is decidable right here.
+            if await page.evaluate(_LOGIN_INPUTS_GONE_JS):
+                dismissed += 1
+                if dismissed >= 3 and not await _has_session_cookie(browser):
+                    return (
+                        "error:TikTok dong form dang nhap ma khong bao loi "
+                        "(quay lai trang For You, van chua dang nhap)."
+                    )
+            else:
+                dismissed = 0
         except Exception:
             pass
         now = loop.time()
