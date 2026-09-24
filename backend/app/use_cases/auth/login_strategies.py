@@ -308,6 +308,15 @@ _FINAL_LOGIN_ERROR = re.compile(
 )
 
 
+async def _page_summary(page, limit: int = 200) -> str:
+    """The first words the account is looking at, for a failure that has none."""
+    try:
+        text = str(await page.evaluate("() => document.body.innerText"))
+        return " ".join(text.split())[:limit]
+    except Exception:
+        return "(khong doc duoc noi dung trang)"
+
+
 def is_transient_login_error(message: str) -> bool:
     return bool(
         message
@@ -598,10 +607,22 @@ async def _wait_verification_screen(
             pass
         now = loop.time()
         if now - started >= timeout_seconds:
-            logger.warning("[Login] Khong thay lua chon Email / o nhap ma sau %.0fs.", timeout_seconds)
+            # ⛔ SAY WHAT WAS ON SCREEN INSTEAD. Measured 24/09/2026 on
+            # @stor1285: the password went through, this wait ran its full
+            # 150s and reported only that the Email choice never came - so
+            # nobody could tell a captcha from a different code channel from a
+            # page that never finished loading. The text the account was
+            # actually looking at costs one evaluate and settles it.
+            on_screen = await _page_summary(page)
+            logger.warning(
+                "[Login] Khong thay lua chon Email / o nhap ma sau %.0fs. Man hinh dang hien: %s",
+                timeout_seconds,
+                on_screen,
+            )
             if step_logger:
                 await step_logger(
-                    f"[-] Sau {timeout_seconds:.0f}s TikTok van chua hien lua chon nhan ma qua Email."
+                    f"[-] Sau {timeout_seconds:.0f}s TikTok van chua hien lua chon nhan ma qua "
+                    f"Email. Man hinh dang hien: {on_screen}"
                 )
             return "none"
         if now >= next_note and step_logger:
@@ -628,6 +649,15 @@ async def _wait_submit_enabled(button, timeout_seconds: float = 8.0) -> bool:
 
 class ITikTokLoginStrategy(ABC):
     """Lop co so truu tuong cho moi chien luoc dang nhap TikTok"""
+
+    #: What TikTok (or the mailbox) answered when the login did not go through.
+    #: ⛔ "Đăng nhập thất bại" IS NOT A REASON. Measured 24/09/2026 on the
+    #: THAITEST batch: three accounts failed for three different reasons -
+    #: "Incorrect account or password. 5 attempts remaining", "Maximum number
+    #: of attempts reached", and a login that was fine and only needed its
+    #: 2-step code - and all three were written to the operator as the same
+    #: sentence. One of them costs an attempt every time it is retried.
+    last_refusal: str = ""
 
     @abstractmethod
     async def login(
@@ -863,6 +893,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 )
                 form_error = await _submit_login(page, browser, login_btn, step_logger)
             if form_error:
+                self.last_refusal = form_error
                 if step_logger:
                     await step_logger(f"[-] TikTok tu choi dang nhap: {form_error}")
                 logger.error("[-] TikTok tu choi dang nhap %s: %s", account.username, form_error)
@@ -894,6 +925,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             )
             if verify_screen.startswith("error:"):
                 message = verify_screen[len("error:"):]
+                self.last_refusal = message
                 if step_logger:
                     await step_logger(f"[-] TikTok tu choi dang nhap: {message}")
                 return False
@@ -928,6 +960,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 if not await _is_visible(direct_otp_locator):
                     if step_logger:
                         await step_logger("[-] Da chon Email nhung TikTok khong hien o nhap ma OTP.")
+                    self.last_refusal = 'Da chon Email nhung TikTok khong hien o nhap ma OTP.'
                     return False
                 is_direct_otp_active = True
 
@@ -939,11 +972,13 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 if not account.email or not account.refresh_token or not account.client_id:
                     if step_logger:
                         await step_logger("[-] TikTok doi OTP nhung tai khoan thieu cau hinh hom thu hoac OAuth2 tokens.")
+                    self.last_refusal = 'Thieu cau hinh hom thu / OAuth2 token de lay OTP.'
                     return False
 
                 if not email_service:
                     if step_logger:
                         await step_logger("[-] Email Service cua DONGVANFB chua duoc nap.")
+                    self.last_refusal = 'Email service chua duoc nap, khong lay duoc OTP.'
                     return False
 
                 if step_logger:
@@ -995,6 +1030,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 if not otp_code:
                     if step_logger:
                         await step_logger("[-] Khong tim thay thu chua ma OTP gui ve hom thu cua ban.")
+                    self.last_refusal = 'Khong tim thay thu chua ma OTP trong hom thu.'
                     return False
 
                 if step_logger:
@@ -1018,6 +1054,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
                 otp_error = await _await_otp_result(page, otp_input)
                 if otp_error:
+                    self.last_refusal = f"TikTok tu choi ma OTP: {otp_error}"
                     if step_logger:
                         await step_logger(f"[-] TikTok tu choi ma OTP {otp_code}: {otp_error}")
                     logger.error("[-] TikTok tu choi ma OTP cua %s: %s", account.username, otp_error)
@@ -1033,6 +1070,14 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 pass
 
             is_logged_in, page_rendered = await _confirm_logged_in(browser, step_logger)
+            if not is_logged_in and not self.last_refusal:
+                # Nobody refused out loud and no code screen ever came. Keep
+                # what the account was looking at, or this row reaches the
+                # operator as a nameless failure like every other one.
+                self.last_refusal = (
+                    f"Khong vao duoc va TikTok khong bao loi. Man hinh: "
+                    f"{await _page_summary(page)}"
+                )
             # ⛔ NO USERNAME VERDICT HERE. The email, password and mailbox typed
             # above belong to this row, so whoever they signed into IS this
             # account; a different name means the SAVED username is out of
@@ -1075,6 +1120,7 @@ class CookieThenCredentialLoginStrategy(ITikTokLoginStrategy):
     """
     def __init__(self) -> None:
         self.last_login_method: Optional[str] = None
+        self.last_refusal = ""
 
     async def login(
         self,
@@ -1131,9 +1177,13 @@ class CookieThenCredentialLoginStrategy(ITikTokLoginStrategy):
                 await step_logger("Dang xoa phien Cookies hong truoc khi login OTP...")
             await browser.clear_auth_session()
 
-        result = await CredentialEmailOtpLoginStrategy().login(
+        credential = CredentialEmailOtpLoginStrategy()
+        result = await credential.login(
             browser, account, step_logger=step_logger, email_service=email_service
         )
+        # The reason belongs to whoever asked for the login, not to the
+        # strategy that happened to run.
+        self.last_refusal = credential.last_refusal
         if result:
             self.last_login_method = "CREDENTIAL"
         return result

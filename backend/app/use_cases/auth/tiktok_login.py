@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Callable, Awaitable, Optional, Any
 
 # Nhập các Port và Entity từ tầng Domain
@@ -15,6 +16,42 @@ from app.infrastructure.websocket.socket_manager import ws_manager
 
 # Định nghĩa biến logger toàn cục của mô-đun
 logger = logging.getLogger("TikTokLoginUseCase")
+
+
+#: What TikTok answered, turned into the one line the operator reads.
+#: ⛔ EVERY FAILED LOGIN USED TO SAY "Đăng nhập thất bại". Measured 24/09/2026
+#: on the THAITEST batch: one account was refused for a wrong password with
+#: five attempts left, one had already spent every attempt, and one was fine
+#: and only needed its 2-step code. Retrying the first costs an attempt each
+#: time and ends at the second; the third needed nothing but another run. The
+#: operator could not tell them apart, so they were all retried alike.
+_REFUSAL_LINES = (
+    (r"maximum number of attempts|too many attempts",
+     "Hết lượt thử - TikTok tạm khoá đăng nhập, đợi rồi thử lại"),
+    (r"incorrect account or password.*?(\d+)\s*attempts? remaining",
+     "Sai mật khẩu - TikTok còn cho {0} lượt"),
+    (r"incorrect|sai (mật khẩu|tài khoản)",
+     "Sai mật khẩu hoặc tài khoản"),
+    (r"2-step verification|xác minh 2 bước",
+     "Cần xác minh 2 bước"),
+    (r"doesn.?t exist|không tồn tại",
+     "Tài khoản không tồn tại trên TikTok"),
+    (r"không tìm thấy thư|khong tim thay thu",
+     "Không lấy được mã OTP từ hòm thư"),
+)
+
+
+def login_failure_step(refusal: str) -> str:
+    """One readable line for the account list; the raw words are kept after it."""
+    text = " ".join(str(refusal or "").split())
+    if not text:
+        return "Đăng nhập thất bại"
+    for pattern, line in _REFUSAL_LINES:
+        found = re.search(pattern, text, re.I)
+        if found:
+            label = line.format(*found.groups()) if found.groups() else line
+            return f"{label} ({text[:90]})"
+    return f"Đăng nhập thất bại: {text[:110]}"
 
 class LoginStrategyFactory:
     """Creational Pattern: Factory khởi tạo chiến lược login dựa trên phương thức truyền vào"""
@@ -101,7 +138,9 @@ class TikTokLoginUseCase:
                 account.current_step = "Đăng nhập thành công"
             else:
                 account.status = "ERROR"
-                account.current_step = "Đăng nhập thất bại"
+                account.current_step = login_failure_step(
+                    getattr(strategy, "last_refusal", "")
+                )
             
             displaced_account = None
             if username_changed:
