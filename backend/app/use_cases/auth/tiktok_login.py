@@ -30,7 +30,7 @@ _REFUSAL_LINES = (
      "Hết lượt thử - TikTok tạm khoá đăng nhập, đợi rồi thử lại"),
     (r"incorrect account or password.*?(\d+)\s*attempts? remaining",
      "Sai mật khẩu - TikTok còn cho {0} lượt"),
-    (r"incorrect|sai (mật khẩu|tài khoản)",
+    (r"incorrect|doesn.?t match our records|không khớp|sai (mật khẩu|tài khoản)",
      "Sai mật khẩu hoặc tài khoản"),
     (r"2-step verification|xác minh 2 bước",
      "Cần xác minh 2 bước"),

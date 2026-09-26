@@ -135,3 +135,12 @@ def test_a_server_error_that_will_not_clear_is_named_for_what_it_is():
     line = login_failure_step("Internal server error. Please try again later.")
     assert "lỗi máy chủ" in line
     assert "Đăng nhập thất bại" not in line
+
+
+def test_the_other_wrong_password_wording_is_recognised():
+    """Measured over the VPN: TikTok says this instead of 'Incorrect ...'."""
+    line = login_failure_step(
+        "Username or password doesn't match our records. Try again."
+    )
+    assert "Sai mật khẩu" in line
+    assert "Đăng nhập thất bại" not in line

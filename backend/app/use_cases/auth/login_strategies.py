@@ -326,6 +326,14 @@ async def _otp_destination(page) -> str:
 _ACCOUNT_MISSING = re.compile(r"account doesn.?t exist|t[aà]i kho[aả]n kh[oô]ng t[oồ]n t[aạ]i", re.I)
 _LOGIN_FORM_ERRORS = re.compile(
     r"account doesn.?t exist|incorrect (account|username|email|password)|"
+    # ⛔ TIKTOK HAS MORE THAN ONE WAY TO SAY "WRONG PASSWORD". Measured
+    # 24/09/2026 over the VPN on @stor1285: the form said "Username or
+    # password doesn't match our records. Try again." with both fields
+    # filled and the button live, and because no pattern here matched it,
+    # the flow read "no error" and then waited its full 150s for a code
+    # screen. The account list called that KHAC - a wrong password reported
+    # as a mystery.
+    r"doesn.?t match our records|kh[oô]ng kh[oớ]p|"
     r"maximum number of attempts|too many attempts|try again later|"
     r"internal server error|something went wrong|"
     r"t[aà]i kho[aả]n kh[oô]ng t[oồ]n t[aạ]i|sai (m[aậ]t kh[aẩ]u|t[aà]i kho[aả]n)",
@@ -359,7 +367,8 @@ _TRANSIENT_LOGIN_ERROR = re.compile(
 #: Refusals where pressing again only burns attempts or cannot help.
 _FINAL_LOGIN_ERROR = re.compile(
     r"maximum number of attempts|too many attempts|attempts remaining|"
-    r"incorrect|doesn.?t exist|kh[oô]ng t[oồ]n t[aạ]i|sai (m[aậ]t kh[aẩ]u|t[aà]i kho[aả]n)",
+    r"incorrect|doesn.?t exist|doesn.?t match our records|"
+    r"kh[oô]ng t[oồ]n t[aạ]i|kh[oô]ng kh[oớ]p|sai (m[aậ]t kh[aẩ]u|t[aà]i kho[aả]n)",
     re.I,
 )
 
