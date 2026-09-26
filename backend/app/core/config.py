@@ -179,13 +179,6 @@ class Settings(BaseSettings):
     # danh tinh/vung mien nao.
     BROWSER_BLOCK_VIDEO_AUTOPLAY: bool = True
 
-    # Engine trinh duyet: "invisible_playwright" (ban fork dang dung) hoac
-    # "camoufox". Hai engine tra loi cung mot port nhung KHONG tuong duong:
-    # camoufox khong co session token, khong co desktop rieng va khong co hop
-    # thoai file native, nen upload di qua kenh DOM va man hinh truc tiep roi
-    # ve page.screenshot(). Dat de chay so sanh, khong phai de doi bua.
-    BROWSER_ENGINE: str = "invisible_playwright"
-
     # Truoc khi dang bai: do IP ra cua duong mang (proxy hoac mang that) qua
     # vai ket noi moi. Neu IP doi theo tung ket noi (VPN xoay IP), TikTok huy phien
     # dang nhap ngay sau khi bam Post (do 2026-09-19, 4/4 account). Mac dinh chi

@@ -243,10 +243,7 @@ def test_worker_honors_pause_before_launching_browser():
     )
 
     pause_index = source.index("await self._wait_if_paused(account_id)")
-    # The engine is chosen by a factory now (invisible_playwright or
-    # camoufox); what this test guards is unchanged - a paused worker must
-    # not open a browser of ANY kind before it stops.
-    browser_index = source.index("browser_service = create_browser_service()")
+    browser_index = source.index("browser_service = InvisiblePlaywrightAdapter()")
     assert pause_index < browser_index
 
 
