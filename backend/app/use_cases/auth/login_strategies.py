@@ -270,7 +270,7 @@ async def _fill_login_form(
     the same thing: the email was typed before the rebuild, the password after.
     """
     for round_no in range(1, rounds + 1):
-        await _type_login_field(page, email_input, identifier, "Email")
+        await _type_login_field(page, email_input, identifier, "Username/Email")
         await asyncio.sleep(0.5)
         await _type_login_field(page, pass_input, password, "Password")
         kept = True
@@ -293,8 +293,38 @@ async def _fill_login_form(
         if step_logger:
             await step_logger("[!] TikTok vua tai lai form dang nhap va xoa noi dung; dang go lai...")
     raise RuntimeError(
-        f"TikTok xoa noi dung form dang nhap {rounds} lan lien tiep; khong gui duoc Email/Password."
+        f"TikTok xoa noi dung form dang nhap {rounds} lan lien tiep; khong gui duoc Username/Password."
     )
+
+
+def _login_identifier(account) -> str:
+    """What goes in TikTok's "Email or username" box.
+
+    ⛔ USERNAME FIRST, the email only when there is no username. The box takes
+    either, but they are not equally good: the email is imported with the
+    account and is often not a login for it at all - treft21664 (2026-09-18)
+    was refused with "Account doesn't exist" for its email and logged in fine
+    with @username on the very next press - while the username is the name
+    TikTok itself gives the session back.
+    """
+    return (getattr(account, "username", "") or "").strip() or (
+        (getattr(account, "email", "") or "").strip()
+    )
+
+
+def _login_fallback_identifier(account, used: str) -> str:
+    """The other credential to press once when TikTok says this one is unknown.
+
+    "Account doesn't exist" is about the string that was typed, not about the
+    account: the same nick can be unknown by one of its two names and fine by
+    the other. Returns "" when there is no second name to try.
+    """
+    username = (getattr(account, "username", "") or "").strip()
+    email = (getattr(account, "email", "") or "").strip()
+    for candidate in (username, email):
+        if candidate and candidate != used:
+            return candidate
+    return ""
 
 
 _MASKED_EMAIL = re.compile(r"([A-Za-z0-9._%+-]*\*+[A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
@@ -431,7 +461,7 @@ async def _submit_login(
                     if step_logger:
                         await step_logger(
                             "[!] Form dang nhap da bi dung lai va xoa trang; "
-                            "go lai Email/Password truoc khi bam Log in..."
+                            "go lai Username/Password truoc khi bam Log in..."
                         )
                     await refill()
                     refill = None
@@ -443,18 +473,18 @@ async def _submit_login(
             # is still dead after that.
             if refill is None:
                 raise RuntimeError(
-                    "Nut Log in van bi khoa sau khi go Email/Password: TikTok chua nhan "
+                    "Nut Log in van bi khoa sau khi go Username/Password: TikTok chua nhan "
                     "thong tin dang nhap."
                 )
             if step_logger:
                 await step_logger(
-                    "[!] Nut Log in con khoa (trang chua gan xong form); go lai Email/Password..."
+                    "[!] Nut Log in con khoa (trang chua gan xong form); go lai Username/Password..."
                 )
             await refill()
             refill = None      # one re-fill per login, never a loop
             if not await _wait_submit_enabled(login_btn, timeout_seconds=20.0):
                 raise RuntimeError(
-                    "Nut Log in van bi khoa sau khi go lai Email/Password: TikTok chua "
+                    "Nut Log in van bi khoa sau khi go lai Username/Password: TikTok chua "
                     "nhan thong tin dang nhap."
                 )
         try:
@@ -979,10 +1009,10 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
         email_service: Optional[IEmailService] = None,
         custom_avatar_path: Optional[str] = None
     ) -> bool:
-        login_identifier = account.email or account.username
+        login_identifier = _login_identifier(account)
         missing_fields = []
         if not login_identifier:
-            missing_fields.append("Email/Username")
+            missing_fields.append("Username/Email")
         if not account.password:
             missing_fields.append("Password")
         if missing_fields:
@@ -1030,11 +1060,11 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 page, step_logger, "trang dang nhap", timeout_seconds=90.0
             )
 
-            # Buoc 5: Dien EMAIL tu tu tung phim mot (delay 120ms).
-            # Dung account.email de dang nhap (thay vi username) - on dinh hon.
-            # Fallback ve username neu account thieu email.
+            # Buoc 5: Dien USERNAME tu tu tung phim mot (delay 120ms).
+            # Dung account.username de dang nhap; chi roi ve email khi account
+            # khong co username (xem _login_identifier).
             if step_logger:
-                await step_logger(f"Dang tu dong go Email dang nhap: {login_identifier}...")
+                await step_logger(f"Dang tu dong go Username dang nhap: {login_identifier}...")
             await email_input.first.wait_for(state="visible", timeout=10000)
 
             # Buoc 6: Dien Password tu tu tung phim mot
@@ -1067,21 +1097,23 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 page, browser, login_btn, step_logger, refill=refill_login_form
             )
 
-            # TikTok refuses on the form itself. "Account doesn't exist" for the
-            # imported email while @username is alive (treft21664, 2026-09-18):
-            # the email is not a login for that account, the username may be.
+            # TikTok refuses on the form itself. "Account doesn't exist" is a
+            # verdict on the string that was typed, not on the account, so the
+            # account's other name is worth exactly one more press before this
+            # is called a dead nick.
+            fallback_identifier = _login_fallback_identifier(account, login_identifier)
             if (
                 form_error
                 and _ACCOUNT_MISSING.search(form_error)
-                and account.username
-                and login_identifier != account.username
+                and fallback_identifier
             ):
                 if step_logger:
                     await step_logger(
-                        f"[!] TikTok bao '{form_error}' voi Email; thu dang nhap bang username @{account.username}..."
+                        f"[!] TikTok bao '{form_error}' voi '{login_identifier}'; "
+                        f"thu dang nhap bang '{fallback_identifier}'..."
                     )
                 await _fill_login_form(
-                    page, email_input, pass_input, account.username, account.password,
+                    page, email_input, pass_input, fallback_identifier, account.password,
                     step_logger=step_logger,
                 )
                 form_error = await _submit_login(page, browser, login_btn, step_logger)

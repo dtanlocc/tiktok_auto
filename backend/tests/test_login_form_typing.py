@@ -4,6 +4,7 @@ import pytest
 
 from app.use_cases.auth import login_strategies
 from app.use_cases.auth.login_strategies import _type_login_field, _wait_submit_enabled
+from app.domain.entities.account import TikTokAccount
 
 
 class _Keyboard:
@@ -833,6 +834,50 @@ def test_a_button_that_stays_dead_after_the_retype_is_reported(monkeypatch):
 
 
 def test_without_a_refill_the_old_message_is_kept(monkeypatch):
-    with pytest.raises(RuntimeError, match="sau khi go Email/Password"):
+    with pytest.raises(RuntimeError, match="sau khi go Username/Password"):
         asyncio.run(login_strategies._submit_login(
             object(), _CaptchaFreeBrowser(), _LateButton(), transient_retries=0))
+
+
+# ---------------------------------------------------------------------------
+# Which of the account's two names is typed into "Email or username".
+# ---------------------------------------------------------------------------
+
+def _account(username="", email=""):
+    return TikTokAccount(id="acc-1", username=username, email=email)
+
+
+def test_the_username_is_what_gets_typed():
+    """The email is the weaker name and must not win when both are present."""
+    account = _account(username="stor1285", email="garrikbilliob@hotmail.com")
+    assert login_strategies._login_identifier(account) == "stor1285"
+
+
+def test_an_account_with_no_username_still_logs_in_by_email():
+    account = _account(username="", email="garrikbilliob@hotmail.com")
+    assert login_strategies._login_identifier(account) == "garrikbilliob@hotmail.com"
+
+
+def test_surrounding_spaces_are_not_typed_into_the_form():
+    """An imported list carries them; TikTok would refuse the padded string."""
+    account = _account(username="  stor1285 ", email=" a@b.com ")
+    assert login_strategies._login_identifier(account) == "stor1285"
+
+
+def test_an_account_with_neither_name_has_nothing_to_type():
+    assert login_strategies._login_identifier(_account()) == ""
+
+
+def test_the_second_press_uses_the_other_name():
+    """"Account doesn't exist" judges the string typed, not the account."""
+    account = _account(username="stor1285", email="garrikbilliob@hotmail.com")
+    assert login_strategies._login_fallback_identifier(
+        account, "stor1285") == "garrikbilliob@hotmail.com"
+    assert login_strategies._login_fallback_identifier(
+        account, "garrikbilliob@hotmail.com") == "stor1285"
+
+
+def test_one_name_means_no_second_press():
+    """Pressing Log in again with the same string only burns an attempt."""
+    account = _account(username="stor1285")
+    assert login_strategies._login_fallback_identifier(account, "stor1285") == ""
