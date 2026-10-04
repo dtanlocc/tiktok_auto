@@ -16,6 +16,20 @@ cd tiktok_auto
 .\scripts\setup.ps1
 ```
 
+⛔ **Windows mặc định không cho chạy file `.ps1`.** Dòng thứ ba ở trên sẽ báo
+*"running scripts is disabled on this system"* trên một máy chưa đổi gì —
+`Get-ExecutionPolicy -List` cho thấy `CurrentUser` và `LocalMachine` là
+`Undefined`, và mặc định của Windows client là `Restricted`. Gọi script qua
+tiến trình riêng để không phải đổi thiết lập nào của máy:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
+```
+
+Hoặc đổi một lần cho tài khoản của mình, nếu máy đó là máy làm việc thường
+xuyên: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. File do `git
+clone` tạo ra không mang dấu "tải từ Internet", nên `RemoteSigned` chấp nhận nó.
+
 ⛔ **`-b` không bỏ được cho tới khi nhánh đó về `main`.** Bỏ nó ra thì clone rơi
 vào `main`, và `main` đang đi sau 31 commit: không có `setup.ps1`, không có file
 này, và con trỏ submodule còn ở bản fork cũ. Triệu chứng đúng như đã gặp ngày
