@@ -7,6 +7,29 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+
+# ⛔ CARGO IS PUT ON PATH HERE RATHER THAN ASSUMED TO BE THERE. The Tauri step
+# below shells out through npm, and Tauri spawns `cargo metadata` to find the
+# workspace. Measured 04/10/2026 packaging 0.1.10: that spawn answered "program
+# not found" and killed the release AFTER the backend had compiled and passed
+# its smoke test - twenty minutes to reach a one-line failure - while the same
+# `cargo metadata` run by hand in the same shell exited 0, and both PowerShell
+# and node could spawn cargo. The run that worked differed in one way only:
+# .cargo\bin had been prepended to PATH.
+#
+# ⛔ SO THE CAUSE IS NOT PROVEN, and this is not written as if it were. What is
+# certain is that the build must not depend on an ambient PATH entry it never
+# checks: cargo installed outside rustup lands in .cargo\bin and nothing puts it
+# on a fresh machine's PATH for a non-interactive shell. Prepending it is cheap,
+# and refusing early with a sentence about rust beats failing after Nuitka.
+$cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+if (Test-Path -LiteralPath (Join-Path $cargoBin "cargo.exe")) {
+    $env:PATH = $cargoBin + ";" + $env:PATH
+}
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    throw "cargo khong co tren PATH va khong thay trong $cargoBin. " +
+          "Cai Rust (https://rustup.rs) roi chay lai; chang Tauri can no."
+}
 $packageRoot = Join-Path $repoRoot ("release\friends\" + $Version)
 $archive = Join-Path $repoRoot ("release\friends\TikTokAuto-Friends-" + $Version + ".zip")
 if ((Test-Path -LiteralPath $packageRoot) -or (Test-Path -LiteralPath $archive)) {
