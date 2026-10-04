@@ -64,3 +64,9 @@ old_1/
 old_2/
 tiktok_auto_updated (1).zip
 old_3/
+
+# Ban clone tham khao cua mot repo nguoi khac, khong phai phan cua du an nay.
+# Truoc day no nam trong index duoi dang gitlink ma KHONG co muc trong
+# .gitmodules, nen may nao clone ve cung nhan mot thu muc trong va
+# `git submodule update --init --recursive` bao "No url found".
+tools/invisible-playwright-mcp/
