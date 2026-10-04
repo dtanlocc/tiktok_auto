@@ -52,7 +52,7 @@ npm --prefix frontend run dev
 Backend ở `127.0.0.1:9000`, frontend dev ở `127.0.0.1:1420`. Bản desktop thật
 thì chạy `npm --prefix frontend run desktop:dev`.
 
-## Ba chỗ dễ sai trên máy mới
+## Bốn chỗ dễ sai trên máy mới
 
 **Submodule rỗng.** `pyproject.toml` khai `invisible-playwright` là phụ thuộc
 editable trỏ vào `tools/invisible_playwright`. Nếu submodule chưa nạp thì thư
@@ -61,6 +61,12 @@ mục đó trống và `uv sync` hỏng ngay ở bước dựng gói — không 
 **Bản Python.** `.python-version` ghim `3.14`. Thiếu file đó thì `uv` tự chọn
 bất kỳ bản `>=3.11` nào nó tìm thấy, nên hai máy có thể dựng ra hai môi trường
 khác nhau từ cùng một `uv.lock`.
+
+**Đường dẫn clone quá sâu.** Đo ngày 04/10/2026: clone repo này vào một thư
+mục có đường dẫn dài thì `git clone` báo **thành công** nhưng checkout vỡ
+2506 đường dẫn — Windows giới hạn 260 ký tự và `core.longpaths` không được bật
+mặc định. Clone vào đường dẫn ngắn (ví dụ `D:\tiktok_auto`) thì sạch tuyệt đối;
+nếu buộc phải clone sâu thì bật `git config --global core.longpaths true` trước.
 
 **Engine phải khớp pin của core.** `tools/invisible_playwright/pyproject.toml`
 ghim `invisible_core==<x>`, và core quyết định bản engine nào được tải. Khi
