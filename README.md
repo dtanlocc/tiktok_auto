@@ -30,6 +30,13 @@ Hoặc đổi một lần cho tài khoản của mình, nếu máy đó là máy
 xuyên: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. File do `git
 clone` tạo ra không mang dấu "tải từ Internet", nên `RemoteSigned` chấp nhận nó.
 
+Và cái chặn đó **không chỉ ăn script trong repo này**: trong PowerShell, `npm`
+phân giải thành `C:\Program Files\nodejs\npm.ps1`, nên `Restricted` chặn mọi
+lệnh npm — kể cả `npm run dev` về sau. Chạy script qua tiến trình `Bypass` thì
+npm bên trong nó cũng thoát theo; gọi npm trực tiếp từ shell thường thì không,
+và lúc đó dùng `npm.cmd` (shim `.cmd` không chịu chính sách này) hoặc đổi
+`Set-ExecutionPolicy` như trên.
+
 ⛔ **`-b` không bỏ được cho tới khi nhánh đó về `main`.** Bỏ nó ra thì clone rơi
 vào `main`, và `main` đang đi sau 31 commit: không có `setup.ps1`, không có file
 này, và con trỏ submodule còn ở bản fork cũ. Triệu chứng đúng như đã gặp ngày
