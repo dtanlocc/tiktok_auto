@@ -71,6 +71,24 @@ async def _run_native_upload_smoke(url: str, media_path: str) -> None:
         owner_session_token = getattr(
             browser._invisible_pw, "_session_token", None
         )
+        # ⛔ THE DESKTOP TRAVELS WITH THE CALL, exactly as the upload path in
+        # playwright_adapter does it. Since invisible_playwright 0.24 a headless
+        # browser lives on its own Win32 desktop, and a chooser search from the
+        # ordinary desktop enumerates zero windows: measured 04/10/2026 while
+        # packaging 0.1.10, this smoke answered "[HWND] Could NOT detect this
+        # session's window" and then "Windows file chooser did not appear", on a
+        # build whose real upload path works. The test was written before that
+        # desktop existed and had been checking a way of calling this helper
+        # that the product itself stopped using - so it failed the release for a
+        # defect that was only ever in the test.
+        #
+        # Passed only when there IS one, the same condition the adapter uses:
+        # older engines have no such desktop and no such argument.
+        desktop_kwargs = (
+            {"desktop": browser._browser_desktop}
+            if getattr(browser, "_browser_desktop", None)
+            else {}
+        )
         await set_input_files_native(
             target,
             [media_path],
@@ -78,6 +96,7 @@ async def _run_native_upload_smoke(url: str, media_path: str) -> None:
             owner_process_ids=owner_process_ids or None,
             owner_session_token=owner_session_token,
             timeout_ms=15_000,
+            **desktop_kwargs,
         )
         actual = await target.evaluate(
             "element => element.files.length ? element.files[0].name : ''",
