@@ -29,5 +29,14 @@ invisible-playwright = { path = "tools/invisible_playwright", editable = true }
 dev = [
     "pytest>=8.0.0",
     "black>=24.0.0",
-    "nuitka>=4.2",
+    # ⛔ 4.2.2, NOT 4.2. Measured 04/10/2026 packaging the friends build on
+    # Python 3.14: the compiled binary died on import with "TypeError:
+    # exceptions must derive from BaseException", raised inside fastapi's
+    # own `__annotate__` at `email: EmailStr | None` - 3.14 computes
+    # annotations lazily (PEP 649) and 4.2 compiles that function wrongly.
+    # The same code is fine uncompiled, so nothing downstream can see it:
+    # it only appears in a release artifact. Reproduced in a two-minute
+    # standalone build that imports nothing but fastapi, and cured by the
+    # bump alone.
+    "nuitka>=4.2.2",
 ]
