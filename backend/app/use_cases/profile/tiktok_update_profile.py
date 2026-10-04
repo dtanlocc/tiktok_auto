@@ -36,10 +36,24 @@ def _bios_file_path() -> Path:
     So when compiled, it lives beside the executable, which is the folder the
     operator already copied and can see. Running from source is unchanged:
     backend/bios.txt, the file that is in the repository.
+
+    ⛔ AND `sys.executable` IS NOT THAT FOLDER - it is the same trap again.
+    Measured 04/10/2026 with a onefile probe: inside the bundle it reads
+    `...\\Temp\\onefile_27116_083171_wBW_ZeQ9Lko\\python.exe`, so using it
+    would have moved the file from one throwaway directory to another and
+    changed nothing. Nuitka hands the real location over as
+    `__compiled__.containing_dir`; the same probe printed the folder the exe
+    was actually sitting in. `sys.argv[0]` agrees, but a caller can rewrite
+    argv, so it is only the fallback.
     """
-    compiled = bool(globals().get("__compiled__")) or getattr(sys, "frozen", False)
-    if compiled:
-        return Path(sys.executable).resolve().parent / "bios.txt"
+    compiled = globals().get("__compiled__")
+    if compiled is not None:
+        containing = getattr(compiled, "containing_dir", None)
+        if containing:
+            return Path(containing) / "bios.txt"
+        return Path(sys.argv[0]).resolve().parent / "bios.txt"
+    if getattr(sys, "frozen", False):
+        return Path(sys.argv[0]).resolve().parent / "bios.txt"
     return Path(__file__).resolve().parents[3] / "bios.txt"
 
 
