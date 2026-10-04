@@ -11,16 +11,28 @@ frontend). Không cần tự cài Python — `uv` tải đúng bản ghi trong
 `.python-version`.
 
 ```powershell
-git clone --recurse-submodules https://github.com/dtanlocc/tiktok_auto.git
+git clone --recurse-submodules -b feat/invisible-playwright-0.25.4 https://github.com/dtanlocc/tiktok_auto.git
 cd tiktok_auto
 .\scripts\setup.ps1
 ```
 
-Nếu đã clone mà quên `--recurse-submodules`, chạy thêm:
+⛔ **`-b` không bỏ được cho tới khi nhánh đó về `main`.** Bỏ nó ra thì clone rơi
+vào `main`, và `main` đang đi sau 31 commit: không có `setup.ps1`, không có file
+này, và con trỏ submodule còn ở bản fork cũ. Triệu chứng đúng như đã gặp ngày
+04/10/2026 trên một máy khác — `.\scripts\setup.ps1` báo *"is not recognized"*,
+vì file đó thật sự không tồn tại trong bản vừa clone.
+
+Nếu đã clone rồi mới biết — quên `--recurse-submodules`, hoặc đang đứng trên
+`main`:
 
 ```powershell
+git checkout feat/invisible-playwright-0.25.4
 git submodule update --init --recursive
 ```
+
+Dòng thứ hai là bắt buộc sau khi `checkout`, không chỉ sau khi `clone`: đổi
+nhánh làm đổi con trỏ submodule, và git **không** tự nạp lại nội dung submodule
+cho anh — fork sẽ im lặng nằm ở bản cũ.
 
 `setup.ps1` chạy lại bao nhiêu lần cũng được, và làm đúng bốn việc:
 
