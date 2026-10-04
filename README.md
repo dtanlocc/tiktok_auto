@@ -130,6 +130,28 @@ tốt, hoặc đòi xác minh lại. Nếu máy mới ra Internet bằng một �
 theo từng kết nối** thì TikTok còn giết phiên ngay giữa lúc đang chạy. Giữ đường
 ra IP cố định, hoặc gán proxy cho account và bật `use_proxy`.
 
+## Gói tự chứa, khỏi cần code
+
+Nếu máy đích chỉ cần **chạy** chứ không cần sửa code, đóng gói hai file `.exe`
+thay vì clone:
+
+```powershell
+.\scripts\build_friends_release.ps1 -Version <x.y.z>
+.\scripts\stage_friends_portable.ps1 -Version <x.y.z>
+```
+
+Script thứ hai biến `release\friends\<x.y.z>\` thành thư mục **tự chứa ~0,7 GB**:
+nó copy engine Firefox và geoip vào `engine\` ngay trong gói, rồi viết `CHAY.bat`
+đặt `INVISIBLE_PLAYWRIGHT_CACHE_DIR` trỏ vào đó. Máy đích **không cần Internet và
+không cần cài gì** — copy cả thư mục sang, bấm `CHAY.bat`.
+
+Thêm `-IncludeDatabase` nếu muốn kèm account; mặc định **không kèm**, vì
+`database.db` chứa mật khẩu và cookie của mọi nick. `CHAY.bat` chỉ đặt database
+vào AppData ở lần chạy đầu và không bao giờ ghi đè bản đang có.
+
+Hai điều gói này không lo được: khoá API OmoCaptcha vẫn phải tự nhập lần đầu, và
+hai `.exe` không ký Authenticode nên SmartScreen sẽ cảnh báo.
+
 ## Test
 
 ```powershell
