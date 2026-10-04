@@ -2104,14 +2104,39 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             waited += 0.5
         return None
 
+    async def _press_or_insert(self, field, value: str) -> None:
+        """Type `value`, routing whatever the US layout has no key for.
+
+        ⛔ press_sequentially REFUSES SUCH A CHARACTER, it does not drop it:
+        "'🚀' has no key on the US layout: use `insert_text`, which goes
+        through `Page.insertText` and does not fake a keypress." Measured
+        04/10/2026 on @br6myn_drf, whose bio carried an emoji - the whole
+        profile edit failed on it. The refusal is not new and not from the
+        0.25.11 upgrade: the same guard is in 0.25.4.
+
+        The caption path has always split its text this way; the bio and
+        username fields simply never did. Printable ASCII keeps real key
+        events, because that is what the engine's per-session keystroke
+        rhythm exists for and what TikTok's own field handlers watch; only
+        the runs with no key take Page.insertText.
+        """
+        if not value:
+            return
+        for run in re.findall(r"[\x20-\x7e]+|[^\x20-\x7e]+", value):
+            if all(0x20 <= ord(char) <= 0x7E for char in run):
+                # No `delay=`: the engine draws this session's own rhythm.
+                await field.press_sequentially(run)
+            else:
+                await self._page.keyboard.insert_text(run)
+                await asyncio.sleep(random.uniform(0.04, 0.12))
+
     async def _retype_username_input(self, uname_input, value: str) -> None:
         """Xoa sach o username va go lai 'value'."""
         await uname_input.click()
         await self._page.keyboard.press("Control+A")
         await self._page.keyboard.press("Backspace")
         await asyncio.sleep(0.4)
-        # No `delay=`: the engine's own per-session rhythm types this (a flat `delay=` would replace it with one interval every install shares).
-        await uname_input.press_sequentially(value)
+        await self._press_or_insert(uname_input, value)
         await asyncio.sleep(0.5)
 
     async def _type_username_until_valid(
@@ -2520,8 +2545,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 await bio_input.first.click()
                 await self._page.keyboard.press("Control+A")
                 await self._page.keyboard.press("Backspace")
-                # No `delay=`: the engine's own per-session rhythm types this (a flat `delay=` would replace it with one interval every install shares).
-                await bio_input.first.press_sequentially(bio)
+                await self._press_or_insert(bio_input.first, bio)
                 await asyncio.sleep(2)
 
             if not avatar_path and bio is None and not username_needs_confirm:

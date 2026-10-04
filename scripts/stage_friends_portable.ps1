@@ -77,6 +77,29 @@ foreach ($extra in @("geoip", "fonts")) {
     }
 }
 
+Step "Dat san bios.txt canh exe"
+# ⛔ CANH EXE, VI DO LA CHO BACKEND DOC. Khi bien dich, _bios_file_path() lay
+# thu muc cua executable - khong phai thu muc nguon, va khong phai thu muc giai
+# nen tam cua onefile (no bi xoa moi lan thoat). Dat san mot ban o day de nguoi
+# dung co file de sua ngay, thay vi doi backend tu sinh ban mac dinh.
+$biosTarget = Join-Path $packageRoot "bios.txt"
+if (Test-Path -LiteralPath $biosTarget) {
+    Write-Host "  da co bios.txt trong goi - giu nguyen, khong ghi de."
+} else {
+    $biosSource = Join-Path $repoRoot "backend\bios.txt"
+    if (Test-Path -LiteralPath $biosSource) {
+        Copy-Item -LiteralPath $biosSource -Destination $biosTarget
+        $lines = @(Get-Content -LiteralPath $biosTarget | Where-Object { $_.Trim() })
+        Write-Host "  da copy tu backend\bios.txt ($($lines.Count) dong)"
+    } else {
+        Set-Content -LiteralPath $biosTarget -Encoding UTF8 -Value @(
+            "Keep moving forward",
+            "Living life one day at a time"
+        )
+        Write-Host "  khong thay backend\bios.txt -> da viet 2 dong mau"
+    }
+}
+
 if ($IncludeDatabase) {
     Step "Kem database (mat khau + cookie!)"
     $sourceDb = Join-Path $repoRoot "backend\database.db"
@@ -137,6 +160,10 @@ Thu muc nay KHONG can Internet va KHONG can cai gi: engine Firefox va geoip
 da nam trong engine\. Lan chay dau khong phai tai 665 MB nua.
 
 Van con phai tu nhap: khoa API OmoCaptcha, o lan chay dau.
+
+BIO: sua file bios.txt NGAY TRONG THU MUC NAY, moi dong la mot bio, dong trong
+bi bo qua. Chuc nang doi ho so chon ngau nhien mot dong. Emoji dung duoc.
+Dung dat bios.txt o cho khac - backend chi doc file canh TikTokAuto-Backend.exe.
 
 Database: $(if ($IncludeDatabase) { "CO kem trong data\database.db, se duoc dat vao AppData lan dau chay." } else { "KHONG kem. May dich se bat dau voi 0 account." })
 Cookie trong database thuoc ve IP cua may da tao ra no. Mo tu mot IP khac thi

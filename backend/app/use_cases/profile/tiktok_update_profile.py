@@ -1,5 +1,6 @@
 # File: backend/app/use_cases/profile/tiktok_update_profile.py
 import os
+import sys
 import asyncio
 import base64
 import tempfile
@@ -17,6 +18,30 @@ from app.core.tiktok_urls import ensure_tiktok_english_url
 from app.infrastructure.websocket.socket_manager import ws_manager
 
 logger = logging.getLogger("TikTokUpdateProfileUseCase")
+
+
+def _bios_file_path() -> Path:
+    """Where bios.txt lives - and it is NOT next to __file__ once compiled.
+
+    ⛔ IN A ONEFILE BUILD __file__ SITS IN A FOLDER THAT IS ABOUT TO BE DELETED.
+    Nuitka unpacks the program into %TEMP%\\onefile_<pid>_<random>\\ and removes
+    it on exit, with a new random name every run. The old path,
+    `Path(__file__).parents[3] / "bios.txt"`, therefore named a file that never
+    existed inside the exe, so the branch below WROTE the built-in defaults
+    there - including the "Happy Day 🚀" that then failed the profile edit on
+    @br6myn_drf, because an emoji has no key to press - and threw them away
+    again when the process ended. The operator had nothing to edit and no way
+    to find it: the packaged app was permanently stuck on its own defaults.
+
+    So when compiled, it lives beside the executable, which is the folder the
+    operator already copied and can see. Running from source is unchanged:
+    backend/bios.txt, the file that is in the repository.
+    """
+    compiled = bool(globals().get("__compiled__")) or getattr(sys, "frozen", False)
+    if compiled:
+        return Path(sys.executable).resolve().parent / "bios.txt"
+    return Path(__file__).resolve().parents[3] / "bios.txt"
+
 
 class TikTokUpdateProfileUseCase:
     """Nghiệp vụ đổi thông tin hồ sơ: Bảo vệ vĩnh viễn trạng thái PROFILE_UPDATED trong Database"""
@@ -164,8 +189,7 @@ class TikTokUpdateProfileUseCase:
                             f.write(base64.b64decode(teal_png_base64))
 
                 # 3. Đọc dữ liệu Bio ngẫu nhiên từ file bios.txt
-                backend_dir = Path(__file__).resolve().parent.parent.parent.parent
-                bios_file_path = backend_dir / "bios.txt"
+                bios_file_path = _bios_file_path()
 
                 if not os.path.exists(bios_file_path):
                     default_bios = ["Happy Day 🚀", "Living life one code at a time 💻", "Keep moving forward ⚡"]
