@@ -74,6 +74,29 @@ submodule được cập nhật thì phải chạy lại `uv sync` rồi
 `python -m invisible_playwright fetch`; nếu không, test `test_core_pin.py` sẽ
 đỏ với thông báo nói rõ metadata của bản cài editable đã cũ.
 
+## Chuyển sang một máy khác
+
+Clone + `setup.ps1` cho anh **code chạy được nhưng rỗng**: backend lên, frontend
+lên, và không có một account nào. Dữ liệu thật bị `.gitignore` nên không theo
+repo đi — phải copy tay. Đo ngày 04/10/2026:
+
+| Phải copy | Dung lượng | Thiếu thì sao |
+|---|---|---|
+| `backend/database.db` | 23 MB | **Thứ duy nhất thật sự bắt buộc.** Chứa account, mật khẩu, cookie, proxy, batch tag. Thiếu thì backend vẫn khởi động và tự tạo DB rỗng — không account nào |
+| `backend/extensions/` | 4,6 MB | Hai `.xpi`: NordVPN proxy và Omocaptcha giải captcha. Thiếu thì không giải được captcha |
+| `.runtime/extension-storage/` | 1,2 MB | Phiên đã đăng nhập của extension NordVPN. Thiếu thì phải đăng nhập lại trong extension |
+| `.runtime/browser-extension-settings.json` | < 1 KB | Công tắc `use_proxy` và `nordvpn_extension_enabled`. Thiếu thì về mặc định trong `config.py` |
+
+Không cần copy `.env` — dự án này không có file đó, mọi thiết lập đang chạy bằng
+giá trị mặc định, và các trường `LICENSE_*` đều để trống nên không có rào bản
+quyền nào khi tự chạy.
+
+⛔ **Cookie đi theo IP, không đi theo máy.** Copy `database.db` sang máy khác rồi
+đăng nhập từ một IP khác thì TikTok có thể từ chối chính những cookie vừa còn
+tốt, hoặc đòi xác minh lại. Nếu máy mới ra Internet bằng một đường VPN **đổi IP
+theo từng kết nối** thì TikTok còn giết phiên ngay giữa lúc đang chạy. Giữ đường
+ra IP cố định, hoặc gán proxy cho account và bật `use_proxy`.
+
 ## Test
 
 ```powershell
