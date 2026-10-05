@@ -88,6 +88,10 @@ $arguments = @(
     "--output-filename=TikTokAuto-Backend.exe",
     "--remove-output",
     "--include-data-dir=$extensionStaging=extensions",
+    # Alembic doc file revision tu dia va KHONG import chung, nen Nuitka
+    # khong tu thay. Thieu dong nay thi ban .exe chay den buoc dong bo
+    # schema roi bao khong tim thay thu muc script.
+    "--include-data-dir=$repoRoot\backend\migrations=migrations",
     $entrypoint
 )
 

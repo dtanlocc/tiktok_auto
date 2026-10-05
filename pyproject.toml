@@ -19,6 +19,12 @@ dependencies = [
     "apscheduler>=3.11.3",
     "cryptography>=50.0.1",
     "psycopg[binary]>=3.2",
+    # Migration co thu tu, biet dialect. Truoc day schema duoc di cu bang
+    # `PRAGMA table_info` + ALTER TABLE tu viet trong connection.py: chi chay
+    # duoc tren SQLite, va khong co khai niem "phien ban schema" nen khong
+    # the di cu nguoc hay chay co thu tu. Alembic la dieu kien truoc cua
+    # Postgres, khong phai mot lua chon rieng.
+    "alembic>=1.13",
 ]
 
 # Chuẩn mới của uv thay thế cho tool.uv.dev-dependencies

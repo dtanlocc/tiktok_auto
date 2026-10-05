@@ -6,10 +6,17 @@ from sqlmodel import create_engine, SQLModel, Session
 from sqlalchemy import text, event  # text() thực thi SQL thô; event để gắn PRAGMA
 from app.core.config import settings
 
-# SQLite yêu cầu cấu hình check_same_thread=False khi sử dụng đa luồng (multi-threading/asyncio)
+# ⛔ `check_same_thread` VÀ `timeout` LÀ THAM SỐ RIÊNG CỦA SQLITE. Truyền chúng
+# cho Postgres thì driver từ chối ngay khi mở kết nối đầu tiên, nên dòng này
+# từng là chỗ chặn Postgres sớm nhất trong cả dự án - trước cả chuyện migration.
+# Cùng lý do với hook PRAGMA bên dưới và khối di cư trong init_db().
+_IS_SQLITE = settings.DATABASE_URL.startswith("sqlite")
+_CONNECT_ARGS = (
+    {"check_same_thread": False, "timeout": 10} if _IS_SQLITE else {}
+)
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 10},
+    connect_args=_CONNECT_ARGS,
     echo=False  # Đặt thành True nếu bạn muốn in log câu lệnh SQL ra terminal
 )
 
@@ -22,7 +29,6 @@ engine = create_engine(
 # "database is locked". WAL (Write-Ahead Log): reader KHÔNG chặn writer và ngược
 # lại -> đồng thời mượt hơn hẳn. synchronous=NORMAL (an toàn với WAL, nhanh hơn
 # FULL). busy_timeout=5000: khi gặp khoá thì CHỜ 5s thay vì lỗi ngay.
-@event.listens_for(engine, "connect")
 def _set_sqlite_pragma(dbapi_connection, connection_record):
     cur = dbapi_connection.cursor()
     try:
@@ -32,6 +38,13 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
         cur.execute("PRAGMA temp_store=MEMORY")
     finally:
         cur.close()
+
+
+# Gắn có điều kiện, không phải bằng decorator: PRAGMA là cú pháp SQLite, và một
+# listener gắn sẵn sẽ chạy trên MỌI kết nối - kể cả Postgres, nơi câu đầu tiên
+# đã là lỗi cú pháp. WAL ở trên vẫn cần thiết nguyên vẹn cho bản chạy local.
+if _IS_SQLITE:
+    event.listens_for(engine, "connect")(_set_sqlite_pragma)
 
 # [Cập nhật trong hàm init_db của connection.py]
 def _migrate_accounts_primary_key_to_email() -> None:
@@ -119,9 +132,46 @@ def _migrate_accounts_primary_key_to_email() -> None:
 
 
 def init_db() -> None:
-    """Khởi tạo toàn bộ các bảng trong Database (nếu chưa tồn tại)"""
+    """Khởi tạo toàn bộ các bảng trong Database (nếu chưa tồn tại).
+
+    Thứ tự ba bước dưới đây không đổi được:
+
+    1. `_legacy_sqlite_catch_up()` đưa một DB CŨ lên đúng hình dạng baseline.
+    2. `create_all` tạo những bảng còn thiếu.
+    3. `_align_schema_version()` đóng dấu baseline rồi nâng theo alembic.
+
+    ⛔ ĐÓNG DẤU TRƯỚC KHI CATCH-UP LÀ MỘT LỜI NÓI DỐI VỚI ALEMBIC: nó sẽ tin
+    rằng DB đó đã có mọi cột của baseline, trong khi một bản cài cũ thì chưa, và
+    mọi migration sau đó chạy trên một schema không như nó tưởng.
+    """
+    # ⛔ IMPORT VÌ TÁC DỤNG PHỤ, KHÔNG PHẢI VÌ CẦN TÊN NÀO. `SQLModel.metadata`
+    # chỉ có bảng khi module khai báo chúng đã được import; nếu chưa,
+    # `create_all` bên dưới tạo ĐÚNG KHÔNG BẢNG NÀO và không báo lỗi gì cả.
+    # Đo ngày 05/10/2026: gọi init_db() trên một DB trắng mà chưa import
+    # schemas thì DB thu được chỉ có bảng `alembic_version`. Trước đây app
+    # sống được nhờ main.py tình cờ import theo thứ tự đúng - tức hàm này dựa
+    # vào một điều nó không tự bảo đảm.
+    from app.infrastructure.database import schemas  # noqa: F401
+
     _migrate_accounts_primary_key_to_email()
     SQLModel.metadata.create_all(engine)
+    _legacy_sqlite_catch_up()
+    _align_schema_version()
+
+
+def _legacy_sqlite_catch_up() -> None:
+    """Hệ di cư cũ: dò bằng PRAGMA rồi ALTER TABLE ADD COLUMN.
+
+    ⛔ GIỮ LẠI, KHÔNG XOÁ, DÙ ALEMBIC ĐÃ VÀO. Đây là thứ duy nhất đưa được một
+    DB của bản cài cũ lên đúng baseline, và những DB đó đang tồn tại thật -
+    bản đo trên máy này ngày 05/10/2026 có 1.974 account. Xoá nó cùng lúc với
+    việc thêm alembic sẽ làm hỏng đúng những bản cài chưa kịp cập nhật.
+
+    Chỉ chạy cho SQLite: PRAGMA là cú pháp riêng của nó. Postgres thì bắt đầu
+    từ `create_all`, nên không có gì để catch-up.
+    """
+    if not _IS_SQLITE:
+        return
 
     # TỰ ĐỘNG DI CƯ THÊM 3 CỘT QUỐC GIA, PHÂN LÔ VÀ NGÀY TẠO
     try:
@@ -268,6 +318,55 @@ def init_db() -> None:
                 
     except Exception as migration_err:
         print(f"[-] Automatic database migration warning: {str(migration_err)}")
+
+
+def _alembic_config():
+    """Alembic đọc file revision từ ĐĨA, nên đường dẫn phải đúng cả khi đóng gói.
+
+    ⛔ ĐÂY LÀ DỮ LIỆU CHỈ ĐỌC CỦA CHƯƠNG TRÌNH, nên tra theo `__file__` là ĐÚNG -
+    khác hẳn `bios.txt`. Bản onefile giải nén dữ liệu kèm theo vào thư mục tạm
+    rồi xoá khi thoát; với thứ người dùng phải sửa được thì như vậy là vô dụng
+    (xem `_bios_file_path`), nhưng với file revision thì đó chính xác là điều
+    mình muốn: chúng đi cùng bản build và không ai sửa chúng lúc chạy.
+
+    ⛔ NHƯNG PHẢI ĐƯỢC ĐÓNG VÀO GÓI. Alembic không `import` các file này nên
+    Nuitka không tự thấy chúng; build script phải có
+    `--include-data-dir=<backend/migrations>=migrations`. Thiếu nó thì bản .exe
+    sẽ chạy đến đây rồi báo không tìm thấy thư mục script.
+    """
+    from alembic.config import Config
+
+    backend_dir = Path(__file__).resolve().parents[3]
+    config = Config()
+    config.set_main_option("script_location", str(backend_dir / "migrations"))
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    return config
+
+
+def _align_schema_version() -> None:
+    """Đóng dấu baseline cho DB đã có sẵn, rồi nâng theo alembic.
+
+    Một DB chưa có bảng `alembic_version` là DB có từ trước khi alembic vào. Nó
+    được đóng dấu baseline - thời điểm này nó đã qua catch-up và `create_all`
+    nên đúng hình dạng baseline - và từ đó trở đi alembic nắm mọi thay đổi.
+
+    Lỗi ở đây KHÔNG làm app chết. Trước commit này app vẫn chạy mà không có
+    alembic; biến nó thành điều kiện sống còn ngay trong commit giới thiệu nó là
+    tự tạo thêm một cách để không mở được máy. Lỗi được in ra và đi tiếp.
+    """
+    try:
+        from alembic import command
+        from sqlalchemy import inspect
+
+        config = _alembic_config()
+        inspector = inspect(engine)
+        if "alembic_version" in inspector.get_table_names():
+            command.upgrade(config, "head")
+            return
+        command.stamp(config, "0001_baseline")
+        command.upgrade(config, "head")
+    except Exception as schema_err:
+        print(f"[-] Schema version alignment warning: {schema_err}")
 
 
 def get_db_session():

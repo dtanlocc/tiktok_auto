@@ -51,6 +51,10 @@ $arguments = @(
     "--output-filename=backend-$Version.exe",
     "--remove-output"
     "--include-data-dir=$extensionStaging=extensions"
+    # Alembic doc file revision tu dia va KHONG import chung, nen Nuitka
+    # khong tu thay. Thieu dong nay thi ban .exe chay den buoc dong bo
+    # schema roi bao khong tim thay thu muc script.
+    "--include-data-dir=$repoRoot\backend\migrations=migrations"
 )
 if ($RequireCommercial) {
     # Commercial presence alone is not enough: this plugin applies white-box
