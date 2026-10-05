@@ -103,6 +103,40 @@ rồi **đẩy một bản chiếu read-only sang Sheets để quan sát**, cộ
 ra. "Dễ quan sát" vẫn còn, mà bảng tính không còn là nguồn sự thật. Ai cần sửa
 thì sửa trong app, không sửa trong bảng.
 
+### 4.1 Bảng quan sát: thiết kế cụ thể
+
+Một dòng một account, **đẩy một chiều** từ app sang Sheet.
+
+**Cột nên có** (dữ liệu đã tồn tại sẵn trong bảng `accounts`, không phải thu thêm):
+`username`, `batch_tag`, `country`, `health_status`, `profile_status`,
+`follower_count`, `following_count`, `video_count`, `likes_count`,
+`total_views`, `total_video_likes`, `total_comments`, `total_shares`,
+`collected_video_count`, `upload_success_count`, `upload_failure_count`,
+`last_upload_status`, `last_upload_at`, `metrics_updated_at`,
+`analytics_sync_status`, `note`.
+
+**Cột tuyệt đối không được có:** `password`, `cookies_json`, `email_password`,
+`refresh_token`, `client_id`. Và **cả `email`** — nó vừa là PII vừa là khoá
+chính kiêm tên đăng nhập; `username` là đủ để nhận ra nick.
+
+⛔ **NULL phải ở lại là ô trống, không được thành 0.** Schema cố ý phân biệt
+"chưa đo được" (NULL) với "đo được và bằng 0". Đo trên DB thật ngày 05/10/2026:
+**1.389 account có `total_views` NULL** và **222 account bằng 0 thật**. Ghi cả
+hai thành `0` thì bảng sẽ khai 1.389 nick không có view — sai gấp hơn sáu lần,
+và sai theo hướng khiến người xem kết luận ngược về chất lượng nick.
+
+⛔ **`tiktok_user_id` phải ghi dạng CHUỖI.** Giá trị thật dài **19 chữ số**
+(`7660566124303680525`); một ô Sheets hiểu nó là số thì chỉ giữ được ~15-16 chữ
+số có nghĩa, nên id bị **đổi thầm** ở vài chữ số cuối. Cùng lý do với mọi cột
+`*_at` đang lưu dạng VARCHAR.
+
+**Ghi theo lô, không theo dòng.** Sheets API giới hạn khoảng 60 lượt ghi mỗi
+phút cho mỗi user; 2.115 dòng ghi từng dòng là đụng trần ngay, còn một lượt
+`batchUpdate` thì không. Và chỉ đẩy khi `metrics_updated_at` đổi.
+
+**Bảng là bản chiếu.** Sửa trong bảng sẽ bị lần đẩy sau ghi đè. Điều này phải
+được nói ra ngay trên sheet, không để người xem tự phát hiện bằng cách mất công.
+
 **Lưu key trong Sheets: cũng không.** Control plane đang cố ý chỉ lưu HMAC có
 pepper của key — một bảng tính chứa key thô là tự bỏ đi lớp bảo vệ đó. Việc
 tạo/thu hồi key đã có `scripts/control_plane_admin.py`.
@@ -118,6 +152,30 @@ Nhưng phần lớn nhu cầu "ở ngoài mà bấm được chức năng ở nh
 khiển trực tiếp. Nó cần: xem trạng thái, và **xếp việc vào hàng đợi**. Cái đó
 làm được ngay trên data-plane API ở mục 3, không cần chạm vào input stream, và
 không mang theo bất kỳ rủi ro tranh chấp nào với automation đang chạy.
+
+### 5.1 Ra lệnh từ Sheet: được, nhưng không phải bằng cách app đọc ô
+
+**Cách sai, dù là cách hiện ra đầu tiên:** thêm một cột "lệnh", app định kỳ đọc
+sheet rồi thực thi. Nó biến bảng tính thành một kênh ra lệnh, và hệ quả:
+
+- **Quyền sửa một ô trở thành quyền chạy automation.** Ai được chia sẻ sheet với
+  quyền edit là có quyền điều khiển máy. So với thứ dự án vừa xây xong — lease
+  có ký, khoá theo thiết bị, grant dùng một lần — thì đây là bỏ hết đi.
+- **Kéo-thả và Ctrl+Z xếp hàng trăm việc.** Fill-down một ô lệnh xuống 2.115
+  dòng là một thao tác chuột, và không có bước nào hỏi lại.
+- **Không có idempotency.** App đọc lại cùng ô sau một lần restart là chạy lại
+  lệnh đó.
+- **Hai máy cùng nhóm đọc cùng sheet thì làm trùng việc**, vì không có ai giữ khoá.
+
+**Cách đúng, và vẫn giữ nguyên trải nghiệm anh muốn:** sheet là **client**, không
+phải là nguồn thẩm quyền. Một nút Apps Script trên sheet gọi vào data-plane API;
+token nằm trong Script Properties của script, **không nằm trong ô nào**; API kiểm
+token rồi đọc `role.` từ lease trước khi xếp việc, và mỗi lần gửi mang một
+idempotency key nên bấm hai lần không chạy hai lần.
+
+Thẩm quyền lúc đó nằm ở token và ở lease, còn bảng tính chỉ còn là giao diện —
+đúng vai nó làm tốt. Và vì đường đi là cùng một API với mục 3, một trang web nhỏ
+cho điện thoại cũng dùng lại y nguyên đường đó, không phải làm thêm lần nữa.
 
 ## 6. Thứ tự tôi đề xuất
 
