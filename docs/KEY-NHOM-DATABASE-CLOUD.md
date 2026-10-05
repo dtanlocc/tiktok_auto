@@ -34,11 +34,25 @@ chứ không phải viết thêm cơ chế.
 ## 2. Nhóm dùng chung: đã có hai nửa, thiếu nửa thứ ba
 
 - **N máy trên một key**: có sẵn — `max_devices` + `DeviceRecord`.
-- **Chỗ đặt nhóm và quyền**: có sẵn — `features: tuple[str, ...]` là danh sách
-  token tự do. Đặt `group:<id>` và `role:owner|operator|viewer` vào đó là đủ, và
-  nó được **ký trong lease** nên client không sửa được.
-- **Thiếu**: app chưa đọc `features` để phân quyền, và chưa có chỗ chứa dữ liệu
-  dùng chung.
+- **Chỗ đặt nhóm và quyền**: có sẵn — `features: tuple[str, ...]`, được **ký
+  trong lease** nên client không sửa được.
+
+  ⛔ **Sửa so với bản đầu của tài liệu này:** tôi viết `group:<id>` là **sai** —
+  `_FEATURE_RE` là `^[a-z][a-z0-9._-]{1,63}$`, chưa bao giờ cho dấu hai chấm,
+  nên cách viết đó **không ký được**. Đã làm, dùng dấu chấm: `group.<id>` và
+  `role.<name>`, khớp luôn quy ước features đang dùng (`accounts.manage`,
+  `upload.video`).
+
+  Và nhóm/quyền **buộc** phải đi trong `features` chứ không phải vì tiện:
+  `LeaseClaims` là `extra="forbid"` và `frozen`, nên thêm một claim mới đòi
+  protocol v2 và làm vô hiệu mọi lease đã phát.
+
+- **Đã làm (05/10/2026)**: `LeaseClaims.group_id` và `.role` đọc token từ lease.
+  Hai token cùng loại, hoặc suffix rỗng/sai dạng, bị **từ chối ngay ở
+  `verify()`** — không phải lúc đọc property — nên không chỗ nào trong app giữ
+  một lease đã-tin-một-nửa. Có `group_feature()` / `role_feature()` để chỉ tồn
+  tại một cách viết. 20 test trong `test_license_security.py`.
+- **Thiếu**: bảng phân quyền theo `role:` (xem mục 7), và chỗ chứa dữ liệu chung.
 
 ## 3. Database lên cloud: chi phí thật, đo được
 
@@ -120,12 +134,28 @@ không mang theo bất kỳ rủi ro tranh chấp nào với automation đang ch
 7. **Remote control thật** — chỉ sau khi đủ ba điều kiện trong
    `REMOTE_CONTROL_FUTURE.md`.
 
-## 7. Những quyết định cần anh chốt
+## 7. Quyết định: đã chốt và còn mở
 
-- Một nhóm là **một Postgres riêng** hay **một DB chung tách theo `group_id`**?
-  DB riêng thì cách ly mạnh hơn, chung thì vận hành rẻ hơn.
-- `role:` gồm những quyền gì cụ thể? ("viewer xem được account nhưng không thấy
-  mật khẩu" là một ví dụ cần chốt rõ.)
+**Đã chốt 05/10/2026 — một DB chung, tách theo `group_id`.** Vận hành rẻ hơn một
+Postgres cho mỗi nhóm. Cái giá phải trả, và phải trả có ý thức: cách ly giờ là
+**thuộc tính của code**, không còn là thuộc tính của hạ tầng. Một câu query thiếu
+điều kiện `group_id` là một lần rò dữ liệu giữa hai khách hàng, và không có
+tường nào bên dưới chặn hộ. Hệ quả bắt buộc:
+
+- Không tầng nào trên repository được tự viết query. Lọc theo `group_id` phải
+  nằm ở **một chỗ** mà mọi truy cập đi qua, không phải nhắc nhau nhớ thêm `where`.
+- Phải có test chứng minh một nhóm **không đọc được** dữ liệu nhóm khác, và test
+  đó phải chạy mỗi lần push — vì đây là loại lỗi không ai nhìn thấy khi nó xảy ra.
+- Nếu sau này cần cách ly mạnh hơn cho một khách lớn, cột `group_id` vẫn là
+  đường di trú sang DB riêng; chọn chung bây giờ không khoá đường đó.
+
+**Còn mở:**
+
+- `role.` gồm những quyền gì cụ thể? ("viewer xem được account nhưng không thấy
+  mật khẩu" là một ví dụ cần chốt rõ.) Và **một lease có `group.` mà không có
+  `role.` thì xử thế nào** — từ chối thì lộ ngay một key phát sai, mặc định về
+  quyền thấp nhất thì khách vẫn chạy được. Đoán quyền cao nhất là đường duy nhất
+  chắc chắn sai.
 - Khi mất mạng thì license có `group:` được chạy tiếp bao lâu? Proposal nói
   "short offline grace is acceptable" nhưng chưa định lượng.
 - Người dùng riêng có bao giờ cần chuyển lên nhóm không? Nếu có thì cần đường di

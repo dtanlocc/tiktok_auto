@@ -158,3 +158,80 @@ def test_claims_are_strict_and_feature_names_are_constrained():
         claims(features=("UPLOAD VIDEO",))
     with pytest.raises(ValueError):
         LeaseClaims(**{**claims().model_dump(), "unexpected": "field"})
+
+
+# ---------------------------------------------------------------------------
+# Group and role: carried inside the signed `features`, because LeaseClaims is
+# extra="forbid" and frozen - a new claim would need protocol v2.
+# ---------------------------------------------------------------------------
+
+def test_a_solo_licence_names_no_group_and_no_role():
+    """The ordinary install keeps its own local database, as today."""
+    assert claims().group_id is None
+    assert claims().role is None
+
+
+def test_group_and_role_are_read_from_the_signed_features():
+    lease = claims(features=("accounts.manage", "group.acme", "role.owner"))
+    assert lease.group_id == "acme"
+    assert lease.role == "owner"
+
+
+def test_the_tokens_have_exactly_one_spelling():
+    """So no caller invents a second one that silently never matches."""
+    from app.security.license import group_feature, role_feature
+
+    lease = claims(features=(group_feature("acme"), role_feature("viewer")))
+    assert lease.group_id == "acme"
+    assert lease.role == "viewer"
+
+
+def test_a_group_token_survives_a_signing_round_trip():
+    signer, verifier = signer_and_verifier()
+    lease = claims(features=("group.acme", "role.operator"))
+    envelope = verifier.verify(signer.sign(lease))
+
+    assert envelope.claims.group_id == "acme"
+    assert envelope.claims.role == "operator"
+
+
+@pytest.mark.parametrize("features", [
+    ("group.acme", "group.other"),          # two groups has no correct reading
+    ("role.owner", "role.viewer"),
+])
+def test_two_scopes_of_one_kind_are_refused(features):
+    """Picking either would hand a device access it was never granted."""
+    with pytest.raises(ValueError):
+        claims(features=features)
+
+
+@pytest.mark.parametrize("token", [
+    "group.",            # passes _FEATURE_RE - every character is in its class
+    "role.",
+    "group.a.b",         # a flat namespace: this must not mean group "a.b"
+    "group.-acme",
+])
+def test_a_malformed_scope_token_is_refused(token):
+    with pytest.raises(ValueError):
+        claims(features=(token,))
+
+
+def test_a_malformed_group_dies_at_verify_not_on_first_read():
+    """verify() turns the ValueError into LeaseError; nothing downstream ever
+    holds a half-trusted lease."""
+    signer, verifier = signer_and_verifier()
+    good = claims()
+    forged = {**good.model_dump(), "features": ["group.acme", "group.other"]}
+    token = signer.sign(claims())
+    header, _payload, signature = token.split(".")
+    tampered = base64.urlsafe_b64encode(
+        json.dumps(forged).encode()).decode().rstrip("=")
+
+    with pytest.raises(LeaseError):
+        verifier.verify(f"{header}.{tampered}.{signature}")
+
+
+def test_a_colon_is_still_not_a_legal_feature():
+    """The group:<id> spelling drafted in the docs cannot be signed at all."""
+    with pytest.raises(ValueError):
+        claims(features=("group:acme",))

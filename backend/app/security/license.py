@@ -22,6 +22,52 @@ _LEASE_ALGORITHM = "EdDSA"
 _MAX_TOKEN_BYTES = 64 * 1024
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$")
 _FEATURE_RE = re.compile(r"^[a-z][a-z0-9._-]{1,63}$")
+
+#: Group membership and role ride INSIDE `features`, and not as claims of their
+#: own. ⛔ THAT IS FORCED, NOT PREFERRED: LeaseClaims is `extra="forbid"` and
+#: frozen, so a new field cannot be added without minting protocol v2 and
+#: breaking every lease already issued. `features` is signed with the rest of
+#: the lease, so a token placed here is exactly as tamper-proof as a claim.
+#:
+#: ⛔ A DOT, NOT A COLON. `_FEATURE_RE` above has never allowed `:`, so the
+#: `group:<id>` spelling drafted in docs/KEY-NHOM-DATABASE-CLOUD.md could not
+#: be signed at all; dotted names are also what the existing features use
+#: (`accounts.manage`, `upload.video`).
+_GROUP_PREFIX = "group."
+_ROLE_PREFIX = "role."
+
+#: No dot inside the suffix, so the namespace stays flat and a typo like
+#: `group.role.owner` is refused instead of silently naming a group "role.owner".
+_SCOPE_SUFFIX_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
+
+
+def group_feature(group_id: str) -> str:
+    """The one spelling of a group token, so no caller invents a second."""
+    return _GROUP_PREFIX + group_id
+
+
+def role_feature(role: str) -> str:
+    """The one spelling of a role token."""
+    return _ROLE_PREFIX + role
+
+
+def _single_scope(values: tuple[str, ...], prefix: str, label: str) -> str | None:
+    """The suffix of the one token carrying `prefix`, or None when absent.
+
+    ⛔ TWO TOKENS IS A REFUSAL, NOT A CHOICE. A lease naming two groups has no
+    correct reading, and picking either one would hand a device access it was
+    never granted. Same for an empty suffix: `group.` passes `_FEATURE_RE`
+    (every character is in its class) and means nothing.
+    """
+    found = [value[len(prefix):] for value in values if value.startswith(prefix)]
+    if not found:
+        return None
+    if len(found) > 1:
+        raise ValueError(f"lease carries more than one {label}")
+    suffix = found[0]
+    if not _SCOPE_SUFFIX_RE.fullmatch(suffix):
+        raise ValueError(f"lease carries a malformed {label}")
+    return suffix
 _SEMVER_RE = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
@@ -126,6 +172,12 @@ class LeaseClaims(BaseModel):
             raise ValueError("features must be unique and retain server order")
         if any(not _FEATURE_RE.fullmatch(value) for value in values):
             raise ValueError("features contain an invalid identifier")
+        # Checked HERE rather than when the properties below are read, so a
+        # malformed lease dies at verify() - `verify` turns ValueError into
+        # LeaseError - instead of somewhere later holding a half-trusted
+        # object. It also stops the control plane minting such a lease.
+        _single_scope(values, _GROUP_PREFIX, "group")
+        _single_scope(values, _ROLE_PREFIX, "role")
         return values
 
     @model_validator(mode="after")
@@ -159,6 +211,31 @@ class LeaseClaims(BaseModel):
         )
         if _compare_semver(app_version, minimum_version) < 0:
             raise EntitlementError("Application version is below the required minimum.")
+
+    @property
+    def group_id(self) -> str | None:
+        """Which shared dataset this device may see, or None for a solo licence.
+
+        None is the ordinary case and means exactly what it says: the install
+        keeps its own local database, as every install does today. A value
+        means every row this device touches belongs to that group and nothing
+        outside it - the scoping the shared database is split by.
+        """
+        return _single_scope(self.features, _GROUP_PREFIX, "group")
+
+    @property
+    def role(self) -> str | None:
+        """The role name inside the group, or None when the lease names none.
+
+        ⛔ WHAT EACH ROLE MAY DO IS NOT DECIDED HERE, and deliberately is not
+        decided yet - it is one of the open questions in
+        docs/KEY-NHOM-DATABASE-CLOUD.md. This reads the signed name and stops.
+        Whoever adds the permission table must answer "a group lease with no
+        role" explicitly: refusing it surfaces a mis-issued key immediately,
+        while defaulting it to the weakest role keeps the customer working.
+        Guessing the strongest role would hand out access nobody granted.
+        """
+        return _single_scope(self.features, _ROLE_PREFIX, "role")
 
     def require(
         self,
