@@ -317,6 +317,47 @@ từ `%LOCALAPPDATA%\...\artifacts` và đối chiếu sha256 + size với manif
 10 phút, mà tác vụ nền của agent bị dừng ở đúng 10 phút — đã thử và bị cắt giữa
 lúc biên dịch C.
 
+### 11.2b Cho control plane một đường HTTPS mà không phải mua gì
+
+Rào ở 11.1 (HTTPS bắt buộc) mở được **không cần web host, không cần IP tĩnh,
+không mở port**: chạy control plane trên máy mình rồi đưa nó ra ngoài bằng
+Cloudflare Tunnel. Chứng chỉ do Cloudflare cấp nên client **tin**, không phải
+cài CA nội bộ.
+
+```powershell
+winget install --id Cloudflare.cloudflared
+cloudflared tunnel --url http://127.0.0.1:9100 --no-autoupdate
+```
+
+Nó in ra một URL `https://<ngẫu-nhiên>.trycloudflare.com`. Lấy URL đó rồi khởi
+động control plane **với chính nó** làm base và trusted host:
+
+```powershell
+.\scripts\run_control_plane_dev.ps1 -OperatorDirectory D:\tkauto-operator-dev `
+  -PublicBaseUrl "https://<ngau-nhien>.trycloudflare.com" `
+  -TrustedHosts "<ngau-nhien>.trycloudflare.com,127.0.0.1,localhost"
+```
+
+`-TrustedHosts` không bỏ được: thiếu hostname của tunnel thì mọi request qua nó
+bị chặn ở tầng TrustedHost trước khi tới route nào.
+
+**Đã chạy thật ngày 06/10/2026:** `health` trả `{"status":"ok"}` qua HTTPS;
+`create-license --features accounts.manage,upload.video,group.acme,role.owner`
+tạo được key 46 ký tự (trả về **đúng một lần**); `list-licenses` hiện đủ
+features + giới hạn 200 account / 4 tab / 3 thiết bị và **không** trả lại key —
+đúng thiết kế chỉ lưu HMAC có pepper.
+
+⛔ **Quick tunnel là một URL CÔNG KHAI trên Internet.** `/v1/admin/*` thành gọi
+được từ mọi nơi, chỉ còn bearer token và rate limit che — mà `control_plane/README.md`
+nói phải chặn các route admin **ở tầng mạng, ngoài việc có token**. Dùng để thử
+thì tắt ngay sau khi xong.
+
+⛔ **URL ngẫu nhiên đổi mỗi lần khởi động lại, mà nó được nén vào binary lúc
+build** (`TKAUTO_CONTROL_PLANE_URL`). Nên quick tunnel **không dùng được cho
+khách**: URL đổi là mọi bản đã phát hết liên lạc. Dùng thật thì cần **named
+tunnel + domain của mình** (URL cố định) và đặt **Cloudflare Access** trước
+`/v1/admin`.
+
 ### 11.3 Không có server: license offline
 
 Nếu không muốn dựng và trả tiền cho một web nào, vẫn phát key được. Đây là

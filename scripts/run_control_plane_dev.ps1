@@ -20,7 +20,11 @@ param(
     # thường, nhưng URL tải artifact mà server trả về sẽ là https và không ai
     # phục vụ nó. Muốn chạy trọn cả bước launcher tải backend thì cần một
     # endpoint HTTPS mà client TIN - xem docs/HUONG-DAN-SU-DUNG.md.
-    [string]$PublicBaseUrl = ""
+    [string]$PublicBaseUrl = "",
+    # Hostname ma control plane chap nhan trong header Host. Phai them
+    # hostname cua tunnel vao, neu khong moi request qua tunnel bi tu choi
+    # o tang TrustedHost truoc khi toi route nao.
+    [string]$TrustedHosts = "127.0.0.1,localhost"
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,7 +80,7 @@ if ([string]::IsNullOrWhiteSpace($PublicBaseUrl)) {
     $PublicBaseUrl = "https://127.0.0.1:$Port"
 }
 $env:TKAUTO_CONTROL_PUBLIC_BASE_URL = $PublicBaseUrl
-$env:TKAUTO_CONTROL_TRUSTED_HOSTS = "127.0.0.1,localhost"
+$env:TKAUTO_CONTROL_TRUSTED_HOSTS = $TrustedHosts
 
 Write-Host ""
 Write-Host "Control plane (development) tren http://127.0.0.1:$Port$([char]32)" -ForegroundColor Cyan
