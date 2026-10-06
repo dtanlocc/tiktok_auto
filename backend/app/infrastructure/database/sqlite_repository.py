@@ -8,6 +8,10 @@ from app.domain.entities.account import TikTokAccount
 from app.domain.entities.proxy import Proxy
 from app.domain.ports.repository import IAccountRepository, IProxyRepository
 from app.infrastructure.database.schemas import AccountDbTable, ProxyDbTable
+# ⛔ MOI TRUY CAP DI QUA scope. `session.get` KHONG duoc dung truc tiep tren
+# bang co `group_id`: no tra ve dong theo khoa chinh bat ke phien dang o nhom
+# nao, va khoa chinh cua accounts la email. Xem scope.py.
+from app.infrastructure.database.scope import scoped, scoped_get, stamp
 
 class SQLiteProxyRepository(IProxyRepository):
     _FIELDS = (
@@ -24,15 +28,16 @@ class SQLiteProxyRepository(IProxyRepository):
         return Proxy(id=row.id, **{name: getattr(row, name) for name in cls._FIELDS})
 
     def get_by_id(self, proxy_id: str) -> Optional[Proxy]:
-        db_row = self.session.get(ProxyDbTable, proxy_id)
+        db_row = scoped_get(self.session, ProxyDbTable, proxy_id)
         if not db_row:
             return None
         return self._to_domain(db_row)
 
     def save(self, proxy: Proxy) -> Proxy:
-        db_row = self.session.get(ProxyDbTable, proxy.id) if proxy.id else None
+        db_row = scoped_get(self.session, ProxyDbTable, proxy.id) if proxy.id else None
         if not db_row:
-            db_row = ProxyDbTable(id=proxy.id or str(uuid.uuid4()), host=proxy.host, port=proxy.port)
+            db_row = stamp(ProxyDbTable(
+                id=proxy.id or str(uuid.uuid4()), host=proxy.host, port=proxy.port))
         for name in self._FIELDS:
             setattr(db_row, name, getattr(proxy, name))
 
@@ -44,23 +49,28 @@ class SQLiteProxyRepository(IProxyRepository):
         return proxy
 
     def get_all(self) -> List[Proxy]:
-        statement = select(ProxyDbTable)
+        statement = scoped(select(ProxyDbTable), ProxyDbTable)
         results = self.session.exec(statement).all()
         return [self._to_domain(row) for row in results]
 
     def account_counts(self) -> Dict[str, int]:
         """How many accounts point at each proxy id (sold accounts included)."""
         rows = self.session.exec(
-            select(AccountDbTable.proxy_id, func.count())
-            .where(AccountDbTable.proxy_id.is_not(None))
-            .group_by(AccountDbTable.proxy_id)
+            scoped(
+                select(AccountDbTable.proxy_id, func.count())
+                .where(AccountDbTable.proxy_id.is_not(None)),
+                AccountDbTable,
+            ).group_by(AccountDbTable.proxy_id)
         ).all()
         return {str(proxy_id): int(count) for proxy_id, count in rows if proxy_id}
 
     def detach_accounts(self, proxy_id: str) -> list[str]:
         """Put every account on this proxy back on the machine's own network."""
         rows = self.session.exec(
-            select(AccountDbTable).where(AccountDbTable.proxy_id == proxy_id)
+            scoped(
+                select(AccountDbTable).where(AccountDbTable.proxy_id == proxy_id),
+                AccountDbTable,
+            )
         ).all()
         for row in rows:
             row.proxy_id = None
@@ -70,7 +80,7 @@ class SQLiteProxyRepository(IProxyRepository):
         return [str(row.email) for row in rows]
 
     def delete(self, proxy_id: str) -> bool:
-        db_row = self.session.get(ProxyDbTable, proxy_id)
+        db_row = scoped_get(self.session, ProxyDbTable, proxy_id)
         if not db_row:
             return False
         self.session.delete(db_row)
@@ -83,13 +93,13 @@ class SQLiteAccountRepository(IAccountRepository):
         self.session = session
 
     def get_by_id(self, account_id: str) -> Optional[TikTokAccount]:
-        db_row = self.session.get(AccountDbTable, account_id)
+        db_row = scoped_get(self.session, AccountDbTable, account_id)
         if not db_row:
             return None
         return self._to_domain(db_row)
 
     def get_all(self) -> List[TikTokAccount]:
-        statement = select(AccountDbTable)
+        statement = scoped(select(AccountDbTable), AccountDbTable)
         results = self.session.exec(statement).all()
         return [self._to_domain(row) for row in results]
 
@@ -98,12 +108,12 @@ class SQLiteAccountRepository(IAccountRepository):
         if not canonical_email:
             raise ValueError("Account email is required and is the primary key.")
         lookup_key = (account.id or canonical_email).strip().lower()
-        db_row = self.session.get(AccountDbTable, lookup_key)
+        db_row = scoped_get(self.session, AccountDbTable, lookup_key)
         if not db_row:
-            db_row = AccountDbTable(
+            db_row = stamp(AccountDbTable(
                 email=canonical_email,
                 username=account.username
-            )
+            ))
         else:
             db_row.username = account.username
 
@@ -173,16 +183,19 @@ class SQLiteAccountRepository(IAccountRepository):
         if not canonical_email:
             raise ValueError("Account email is required and is the primary key.")
 
-        db_row = self.session.get(AccountDbTable, canonical_email)
+        db_row = scoped_get(self.session, AccountDbTable, canonical_email)
         desired_username = (account.username or "").strip()
         if not db_row or not desired_username or db_row.username == desired_username:
             return self.save(account), None
 
         previous_username = db_row.username
         conflict = self.session.exec(
-            select(AccountDbTable).where(
-                AccountDbTable.username == desired_username,
-                AccountDbTable.email != canonical_email,
+            scoped(
+                select(AccountDbTable).where(
+                    AccountDbTable.username == desired_username,
+                    AccountDbTable.email != canonical_email,
+                ),
+                AccountDbTable,
             )
         ).first()
         if not conflict:
@@ -210,14 +223,14 @@ class SQLiteAccountRepository(IAccountRepository):
             raise
 
     def update_status(self, account_id: str, status: str) -> None:
-        db_row = self.session.get(AccountDbTable, account_id)
+        db_row = scoped_get(self.session, AccountDbTable, account_id)
         if db_row:
             db_row.status = status
             self.session.add(db_row)
             self.session.commit()
 
     def delete(self, account_id: str) -> bool:
-        db_row = self.session.get(AccountDbTable, account_id)
+        db_row = scoped_get(self.session, AccountDbTable, account_id)
         if db_row:
             self.session.delete(db_row)
             self.session.commit()
