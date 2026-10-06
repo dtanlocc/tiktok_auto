@@ -263,6 +263,60 @@ Khi muốn bật:
 `--features` dạng `group.acme,role.owner`; `--max-devices` cho nhiều máy dùng
 một key.
 
+### 11.1 Chạy thử control plane trên máy mình
+
+```powershell
+uv run python scripts\initialize_operator_environment.py D:\tkauto-operator-dev `
+  --database-host localhost --database-user u --database-name d `
+  --lease-key-id lease-dev-2026-01 --release-key-id release-dev-2026-01
+
+powershell -ExecutionPolicy Bypass -File .\scripts\run_control_plane_dev.ps1 `
+  -OperatorDirectory D:\tkauto-operator-dev
+```
+
+Thư mục operator chứa khoá riêng Ed25519, admin token, pepper — **để ngoài repo,
+không bao giờ commit**. Script chạy chỉ nhận đường dẫn tới nó.
+
+⛔ **HTTPS là bắt buộc ở cả ba tầng, không có đường HTTP nào.** Đo ngày
+06/10/2026: `config.py:validate_runtime` từ chối scheme khác `https`,
+`control_plane_admin.py:48` cũng vậy, và launcher cũng vậy — **không điều kiện,
+không cờ bỏ qua, không ngoại lệ cho localhost**. Và đây là chủ ý chứ không phải
+sơ suất: `localhost` chỉ bị cấm khi `production`, còn HTTPS thì buộc **cả ở
+development**.
+
+Hệ quả thực tế: server dev chạy HTTP thuần thì **lên được** nhưng
+`control_plane_admin.py` **không gọi vào được**. Muốn chạy trọn luồng key cần
+một endpoint HTTPS mà client **tin**, tức một trong hai:
+
+- **CA nội bộ** (Caddy `tls internal`, hoặc mkcert) rồi tin nó trong Windows —
+  đây là thay đổi trust store của máy.
+- **Domain thật + chứng chỉ thật**, đúng như `deploy/control-plane/` trù tính.
+
+### 11.2 Bản có license nhưng chưa ký
+
+Nếu chưa có chứng chỉ ký code (thứ phải mua), dùng đường này để thử luồng key:
+
+```powershell
+.\scripts\build_licensed_unsigned_release.ps1 -Version 0.2.0 `
+  -OperatorDirectory D:\tkauto-operator-dev `
+  -ControlPlaneUrl https://license.cua-ban.com
+```
+
+Nó bỏ **ký số** và **auto-update**, và **không làm yếu phần license**: phía Rust
+chỉ đọc ba biến lúc biên dịch (`TKAUTO_CONTROL_PLANE_URL`,
+`TKAUTO_LICENSE_PUBLIC_KEYS_JSON`, `TKAUTO_RELEASE_PUBLIC_KEYS_JSON`); các biến
+ký số và updater **không hề được code đọc**, chúng chỉ để script thương mại ghi
+config Tauri.
+
+⛔ **Bản có license KHÔNG mang backend theo.** Launcher đọc lease rồi nạp backend
+từ `%LOCALAPPDATA%\...\artifacts` và đối chiếu sha256 + size với manifest đã ký
+(`lib.rs:trusted_installed_backend`). Nên `backend-<ver>.exe` trong gói là để
+**operator đăng ký** bằng `register-release`, không phải để gửi cho khách.
+
+⛔ **Chạy script này ở terminal của anh, không chạy qua agent.** Nuitka mất hơn
+10 phút, mà tác vụ nền của agent bị dừng ở đúng 10 phút — đã thử và bị cắt giữa
+lúc biên dịch C.
+
 ⛔ **Khoá OmoCaptcha đang bị lộ.** Nó từng nằm cứng trong `config.py` từ
 10/07/2026 đến 15/09/2026, và các commit đó **nằm trên `origin/main` của một repo
 public** — tức bất kỳ ai cũng đọc được bằng một lệnh `git show`. Khoá đó **vẫn
