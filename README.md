@@ -115,7 +115,7 @@ repo đi — phải copy tay. Đo ngày 04/10/2026:
 
 | Phải copy | Dung lượng | Thiếu thì sao |
 |---|---|---|
-| `backend/database.db` | 23 MB | **Thứ duy nhất thật sự bắt buộc.** Chứa account, mật khẩu, cookie, proxy, batch tag. Thiếu thì backend vẫn khởi động và tự tạo DB rỗng — không account nào |
+| `backend/database.db` | 23 MB | **Thứ duy nhất thật sự bắt buộc.** Chứa account, mật khẩu, cookie, proxy, batch tag. Thiếu thì backend vẫn khởi động và tự tạo DB rỗng — không account nào. ⛔ **Đừng copy bằng `cp`/`Copy-Item`** — xem ngay dưới |
 | `backend/extensions/` | 4,6 MB | Hai `.xpi`: NordVPN proxy và Omocaptcha giải captcha. Thiếu thì không giải được captcha |
 | `.runtime/extension-storage/` | 1,2 MB | Phiên đã đăng nhập của extension NordVPN. Thiếu thì phải đăng nhập lại trong extension |
 | `.runtime/browser-extension-settings.json` | < 1 KB | Công tắc `use_proxy` và `nordvpn_extension_enabled`. Thiếu thì về mặc định trong `config.py` |
@@ -123,6 +123,22 @@ repo đi — phải copy tay. Đo ngày 04/10/2026:
 Không cần copy `.env` — dự án này không có file đó, mọi thiết lập đang chạy bằng
 giá trị mặc định, và các trường `LICENSE_*` đều để trống nên không có rào bản
 quyền nào khi tự chạy.
+
+⛔ **Copy `database.db` bằng `cp` là mất dữ liệu, mà không báo lỗi.** DB chạy ở
+chế độ WAL, nên phần vừa ghi còn nằm trong `database.db-wal` cho tới lúc
+checkpoint. Đo ngày 06/10/2026: file chính 23 MB, file `-wal` **4 MB**, và một
+bản `cp` của riêng file chính **thiếu cả bảng `alembic_version` vừa tạo** — tức
+nó cũ hơn thực tế 4 MB mà không có dấu hiệu nào. Cách đúng, chạy được cả khi app
+đang mở:
+
+```bash
+python -c "import sqlite3; c=sqlite3.connect('backend/database.db'); c.execute('VACUUM INTO ?', ('database-copy.db',))"
+```
+
+`VACUUM INTO` ghi ra **một** file nhất quán và đọc cả WAL. Copy đủ ba file
+`.db` + `-wal` + `-shm` cũng được, nhưng phải đồng bộ với nhau; một file thì
+không có gì để lệch. `stage_friends_portable.ps1 -IncludeDatabase` đã dùng cách
+này.
 
 ⛔ **Cookie đi theo IP, không đi theo máy.** Copy `database.db` sang máy khác rồi
 đăng nhập từ một IP khác thì TikTok có thể từ chối chính những cookie vừa còn

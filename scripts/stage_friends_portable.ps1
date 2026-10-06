@@ -106,8 +106,28 @@ if ($IncludeDatabase) {
     if (-not (Test-Path -LiteralPath $sourceDb)) { throw "Khong thay $sourceDb." }
     $dataDir = Join-Path $packageRoot "data"
     New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
-    Copy-Item -LiteralPath $sourceDb -Destination (Join-Path $dataDir "database.db") -Force
-    Write-Host "  da kem database.db - CHI dem goi nay sang may cua chinh minh." -ForegroundColor Yellow
+    $targetDb = Join-Path $dataDir "database.db"
+    Remove-Item -LiteralPath $targetDb -Force -ErrorAction SilentlyContinue
+
+    # ⛔ COPY-ITEM LAM MAT DU LIEU, KHONG BAO LOI. DB chay o che do WAL
+    # (PRAGMA journal_mode=WAL trong connection.py), nen nhung gi vua ghi con
+    # nam trong database.db-wal cho den luc checkpoint. Do ngay 06/10/2026:
+    # database.db 23 MB va database.db-wal 4 MB, va mot ban Copy-Item cua rieng
+    # file chinh KHONG co bang alembic_version vua tao - tuc no la mot ban chup
+    # cu hon thuc te 4 MB, ma khong co dau hieu gi.
+    #
+    # VACUUM INTO ghi ra MOT file nhat quan, doc ca WAL, va an toan ngay khi DB
+    # dang duoc dung. Copy ca ba file .db/-wal/-shm cung duoc nhung phai dong
+    # bo nhau; mot file thi khong co gi de lech.
+    Run $Python @("-c",
+        "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('VACUUM INTO ?',(sys.argv[2],)); c.close()",
+        $sourceDb, $targetDb)
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $targetDb)) {
+        throw "Khong tao duoc ban sao database nhat quan (VACUUM INTO that bai)."
+    }
+    $sizeMb = [math]::Round((Get-Item -LiteralPath $targetDb).Length / 1MB, 0)
+    Write-Host "  da kem database.db ($sizeMb MB, ban sao nhat quan ke ca WAL)"
+    Write-Host "  CHI dem goi nay sang may cua chinh minh." -ForegroundColor Yellow
 }
 
 Step "Viet CHAY.bat"

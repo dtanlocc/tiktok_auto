@@ -4,6 +4,15 @@ from typing import Optional
 
 class ProxyDbTable(SQLModel, table=True):
     __tablename__ = "proxies"
+    # ⛔ NULL NGHIA LA "ban cai rieng", khong phai "chua dien". Mot ban cai
+    # local khong thuoc nhom nao va giu DB cua rieng no - dung voi
+    # LeaseClaims.group_id is None. Chi license co token `group.<id>` moi ghi
+    # gia tri vao day, va khi do MOI dong ma thiet bi do doc/ghi phai khop.
+    #
+    # ⛔ DB DUNG CHUNG TACH THEO COT NAY, nen mot cau query thieu dieu kien
+    # group_id la mot lan ro du lieu giua hai khach hang - khong co tuong nao
+    # ben duoi chan ho. Co index vi moi truy van co pham vi deu loc theo no.
+    group_id: Optional[str] = Field(default=None, index=True)
     id: Optional[str] = Field(default=None, primary_key=True)
     host: str = Field(nullable=False)
     port: int = Field(nullable=False)
@@ -27,6 +36,15 @@ class ProxyDbTable(SQLModel, table=True):
 
 class AccountDbTable(SQLModel, table=True):
     __tablename__ = "accounts"
+    # ⛔ NULL NGHIA LA "ban cai rieng", khong phai "chua dien". Mot ban cai
+    # local khong thuoc nhom nao va giu DB cua rieng no - dung voi
+    # LeaseClaims.group_id is None. Chi license co token `group.<id>` moi ghi
+    # gia tri vao day, va khi do MOI dong ma thiet bi do doc/ghi phai khop.
+    #
+    # ⛔ DB DUNG CHUNG TACH THEO COT NAY, nen mot cau query thieu dieu kien
+    # group_id la mot lan ro du lieu giua hai khach hang - khong co tuong nao
+    # ben duoi chan ho. Co index vi moi truy van co pham vi deu loc theo no.
+    group_id: Optional[str] = Field(default=None, index=True)
 
     # Hotmail is the canonical account key. NOCASE prevents duplicates that only
     # differ by letter casing while API `id` remains an alias for compatibility.
@@ -84,6 +102,15 @@ class AccountDbTable(SQLModel, table=True):
 
 class TikTokVideoMetricDbTable(SQLModel, table=True):
     __tablename__ = "tiktok_video_metrics"
+    # ⛔ NULL NGHIA LA "ban cai rieng", khong phai "chua dien". Mot ban cai
+    # local khong thuoc nhom nao va giu DB cua rieng no - dung voi
+    # LeaseClaims.group_id is None. Chi license co token `group.<id>` moi ghi
+    # gia tri vao day, va khi do MOI dong ma thiet bi do doc/ghi phai khop.
+    #
+    # ⛔ DB DUNG CHUNG TACH THEO COT NAY, nen mot cau query thieu dieu kien
+    # group_id la mot lan ro du lieu giua hai khach hang - khong co tuong nao
+    # ben duoi chan ho. Co index vi moi truy van co pham vi deu loc theo no.
+    group_id: Optional[str] = Field(default=None, index=True)
 
     account_email: str = Field(primary_key=True, index=True)
     video_id: str = Field(primary_key=True)

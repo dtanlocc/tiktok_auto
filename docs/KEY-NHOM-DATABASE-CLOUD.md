@@ -202,6 +202,24 @@ tường nào bên dưới chặn hộ. Hệ quả bắt buộc:
 
 - Không tầng nào trên repository được tự viết query. Lọc theo `group_id` phải
   nằm ở **một chỗ** mà mọi truy cập đi qua, không phải nhắc nhau nhớ thêm `where`.
+
+  ⛔ **Và "thêm `.where()`" không đủ, vì 8 chỗ không có `where` để thêm.** Đo
+  ngày 06/10/2026: `sqlite_repository.py` (278 dòng, 18 chỗ truy vấn) dùng hai
+  kiểu — `select().where()` thì lọc được, nhưng **`session.get(Model, pk)` thì
+  không**: nó tra thẳng khoá chính và trả về dòng đó bất kể `group_id`. Có 8
+  lần `session.get` (dòng 27, 33, 73, 86, 101, 176, 213, 220), và mỗi lần là
+  một đường đọc được dữ liệu nhóm khác chỉ cần biết khoá chính — mà khoá chính
+  của `accounts` là **email**, thứ dễ đoán nhất trong cả schema.
+
+  Nên chốt lọc phải là **một hàm thay thế `session.get`**, không phải một quy
+  ước nhớ thêm điều kiện. Và trên Postgres nên bật thêm **RLS**: đó là lớp duy
+  nhất mà một câu query viết sót không vượt qua được. Bản cài local không cần —
+  nó chỉ có một nhóm, nên không có ai để rò sang.
+
+- **Đã làm (06/10/2026)**: cột `group_id` trên cả `accounts`, `proxies`,
+  `tiktok_video_metrics`, nullable + index, NULL = bản cài riêng. Migration
+  `398e6eb7045c`, đã áp lên DB thật (2.115 account nguyên vẹn) và thử đi ngược
+  rồi đi lại được.
 - Phải có test chứng minh một nhóm **không đọc được** dữ liệu nhóm khác, và test
   đó phải chạy mỗi lần push — vì đây là loại lỗi không ai nhìn thấy khi nó xảy ra.
 - Nếu sau này cần cách ly mạnh hơn cho một khách lớn, cột `group_id` vẫn là

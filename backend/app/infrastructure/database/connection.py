@@ -152,11 +152,23 @@ def init_db() -> None:
     # sống được nhờ main.py tình cờ import theo thứ tự đúng - tức hàm này dựa
     # vào một điều nó không tự bảo đảm.
     from app.infrastructure.database import schemas  # noqa: F401
+    from sqlalchemy import inspect as _inspect
+
+    # ⛔ ĐẾM BẢNG TRƯỚC `create_all`, VÌ SAU ĐÓ KHÔNG PHÂN BIỆT ĐƯỢC NỮA. Một DB
+    # trắng được `create_all` dựng theo hình dạng MODEL HIỆN TẠI - tức đã có mọi
+    # cột mà các migration sau baseline thêm vào. Đóng dấu nó ở baseline rồi
+    # upgrade là đi thêm lại những cột đã có: đo ngày 06/10/2026, ngay khi
+    # revision group_id xuất hiện thì DB mới chết ở
+    # `ALTER TABLE accounts ADD COLUMN group_id` (trùng cột).
+    #
+    # Lỗi này chỉ lộ ra khi có migration thật THỨ HAI - nên nếu hôm nay không
+    # thêm cột nào, nó sẽ nổ ở bản cài của một khách hàng nào đó về sau.
+    _tables_before = set(_inspect(engine).get_table_names()) - {"alembic_version"}
 
     _migrate_accounts_primary_key_to_email()
     SQLModel.metadata.create_all(engine)
     _legacy_sqlite_catch_up()
-    _align_schema_version()
+    _align_schema_version(brand_new=not _tables_before)
 
 
 def _legacy_sqlite_catch_up() -> None:
@@ -343,25 +355,59 @@ def _alembic_config():
     return config
 
 
-def _align_schema_version() -> None:
-    """Đóng dấu baseline cho DB đã có sẵn, rồi nâng theo alembic.
+def _already_at_model_shape() -> bool:
+    """DB đã có đủ mọi cột mà model khai báo chưa?
 
-    Một DB chưa có bảng `alembic_version` là DB có từ trước khi alembic vào. Nó
-    được đóng dấu baseline - thời điểm này nó đã qua catch-up và `create_all`
-    nên đúng hình dạng baseline - và từ đó trở đi alembic nắm mọi thay đổi.
+    ⛔ TRẠNG THÁI NÀY LÀ THẬT, KHÔNG PHẢI GIẢ ĐỊNH PHÒNG XA. Một bản `cp` của
+    `database.db` mà bỏ file `-wal` cho ra đúng nó: schema mới nguyên nhưng
+    **không có bảng `alembic_version`**, vì bảng đó vừa được tạo và còn nằm
+    trong WAL. Gặp ngày 06/10/2026, trên chính máy này, bằng chính một lệnh `cp`
+    của tôi. Đóng dấu nó ở baseline rồi upgrade sẽ đi thêm lại những cột đã có
+    và chết ở `duplicate column name`.
 
-    Lỗi ở đây KHÔNG làm app chết. Trước commit này app vẫn chạy mà không có
-    alembic; biến nó thành điều kiện sống còn ngay trong commit giới thiệu nó là
-    tự tạo thêm một cách để không mở được máy. Lỗi được in ra và đi tiếp.
+    So theo TÊN CỘT, không so NOT NULL hay index. Dự án đang có lệch sẵn ở hai
+    thứ đó (model khai `str` trong khi hệ di cư cũ thêm cột nullable), và lệch
+    đó cố ý chưa sửa - nếu tính vào đây thì mọi DB đều bị coi là chưa tới head.
+    Với migration chỉ-thêm, tên cột là đủ để trả lời câu hỏi này.
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    live = set(inspector.get_table_names())
+    for name, table in SQLModel.metadata.tables.items():
+        if name not in live:
+            return False
+        have = {column["name"] for column in inspector.get_columns(name)}
+        if not {column.name for column in table.columns} <= have:
+            return False
+    return True
+
+
+def _align_schema_version(*, brand_new: bool) -> None:
+    """Đưa DB về đúng phiên bản schema mà alembic biết, theo ba trường hợp.
+
+    1. **Đã có `alembic_version`**: alembic đang nắm rồi, chỉ cần `upgrade head`.
+    2. **DB vừa được tạo trắng** (`brand_new`): `create_all` đã dựng nó theo
+       model hiện tại, nên nó ĐÃ ở head. Đóng dấu **head** - không phải
+       baseline, xem lý do trong `init_db()`.
+    3. **DB có từ trước khi alembic vào**: nó ở hình dạng baseline, đã qua
+       catch-up. Đóng dấu **baseline** rồi `upgrade head` để chạy đúng những
+       migration nó còn thiếu.
+
+    Lỗi ở đây KHÔNG làm app chết. Trước khi có alembic app vẫn chạy; biến nó
+    thành điều kiện sống còn ngay trong commit giới thiệu nó là tự tạo thêm một
+    cách để không mở được máy. Lỗi được in ra và đi tiếp.
     """
     try:
         from alembic import command
         from sqlalchemy import inspect
 
         config = _alembic_config()
-        inspector = inspect(engine)
-        if "alembic_version" in inspector.get_table_names():
+        if "alembic_version" in inspect(engine).get_table_names():
             command.upgrade(config, "head")
+            return
+        if brand_new or _already_at_model_shape():
+            command.stamp(config, "head")
             return
         command.stamp(config, "0001_baseline")
         command.upgrade(config, "head")
