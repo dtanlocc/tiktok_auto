@@ -1,5 +1,9 @@
 # tiktok_auto
 
+📖 **Dùng app thì đọc [docs/HUONG-DAN-SU-DUNG.md](docs/HUONG-DAN-SU-DUNG.md)** —
+hướng dẫn từ đầu đến cuối: nạp proxy và account, đăng nhập, đổi hồ sơ, đăng
+video, đóng gói `.exe`, quản lí key. File này chỉ nói về **cài đặt và dựng**.
+
 Backend FastAPI + frontend React/Tauri, điều khiển trình duyệt qua fork
 [`invisible_playwright`](https://github.com/dtanlocc/invisible_playwright-custom)
 được gắn vào repo này dưới dạng **git submodule**.
