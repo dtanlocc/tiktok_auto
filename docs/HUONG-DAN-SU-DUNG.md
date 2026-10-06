@@ -317,6 +317,54 @@ từ `%LOCALAPPDATA%\...\artifacts` và đối chiếu sha256 + size với manif
 10 phút, mà tác vụ nền của agent bị dừng ở đúng 10 phút — đã thử và bị cắt giữa
 lúc biên dịch C.
 
+### 11.3 Không có server: license offline
+
+Nếu không muốn dựng và trả tiền cho một web nào, vẫn phát key được. Đây là
+**Option 1** mà proposal đã cân nhắc sẵn ("Hardened local client"), và **phần lớn
+đã có trong code**:
+
+- launcher đọc lease **từ file**, không gọi mạng (`lib.rs:read_lease`);
+- giao diện đã xử lý trường hợp offline — `SecureBootstrap.tsx` có đúng dòng
+  *"A still-valid offline lease remains usable; status below decides."*;
+- `LeaseVerifier` + `assert_runtime_valid` đã kiểm chữ ký, `device_id`, hạn dùng
+  và phiên bản tối thiểu.
+
+Thiếu đúng một công cụ ký, và nó đã có: `scripts/issue_offline_lease.py`.
+
+**Ba bước:**
+
+1. Khách chạy app lần đầu. App tự sinh khoá thiết bị và hiện **device id** dạng
+   `device_<40 hex>` (`= sha256(khoá công khai của thiết bị)[..20]`). Khách gửi
+   con số đó cho anh.
+2. Anh ký:
+
+```powershell
+uv run python scripts\issue_offline_lease.py `
+  --operator-directory D:\tkauto-operator-dev `
+  --device-id device_abc... --license-id lic-khach-01 `
+  --expires-days 30 --max-accounts 200 --max-tabs 4 `
+  --features accounts.manage,upload.video,group.acme,role.owner `
+  --output khach-01.lease
+```
+
+3. Khách đặt file vào `%LOCALAPPDATA%\com.tiktokauto.desktop\license\current.lease`.
+
+Script **tự xác thực lại bằng khoá công khai trước khi ghi file** — một lease ký
+sai `kid` chỉ lộ ra khi khách mở app, tức sau khi anh đã gửi đi rồi.
+
+**Đã kiểm ngày 06/10/2026:** lease ký offline cho ra `group_id=acme`,
+`role=owner`; đúng thiết bị thì nhận, **thiết bị khác thì từ chối**
+("Lease belongs to a different device"), **sửa một ký tự thì từ chối**
+("Lease signature is invalid").
+
+⛔ **Cái mất, phải biết trước khi chọn: KHÔNG THU HỒI ĐƯỢC.** Lease đã phát là
+hợp lệ cho tới khi hết hạn — không có ai để hỏi "key này còn hiệu lực không".
+Nên hạn phải **ngắn** (script mặc định 30 ngày, và từ chối quá 365) và **thu hồi
+= ngừng ký lại**. Đặt hạn một năm nghĩa là cho không một năm.
+
+Mất thêm: không auto-update, không release manifest — backend phải tự gửi thay
+vì để launcher tải về từ control plane.
+
 ⛔ **Khoá OmoCaptcha đang bị lộ.** Nó từng nằm cứng trong `config.py` từ
 10/07/2026 đến 15/09/2026, và các commit đó **nằm trên `origin/main` của một repo
 public** — tức bất kỳ ai cũng đọc được bằng một lệnh `git show`. Khoá đó **vẫn
