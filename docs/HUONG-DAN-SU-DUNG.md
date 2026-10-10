@@ -28,13 +28,13 @@ mục 9.
 ## 1. Cài từ source
 
 ```powershell
-git clone --recurse-submodules -b feat/invisible-playwright-0.25.4 https://github.com/dtanlocc/tiktok_auto.git
+git clone -b feat/invisible-playwright-0.25.4 https://github.com/dtanlocc/tiktok_auto.git
 cd tiktok_auto
 powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
 ```
 
 Cần sẵn **uv**, Git, Node 20+. Không cần tự cài Python. Ba cái bẫy và cách tránh
-nằm trong [README.md](../README.md) — đọc mục "Bốn chỗ dễ sai trên máy mới"
+nằm trong [README.md](../README.md) — đọc mục "Ba chỗ dễ sai trên máy mới"
 trước khi loay hoay, nhất là chuyện Windows mặc định **không cho chạy `.ps1`**
 và chuyện clone vào đường dẫn sâu làm hụt file mà vẫn báo thành công.
 

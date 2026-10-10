@@ -1,11 +1,12 @@
 # Dung moi truong cho mot ban clone moi. Chay lai bao nhieu lan cung duoc:
 # moi buoc tu bo qua phan da co.
 #
-# ⛔ THU TU KHONG DOI CHO DUOC. `uv sync` dung `tools/invisible_playwright` lam
-# phu thuoc editable, nen submodule phai duoc nap TRUOC - neu khong, uv hong o
-# buoc dung goi va thong bao khong he noi gi ve submodule. Va engine chi tai
-# duoc SAU `uv sync`, vi ban engine nao duoc tai do `invisible_core` trong
-# moi truong vua dung quyet dinh, chu khong phai do script nay.
+# ⛔ THU TU KHONG DOI CHO DUOC, nhung khong con vi submodule nao. Engine chi
+# tai duoc SAU `uv sync`, vi ban engine nao duoc tai do `invisible_core` trong
+# moi truong vua dung quyet dinh, chu khong phai do script nay. Truoc
+# 10/10/2026 o day con mot buoc `git submodule update` nap fork
+# invisible_playwright; du an da chuyen sang ban chinh chu tren PyPI nen buoc
+# do bien mat, va `git` khong con la dieu kien de chay setup.
 param(
     [switch]$SkipFrontend,
     [switch]$SkipEngine
@@ -48,19 +49,6 @@ function Run {
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     throw "Khong tim thay 'uv'. Cai o https://docs.astral.sh/uv/ roi chay lai."
-}
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    throw "Khong tim thay 'git'."
-}
-
-Step "Nap submodule (fork invisible_playwright)"
-Run git @("submodule", "update", "--init", "--recursive")
-if ($LASTEXITCODE -ne 0) { throw "git submodule update that bai." }
-
-$forkPyproject = Join-Path $repoRoot "tools\invisible_playwright\pyproject.toml"
-if (-not (Test-Path -LiteralPath $forkPyproject)) {
-    throw "Submodule tools/invisible_playwright van trong sau khi nap. " +
-          "Kiem tra quyen truy cap repo dtanlocc/invisible_playwright-custom."
 }
 
 Step "Dung moi truong Python theo uv.lock"

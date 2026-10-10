@@ -4,9 +4,16 @@
 hướng dẫn từ đầu đến cuối: nạp proxy và account, đăng nhập, đổi hồ sơ, đăng
 video, đóng gói `.exe`, quản lí key. File này chỉ nói về **cài đặt và dựng**.
 
-Backend FastAPI + frontend React/Tauri, điều khiển trình duyệt qua fork
-[`invisible_playwright`](https://github.com/dtanlocc/invisible_playwright-custom)
-được gắn vào repo này dưới dạng **git submodule**.
+Backend FastAPI + frontend React/Tauri, điều khiển trình duyệt qua
+[`invisible_playwright`](https://github.com/feder-cr/invisible_playwright) —
+**bản chính chủ trên PyPI**, ghim `==0.30.0` trong `pyproject.toml`.
+
+⛔ **Trước 10/10/2026 đây là một fork gắn làm git submodule.** Fork chỉ tồn tại
+vì ba module của riêng dự án nằm lẫn trong đó và vì một bản vá `close()`; cả hai
+lí do đã hết — ba module về `backend/app/infrastructure/automation/`, bản vá áp
+từ ngoài qua `juggler_close_patch.py`. Giá phải trả cho fork là một xung đột
+merge mỗi lần upstream ra bản mới, nên nó đã bị bỏ. Lịch sử fork vẫn còn ở
+`dtanlocc/invisible_playwright-custom` nếu cần tra lại.
 
 ## Cài trên máy mới
 
@@ -15,7 +22,7 @@ frontend). Không cần tự cài Python — `uv` tải đúng bản ghi trong
 `.python-version`.
 
 ```powershell
-git clone --recurse-submodules -b feat/invisible-playwright-0.25.4 https://github.com/dtanlocc/tiktok_auto.git
+git clone -b feat/invisible-playwright-0.25.4 https://github.com/dtanlocc/tiktok_auto.git
 cd tiktok_auto
 .\scripts\setup.ps1
 ```
@@ -42,28 +49,25 @@ và lúc đó dùng `npm.cmd` (shim `.cmd` không chịu chính sách này) ho�
 `Set-ExecutionPolicy` như trên.
 
 ⛔ **`-b` không bỏ được cho tới khi nhánh đó về `main`.** Bỏ nó ra thì clone rơi
-vào `main`, và `main` đang đi sau 31 commit: không có `setup.ps1`, không có file
-này, và con trỏ submodule còn ở bản fork cũ. Triệu chứng đúng như đã gặp ngày
+vào `main`, và `main` đang đi sau 53 commit: không có `setup.ps1`, không có file
+này, và `pyproject.toml` ở đó còn trỏ vào fork đã bỏ. Triệu chứng đúng như đã gặp ngày
 04/10/2026 trên một máy khác — `.\scripts\setup.ps1` báo *"is not recognized"*,
 vì file đó thật sự không tồn tại trong bản vừa clone.
 
-Nếu đã clone rồi mới biết — quên `--recurse-submodules`, hoặc đang đứng trên
-`main`:
+Nếu đã clone rồi mới biết, hoặc đang đứng trên `main`:
 
 ```powershell
 git checkout feat/invisible-playwright-0.25.4
-git submodule update --init --recursive
+.\scripts\setup.ps1
 ```
 
-Dòng thứ hai là bắt buộc sau khi `checkout`, không chỉ sau khi `clone`: đổi
-nhánh làm đổi con trỏ submodule, và git **không** tự nạp lại nội dung submodule
-cho anh — fork sẽ im lặng nằm ở bản cũ.
+Chạy lại `setup.ps1` sau khi đổi nhánh, vì nhánh có thể ghim bản
+`invisible-playwright` khác — và bản đó quyết định bản engine nào phải tải.
 
-`setup.ps1` chạy lại bao nhiêu lần cũng được, và làm đúng bốn việc:
+`setup.ps1` chạy lại bao nhiêu lần cũng được, và làm đúng ba việc:
 
 | Bước | Lệnh tương đương | Tải về |
 |---|---|---|
-| Nạp submodule | `git submodule update --init --recursive` | vài MB |
 | Dựng môi trường Python | `uv sync` | ~100 MB |
 | Tải engine trình duyệt | `uv run python -m invisible_playwright fetch` | **549 MB** mỗi bản engine, cộng 116 MB geoip |
 | Cài phụ thuộc frontend | `npm --prefix frontend install` | ~200 MB |
@@ -89,11 +93,7 @@ npm --prefix frontend run dev
 Backend ở `127.0.0.1:9000`, frontend dev ở `127.0.0.1:1420`. Bản desktop thật
 thì chạy `npm --prefix frontend run desktop:dev`.
 
-## Bốn chỗ dễ sai trên máy mới
-
-**Submodule rỗng.** `pyproject.toml` khai `invisible-playwright` là phụ thuộc
-editable trỏ vào `tools/invisible_playwright`. Nếu submodule chưa nạp thì thư
-mục đó trống và `uv sync` hỏng ngay ở bước dựng gói — không phải lỗi của uv.
+## Ba chỗ dễ sai trên máy mới
 
 **Bản Python.** `.python-version` ghim `3.14`. Thiếu file đó thì `uv` tự chọn
 bất kỳ bản `>=3.11` nào nó tìm thấy, nên hai máy có thể dựng ra hai môi trường
@@ -105,11 +105,13 @@ mục có đường dẫn dài thì `git clone` báo **thành công** nhưng che
 mặc định. Clone vào đường dẫn ngắn (ví dụ `D:\tiktok_auto`) thì sạch tuyệt đối;
 nếu buộc phải clone sâu thì bật `git config --global core.longpaths true` trước.
 
-**Engine phải khớp pin của core.** `tools/invisible_playwright/pyproject.toml`
-ghim `invisible_core==<x>`, và core quyết định bản engine nào được tải. Khi
-submodule được cập nhật thì phải chạy lại `uv sync` rồi
-`python -m invisible_playwright fetch`; nếu không, test `test_core_pin.py` sẽ
-đỏ với thông báo nói rõ metadata của bản cài editable đã cũ.
+**Engine phải khớp pin của core.** `pyproject.toml` ghim
+`invisible-playwright==0.30.0`, bản đó ghim `invisible-core==38.34.0`, và core
+quyết định bản engine nào được tải. Nâng bản `invisible-playwright` thì phải
+chạy lại **cả hai** bước — `uv sync` rồi
+`uv run python -m invisible_playwright fetch` — vì `uv sync` không tải engine và
+`fetch` không đọc `pyproject.toml`. Bỏ bước sau thì môi trường mới chạy engine
+cũ, và lỗi chỉ lộ ra khi mở trình duyệt.
 
 ## Chuyển sang một máy khác
 
@@ -178,10 +180,8 @@ hai `.exe` không ký Authenticode nên SmartScreen sẽ cảnh báo.
 uv run python -m pytest backend/tests -q
 ```
 
-Bộ test của fork nằm riêng trong submodule, mặc định đã loại `e2e` (cần trình
-duyệt thật) và `slow` (phải dựng wheel, cần thêm gói `build`):
-
-```powershell
-cd tools\invisible_playwright
-uv run python -m pytest -q
-```
+Bộ test của fork trước đây nằm riêng trong submodule. Nay ba module của dự án
+đã về `backend/`, nên phần cần giữ đã nằm trong lệnh trên:
+`test_native_upload.py`, `test_media_integrity.py`,
+`test_firefox_extensions.py`, `test_juggler_close_patch.py`. Test của bản chính
+chủ là việc của upstream.

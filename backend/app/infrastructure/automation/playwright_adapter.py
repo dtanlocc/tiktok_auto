@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 # page.screenshot; khong co kenh gui chuot/ban phim nguoc vao Playwright page.
 # =============================================================================
 from invisible_playwright.async_api import InvisiblePlaywright
-# ⛔ CUA CHUNG TA, KHONG PHAI CUA THU VIEN. Hai module nay tung nam trong
+# ⛔ CUA CHUNG TA, KHONG PHAI CUA THU VIEN. Ba module nay tung nam trong
 # ban fork invisible_playwright va la ly do du an vendor ca thu vien duoi
 # dang submodule. Chung khong import mot dong nao tu thu vien do, nen da
 # duoc dua ve day - noi chung thuoc ve - va thu vien tro lai la mot
