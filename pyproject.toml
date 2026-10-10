@@ -58,3 +58,17 @@ dev = [
     # bump alone.
     "nuitka>=4.2.2",
 ]
+
+# ⛔ KHONG CO CAU HINH NAY THI LENH TEST TRONG README KHONG CHAY. Do ngay
+# 10/10/2026: `python -m pytest backend/tests` tu thu muc goc chet voi 48 loi
+# thu gom "No module named 'app'", trong khi cung bo test do chay tu `backend/`
+# thi 474 test xanh. Khac biet duy nhat la sys.path[0]: `python -m` nhet CWD
+# vao do, nen `app` chi nhin thay duoc khi dung o trong `backend`.
+#
+# Du an khong co build-system nen uv coi day la project ao va KHONG cai `app`
+# vao site-packages - tuc khong co duong nao khac de `app` len sys.path. Ghi
+# `pythonpath` o day de lenh da ghi trong README dung voi thuc te, thay vi sua
+# README thanh "nho cd truoc".
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
