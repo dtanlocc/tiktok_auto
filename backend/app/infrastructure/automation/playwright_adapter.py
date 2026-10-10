@@ -21,10 +21,14 @@ from urllib.parse import urlsplit
 # page.screenshot; khong co kenh gui chuot/ban phim nguoc vao Playwright page.
 # =============================================================================
 from invisible_playwright.async_api import InvisiblePlaywright
-from invisible_playwright import (
-    merge_faithful_canvas_readback,
-    set_input_files_native,
-)
+# ⛔ CUA CHUNG TA, KHONG PHAI CUA THU VIEN. Hai module nay tung nam trong
+# ban fork invisible_playwright va la ly do du an vendor ca thu vien duoi
+# dang submodule. Chung khong import mot dong nao tu thu vien do, nen da
+# duoc dua ve day - noi chung thuoc ve - va thu vien tro lai la mot
+# dependency PyPI thuong.
+from app.infrastructure.automation.media_integrity import merge_faithful_canvas_readback
+from app.infrastructure.automation.native_upload import set_input_files_native
+from app.infrastructure.automation.firefox_extensions import sync_engine_extensions
 from app.domain.ports.browser import IBrowserService
 from app.core.config import settings
 from app.infrastructure.automation.configured_extensions import (
@@ -830,10 +834,12 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                 # Keep this stable for every task using this account identity,
                 # rather than changing canvas behaviour only on upload pages.
             )
-            self._invisible_pw.set_firefox_extensions(
-                item.xpi_path for item in installed_extensions
+            # Truoc day hai dong nay la hai phuong thuc do ban fork them vao
+            # launcher. Gio tu lam, trdoc khi launch - xem sync_engine_extensions.
+            sync_engine_extensions(
+                [item.xpi_path for item in installed_extensions],
+                excluded_addon_ids,
             )
-            self._invisible_pw.set_firefox_extension_exclusions(excluded_addon_ids)
             # =============================================================
             # LUOI AN TOAN (khong phai cach chua chinh).
             # Phong truong hop hi huu launch bi treo (vd may qua tai):
@@ -881,11 +887,9 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                             profile_dir=self._temp_profile_path,
                             extra_prefs=firefox_prefs,
                         )
-                        self._invisible_pw.set_firefox_extensions(
-                            item.xpi_path for item in installed_extensions
-                        )
-                        self._invisible_pw.set_firefox_extension_exclusions(
-                            excluded_addon_ids
+                        sync_engine_extensions(
+                            [item.xpi_path for item in installed_extensions],
+                            excluded_addon_ids,
                         )
             if self._browser is None:
                 raise _err or RuntimeError(f"Khong mo duoc trinh duyet sau {_max_tries} lan.")

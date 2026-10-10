@@ -26,6 +26,7 @@ from urllib.parse import parse_qsl, unquote, urlparse
 
 import httpx
 from invisible_playwright.async_api import InvisiblePlaywright
+from app.infrastructure.automation.firefox_extensions import sync_engine_extensions
 
 from app.core.config import settings
 from app.core.tiktok_urls import ensure_tiktok_english_url
@@ -994,10 +995,9 @@ class TikTokPublicVideoClient:
                         "media.autoplay.default": 0,
                     },
                 )
-                self._invisible_pw.set_firefox_extensions(
-                    item.xpi_path for item in installed
+                sync_engine_extensions(
+                    [item.xpi_path for item in installed], excluded
                 )
-                self._invisible_pw.set_firefox_extension_exclusions(excluded)
                 try:
                     # A persistent profile can hang Firefox at startup; the
                     # account sessions bound it the same way.
