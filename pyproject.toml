@@ -11,7 +11,12 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     "sqlmodel>=0.0.16",
     "websockets>=12.0",
-    "invisible-playwright",
+    # ⛔ BAN CHINH CHU TU PyPI, khong con fork. Ba module cua rieng du an
+    # (native_upload, media_integrity, firefox_extensions) da ve
+    # backend/app/, va ban va close() duoc ap tu ngoai qua
+    # juggler_close_patch. Fork truoc day gay mot xung dot merge moi lan
+    # upstream ra ban moi, va 0.30.0 xoa han file chua ban va do.
+    "invisible-playwright==0.30.0",
     "python-multipart>=0.0.32",
     "httpx[socks]>=0.28.1",
     "pillow>=12.3.0",
@@ -19,6 +24,16 @@ dependencies = [
     "apscheduler>=3.11.3",
     "cryptography>=50.0.1",
     "psycopg[binary]>=3.2",
+    # ⛔ THEO CODE DI DOI MA SANG, va suyt bi bo lai. native_upload.py
+    # import pywinauto LUOI - `from pywinauto.controls.win32_controls import
+    # Edit` nam ben trong mot ham, dong 579 - nen mot lan grep import o dau
+    # file khong thay no. Fork truoc day khai dependency nay; bo fork la
+    # `uv lock` go luon pywinauto va comtypes.
+    #
+    # No nam trong try/except nen thieu thi khong vo ngay: duong fallback
+    # cho o "File name" cua hop thoai Windows am tham khong chay, va chi
+    # hien ra trong diagnostics. Dung loai hong de phat hien bang mat.
+    "pywinauto>=0.6.9; sys_platform == 'win32'",
     # Migration co thu tu, biet dialect. Truoc day schema duoc di cu bang
     # `PRAGMA table_info` + ALTER TABLE tu viet trong connection.py: chi chay
     # duoc tren SQLite, va khong co khai niem "phien ban schema" nen khong
@@ -27,9 +42,6 @@ dependencies = [
     "alembic>=1.13",
 ]
 
-# Chuẩn mới của uv thay thế cho tool.uv.dev-dependencies
-[tool.uv.sources]
-invisible-playwright = { path = "tools/invisible_playwright", editable = true }
 
 [dependency-groups]
 dev = [

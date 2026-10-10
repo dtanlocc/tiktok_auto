@@ -29,6 +29,19 @@ from invisible_playwright.async_api import InvisiblePlaywright
 from app.infrastructure.automation.media_integrity import merge_faithful_canvas_readback
 from app.infrastructure.automation.native_upload import set_input_files_native
 from app.infrastructure.automation.firefox_extensions import sync_engine_extensions
+from app.infrastructure.automation import juggler_close_patch
+
+# ⛔ VA NGAY KHI MODULE NAY DUOC IMPORT, truoc bat ky lan launch nao.
+# invisible_core.juggler giu lai ban close() dong CA HAI descriptor trong mot
+# vong lap, va dong dau doc khi reader dang ket trong os.read tung treo ca
+# backend 14 phut (23/09/2026).
+#
+# ⛔ DE NO RAISE, khong bat im lang. Neu upstream doi hinh dang lop thi app
+# khong khoi dong va thong bao noi ro ly do - tot hon nhieu so voi mot lan
+# treo khong dau vet vai tuan sau, vi dung kieu that bai do da xay ra roi va
+# phai mat 14 phut moi co nguoi nhan ra. test_juggler_close_patch.py bat
+# chuyen nay truoc khi no kip toi may nao.
+juggler_close_patch.apply()
 from app.domain.ports.browser import IBrowserService
 from app.core.config import settings
 from app.infrastructure.automation.configured_extensions import (

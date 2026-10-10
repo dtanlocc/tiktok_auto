@@ -315,11 +315,11 @@ wheels = [
 
 [[package]]
 name = "comtypes"
-version = "1.4.16"
+version = "1.4.17"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c6/2a/65274c13327f637ec13af8d39f2cf579d9ebe7a0e683696b5f05236d2805/comtypes-1.4.16.tar.gz", hash = "sha256:cd66d1add01265cface4df51ba1e31cd1657e04463c281c802e737e79e1ba93c", size = 260252, upload-time = "2026-03-02T23:11:42.413Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0e/ff/c7836bd0d78fc615281016f154f514e9d523d7cb9ab9e8b4d344adc5f5e7/comtypes-1.4.17.tar.gz", hash = "sha256:3d9c1e92ad8daf7600d371e76ee16161a627a5fb70c3144f6e52e78af6034363", size = 262743, upload-time = "2026-09-21T08:08:07.687Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5f/7c/0eb685107290b6221c03c46d39214a4e42a124189691cb83ae3228257f46/comtypes-1.4.16-py3-none-any.whl", hash = "sha256:e18d85179ff12955524c5a8c3bc09cb3c0d890f1da4d7123d14244c7b78f84c8", size = 296230, upload-time = "2026-03-02T23:11:41.049Z" },
+    { url = "https://files.pythonhosted.org/packages/89/9c/d0bc1fb69ad22a04bdc01dd9b5613a2ebc4d02ba1ec24b02127dc93791ba/comtypes-1.4.17-py3-none-any.whl", hash = "sha256:4e0a221dde2c589b82977bed802efd71cd5eb67a380347b732e02735e597f586", size = 298743, upload-time = "2026-09-21T08:08:06.461Z" },
 ]
 
 [[package]]
@@ -533,7 +533,7 @@ wheels = [
 
 [[package]]
 name = "invisible-core"
-version = "35.32.0"
+version = "38.34.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "maxminddb" },
@@ -542,39 +542,25 @@ dependencies = [
     { name = "requests", extra = ["socks"] },
     { name = "tzdata" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cd/ea/cc0b07ee95071fe7851126df0979f1fe9810b6d56583ac151e1dd086d7ba/invisible_core-35.32.0.tar.gz", hash = "sha256:1df7b5fa6d411364d608745a59c9e36aaeec64acd6ac4b2e63f3c9d3fc347e4d", size = 529560, upload-time = "2026-10-03T02:52:50.274Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/62/7d/acfb04b40189891569388e862db4540ec8b0daaa2e7474275885716a5aae/invisible_core-38.34.0.tar.gz", hash = "sha256:b284601fbc30f20b84d87b1192c08faa598f5ad65889642aa00cb000139ca03e", size = 809338, upload-time = "2026-10-09T14:41:35.887Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/d2/d7dbe623ac2e960123aa11b285503a4cf6b53429788485c550abede025c9/invisible_core-35.32.0-py3-none-any.whl", hash = "sha256:1266948edb391309bea439fe3f41024d4c362e7fb6ad70118d2f593f61993dcf", size = 281771, upload-time = "2026-10-03T02:52:48.684Z" },
+    { url = "https://files.pythonhosted.org/packages/19/ca/c41952617fcfd08662198ce6bc98ffeeff5e74041c75fe4223a2efdd4924/invisible_core-38.34.0-py3-none-any.whl", hash = "sha256:5e6a3929ba05a2b14984e148c415cb95f340afaabdbf3b90e01ddbb0446d65d9", size = 488186, upload-time = "2026-10-09T14:41:34.779Z" },
 ]
 
 [[package]]
 name = "invisible-playwright"
-version = "0.25.11"
-source = { editable = "tools/invisible_playwright" }
+version = "0.30.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "greenlet" },
     { name = "invisible-core" },
     { name = "psutil" },
     { name = "pyee" },
-    { name = "pywinauto", marker = "sys_platform == 'win32'" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "build", marker = "extra == 'dev'", specifier = ">=1" },
-    { name = "greenlet", specifier = ">=3.1.1,<4.0.0" },
-    { name = "invisible-core", specifier = "==35.32.0" },
-    { name = "playwright", marker = "extra == 'dev'", specifier = "==1.61.0" },
-    { name = "psutil", specifier = ">=5.9" },
-    { name = "pyee", specifier = ">=13,<14" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7" },
-    { name = "pytest-rerunfailures", marker = "extra == 'dev'", specifier = ">=14" },
-    { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3" },
-    { name = "pywinauto", marker = "sys_platform == 'win32'", specifier = ">=0.6.9" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+sdist = { url = "https://files.pythonhosted.org/packages/b3/4a/b268ad68fbc7dd6d5b0e2eb2b88a150e4684d8042de7e2c1b6a3bcdb694b/invisible_playwright-0.30.0.tar.gz", hash = "sha256:4537727a61132356ebd6bae373b240b4027702a69760719e773133836c893c15", size = 1054016, upload-time = "2026-10-09T15:13:09.498Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/52/8b/53a1fd0ae332009d5534697478f4b866be65f472a47809fb1bf3e42e1af6/invisible_playwright-0.30.0-py3-none-any.whl", hash = "sha256:770bc737cce76ae7c2495b21bcbaf62d08076a8fc55c20c78bc8827dd04f828c", size = 593689, upload-time = "2026-10-09T15:13:07.689Z" },
 ]
-provides-extras = ["dev"]
 
 [[package]]
 name = "mako"
@@ -1424,6 +1410,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-multipart" },
     { name = "pywin32" },
+    { name = "pywinauto", marker = "sys_platform == 'win32'" },
     { name = "sqlmodel" },
     { name = "uvicorn" },
     { name = "websockets" },
@@ -1443,13 +1430,14 @@ requires-dist = [
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "fastapi", specifier = ">=0.110.0" },
     { name = "httpx", extras = ["socks"], specifier = ">=0.28.1" },
-    { name = "invisible-playwright", editable = "tools/invisible_playwright" },
+    { name = "invisible-playwright", specifier = "==0.30.0" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.6.0" },
     { name = "pydantic-settings", specifier = ">=2.2.0" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "pywin32", specifier = ">=312" },
+    { name = "pywinauto", marker = "sys_platform == 'win32'", specifier = ">=0.6.9" },
     { name = "sqlmodel", specifier = ">=0.0.16" },
     { name = "uvicorn", specifier = ">=0.28.0" },
     { name = "websockets", specifier = ">=12.0" },
