@@ -396,3 +396,84 @@ def test_admin_device_revocation_blocks_renewal_and_audit_omits_raw_key(tmp_path
     }
     serialized = "\n".join(event.metadata_json for event in events)
     assert license_data["license_key"] not in serialized
+
+
+def test_device_revocation_also_blocks_reactivation_not_only_renewal(tmp_path):
+    """⛔ Thu hoi thiet bi phai chan CA /activate.
+
+    Truoc 13/10/2026 chi `renew` doc `revoked_at`. Client van giu license key
+    sau khi bi thu hoi thiet bi, nen no goi lai /activate la co lease moi -
+    thu hoi chi lam khach cho toi dot gia han gan nhat roi tu khoi. Bai test
+    nay la thu duy nhat giu cho lo do khong quay lai, va la cap doi cua nhanh
+    `device_revoked` trong `supabase/migrations/20261013000100_license_rpc.sql`.
+    """
+    client, settings, _ = make_client(tmp_path)
+    license_data = create_license(client, settings)
+    key = Ed25519PrivateKey.generate()
+    device_id = device_id_for(key)
+
+    def activation_body():
+        return {
+            **device_request("ACTIVATE", key, device_id),
+            "license_key": license_data["license_key"],
+            "device_public_key_pem": public_pem(key),
+        }
+
+    assert client.post("/v1/activate", json=activation_body()).status_code == 200
+    revoked = client.post(
+        f"/v1/admin/devices/{device_id}/revoke",
+        headers={"Authorization": f"Bearer {settings.admin_token}"},
+        json={"reason": "may bi mat"},
+    )
+    assert revoked.status_code == 200
+
+    again = client.post("/v1/activate", json=activation_body())
+    assert again.status_code == 403, again.text
+    assert again.json()["detail"] == "Device activation was revoked."
+
+
+def test_renew_after_stays_inside_the_lease_window_near_expiry(tmp_path):
+    """⛔ `renew_after` khong duoc vuot qua `expires_at`.
+
+    Launcher tu choi phan hoi khi `renew_after >= expires_at`
+    (`lib.rs`: "Thoi han lease trong phan hoi khong nhat quan"). `renew_after`
+    duoc tinh la `issued_at + ttl//2` CO DINH, con `expires_at` bi ket o
+    `min(license.expires_at, now + ttl)` - nen trong khoang ttl/2 cuoi doi cua
+    mot license, hai so nay dao chieu va khach nhan mot thong bao "khong nhat
+    quan" thay vi "license het han". Voi ttl mac dinh 3600 thi do la 30 phut
+    cuoi cua moi license.
+    """
+    client, settings, _ = make_client(tmp_path)
+    response = client.post(
+        "/v1/admin/licenses",
+        headers={"Authorization": f"Bearer {settings.admin_token}"},
+        json={
+            "plan": "pro",
+            "features": ["upload.video"],
+            "max_accounts": 10,
+            "max_tabs": 2,
+            "max_devices": 1,
+            "channel": "stable",
+            # Ngan hon ttl/2 (mac dinh ttl = 3600).
+            "expires_at": int(time.time()) + 120,
+        },
+    )
+    assert response.status_code == 200, response.text
+    license_data = response.json()
+
+    key = Ed25519PrivateKey.generate()
+    device_id = device_id_for(key)
+    activation = client.post(
+        "/v1/activate",
+        json={
+            **device_request("ACTIVATE", key, device_id),
+            "license_key": license_data["license_key"],
+            "device_public_key_pem": public_pem(key),
+        },
+    )
+    assert activation.status_code == 200, activation.text
+    body = activation.json()
+    assert body["renew_after"] < body["expires_at"], (
+        "renew_after vuot qua expires_at nen launcher se tu choi lease nay: "
+        f"renew_after={body['renew_after']} expires_at={body['expires_at']}"
+    )

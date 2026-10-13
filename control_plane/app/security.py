@@ -237,6 +237,23 @@ def issue_lease(
     return signer.sign(claims), claims
 
 
+def renew_after_for(claims: LeaseClaims, ttl: int) -> int:
+    """Khi nao client nen xin lease moi. Luon NAM TRONG han cua lease.
+
+    ⛔ PHAI KET O `expires_at - 1`, va truoc 13/10/2026 thi khong. `renew_after`
+    duoc tinh `issued_at + ttl // 2` co dinh, con `expires_at` bi ket o
+    `min(license.expires_at, now + ttl)`. Trong khoang ttl/2 cuoi doi cua mot
+    license, hai so do dao chieu - va launcher tu choi phan hoi khi
+    `renew_after >= expires_at` (`lib.rs`: "Thoi han lease trong phan hoi khong
+    nhat quan"). Nghia la 30 phut cuoi cua moi license (voi ttl mac dinh 3600)
+    khach khong kich hoat duoc, va thong bao nhan duoc noi sai nguyen nhan.
+
+    Dung mot ham cho ca activate va renew de hai duong khong the lech nhau;
+    `issueLease` trong supabase/functions/_shared/service.ts la ban song doi.
+    """
+    return min(claims.issued_at + ttl // 2, claims.expires_at - 1)
+
+
 def require_admin(expected_token: str):
     async def dependency(authorization: str = Header(default="")) -> None:
         prefix = "Bearer "

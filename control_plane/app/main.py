@@ -50,6 +50,7 @@ from control_plane.app.security import (
     load_device_public_key,
     load_lease_signer,
     load_release_signer,
+    renew_after_for,
     require_admin,
     verify_device_proof,
     verify_download_grant,
@@ -495,6 +496,17 @@ def create_app(settings: ControlPlaneSettings | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=409, detail="Device identity is already bound differently."
             )
+        # ⛔ THU HOI THIET BI PHAI CHAN CA KICH HOAT, KHONG CHI GIA HAN. Truoc
+        # 13/10/2026 cho nay khong he doc `revoked_at` - chi `renew` moi doc -
+        # nen mot thiet bi da thu hoi goi lai /activate la duoc cap lease moi,
+        # va client thi van giu license key nen no goi duoc bat cu luc nao.
+        # Tuc "thu hoi thiet bi" chi lam khach cho them toi dot gia han gan
+        # nhat roi tu khoi. Phat hien khi viet ban Edge Function tren Supabase:
+        # phai tra loi "o day co kiem revoked khong" thi moi thay la khong.
+        if device is not None and device.revoked_at is not None:
+            raise HTTPException(
+                status_code=403, detail="Device activation was revoked."
+            )
         if device is None:
             active_devices = session.exec(
                 select(DeviceRecord).where(
@@ -531,7 +543,7 @@ def create_app(settings: ControlPlaneSettings | None = None) -> FastAPI:
         return LeaseResponse(
             lease=token,
             expires_at=claims.expires_at,
-            renew_after=claims.issued_at + settings.lease_ttl_seconds // 2,
+            renew_after=renew_after_for(claims, settings.lease_ttl_seconds),
         )
 
     @app.post(f"{settings.api_prefix}/lease/renew", response_model=LeaseResponse)
@@ -590,7 +602,7 @@ def create_app(settings: ControlPlaneSettings | None = None) -> FastAPI:
         return LeaseResponse(
             lease=token,
             expires_at=claims.expires_at,
-            renew_after=claims.issued_at + settings.lease_ttl_seconds // 2,
+            renew_after=renew_after_for(claims, settings.lease_ttl_seconds),
         )
 
     @app.post(
