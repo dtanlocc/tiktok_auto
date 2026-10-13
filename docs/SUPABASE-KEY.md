@@ -275,25 +275,96 @@ chứa mà **không phải ký lại manifest nào** là vì `download_url` tr�
 `artifacts` chứ không trỏ thẳng vào chỗ chứa — lớp gián tiếp đặt từ đầu, giờ nó
 trả công.
 
-Lần đầu: vào Cloudflare Dashboard → **R2** → tạo bucket `releases` (**private**,
-đừng bật Public Development URL), rồi **R2 → API tokens** → tạo token quyền
-**Object Read & Write** cho đúng bucket đó. Ghi vào
-`<operator>/secrets/r2-credentials.json`:
+#### Dựng R2 lần đầu, từng bước
+
+**Mức miễn phí** theo [tài liệu Cloudflare](https://developers.cloudflare.com/r2/pricing/):
+10 GB-tháng lưu, 1 triệu lượt ghi (Class A), 10 triệu lượt đọc (Class B),
+**egress không tính tiền**. Với một nhóm nhỏ thì không chạm tới.
+
+⛔ **Cloudflare có thể đòi thêm phương thức thanh toán để bật R2 lần đầu**, dù
+mức miễn phí là thật. Tài liệu chính chủ không nói gì về chuyện này; các hướng
+dẫn bên thứ ba thì nói có. Nếu không muốn đưa thẻ thì dùng đường **GitHub
+Release trên một repo private** — cũng miễn phí, asset tới 2 GB, và chỉ phải
+sửa function `artifacts`.
+
+**1. Bật R2 và lấy Account ID**
+
+- Vào <https://dash.cloudflare.com> → đăng nhập (hoặc đăng ký).
+- Thanh bên trái → **R2 Object Storage**.
+- Bấm nút bật R2 nếu nó hỏi (**Enable R2** / **Purchase R2 plan** — chọn gói
+  **Free**).
+- **Account ID** là 32 ký tự hex. Nó nằm ở cột phải trang R2, và cũng nằm
+  trong URL: `dash.cloudflare.com/<account_id>/r2/...`. Lấy từ URL là chắc nhất.
+
+**2. Tạo bucket**
+
+- **Create bucket**.
+- Tên: `releases` (đúng chữ này, hoặc đổi thì phải đổi cả `bucket` trong file
+  thông tin đăng nhập ở bước 4).
+- Location: **Automatic** (hoặc **Asia-Pacific** cho gần).
+- Storage class: **Standard**. ⛔ Không chọn *Infrequent Access* — mức miễn phí
+  **không** áp cho loại đó.
+- **Create bucket**.
+
+⛔ **Đừng bật Public Development URL.** Nó nằm trong tab **Settings** của
+bucket. Bật nó là bất kỳ ai biết đường dẫn đều tải được file backend — và lúc
+đó toàn bộ chuỗi vé tải, kiểm thiết bị, kiểm license trở thành trang trí.
+
+**3. Tạo API token**
+
+- Vẫn trong **R2** → **API** → **Manage API tokens** → **Create API token**
+  (hoặc **Create Account API token**).
+- Permission: **Object Read & Write**. ⛔ Không chọn *Admin Read & Write* —
+  token đó tạo/xoá được cả bucket, mà việc phát hành chỉ cần ghi object.
+- **Specify bucket(s)**: chọn đúng `releases`. Đừng để *Apply to all buckets*.
+- TTL: để mặc định.
+- **Create**.
+- Nó hiện ra **Access Key ID** và **Secret Access Key**. ⛔ **Secret chỉ hiện
+  một lần** — copy ngay. Mất thì tạo token mới, không xem lại được.
+
+**4. Ghi vào thư mục operator**
+
+Vào `<operator>/secrets/r2-credentials.json`:
 
 ```json
-{"account_id": "<32 ký tự hex>", "bucket": "releases",
- "access_key_id": "...", "secret_access_key": "..."}
+{
+  "account_id": "<32 ký tự hex ở bước 1>",
+  "bucket": "releases",
+  "access_key_id": "<ở bước 3>",
+  "secret_access_key": "<ở bước 3>"
+}
 ```
 
-Rồi kiểm:
+⛔ **File này nằm ngoài repo**, như mọi bí mật operator khác. Đừng copy vào cây
+git, đừng dán vào chat.
+
+**5. Kiểm trước khi phát hành**
 
 ```bash
 uv run python scripts/supabase_release_admin.py check-storage --operator-directory D:/tkauto-operator-dev
 ```
 
-Nó ký một GET cho một key chắc chắn không tồn tại — **404 là kết quả mong đợi**
-(thông tin đăng nhập đúng, bucket có thật); 403 nghĩa là sai khoá hoặc token
-thiếu quyền.
+Nó ký một GET cho một key **chắc chắn không tồn tại**, nên:
+
+| Nhận được | Nghĩa là |
+|---|---|
+| **404** | **Đúng rồi** — thông tin đăng nhập hợp lệ và bucket có thật |
+| 403 | Sai access key/secret, token thiếu quyền *Object Read & Write*, hoặc bucket thuộc account khác |
+| `NoSuchBucket` | Tên bucket sai, hoặc chưa tạo |
+| lỗi `account_id phải là 32 ký tự hex` | Dán nhầm Account ID (hay dán nhầm Zone ID) |
+
+**6. Đẩy thông tin R2 lên Edge Function**
+
+```bash
+uv run python scripts/supabase_make_function_env.py --operator-directory D:/tkauto-operator-dev
+```
+
+```bash
+tools/supabase-cli/node_modules/.bin/supabase secrets set --env-file D:/tkauto-operator-dev/supabase-functions.env
+```
+
+Script đọc **cùng một file** `r2-credentials.json` mà bước phát hành đọc, nên
+hai bên không thể trỏ vào hai bucket khác nhau.
 
 Rồi mỗi lần có bản mới:
 
