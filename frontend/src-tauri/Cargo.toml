@@ -40,4 +40,7 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
+# ⛔ `Win32_System_JobObjects` de giet CA CAY tien trinh backend. Nuitka
+# onefile tao hai tang (bootstrap -> server that), nen giet con truc tiep
+# khong giet duoc server - xem `backend_job` trong lib.rs.
+windows-sys = { version = "0.61", features = ["Win32_System_Threading", "Win32_System_JobObjects", "Win32_Foundation"] }

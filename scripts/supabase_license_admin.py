@@ -266,8 +266,22 @@ def cmd_revoke(args: argparse.Namespace) -> None:
     # ⛔ Thu hoi chi co hieu luc o LAN GIA HAN KE TIEP. Lease da phat van hop le
     # cho den khi het han, vi client kiem no offline bang chu ky. Voi TTL mac
     # dinh 3600 thi do la toi mot gio.
+    # ⛔ DO TRE THAT LA BAO NHIEU. `renew_license` goi /lease/renew va mot 403
+    # se lam `invalidate_local_entitlement` chay ngay - dung backend, xoa .exe,
+    # xoa lease. Giao dien goi renew moi 15 phut (SecureBootstrap.tsx) va mot
+    # lan nua luc mo app. Nen:
+    #   - app dang mo, co mang : <= 15 phut
+    #   - mo lai app           : ngay lap tuc
+    #   - may offline          : khong co 403 nao de nhan, nen phai doi lease
+    #                            het han (<= 1 gio) roi watchdog 60 giay doc ra.
+    # Truoc day cho nay chi noi "toi 1 gio", tuc noi qua do tre trong truong
+    # hop thuong gap nhat.
     print(f"Da thu hoi {args.license_id}.")
-    print("  Lease dang chay van hop le toi khi het han (toi 1 gio voi TTL mac dinh).")
+    print("  Co hieu luc o dot gia han ke tiep:")
+    print("    app dang mo, co mang : toi 15 phut")
+    print("    mo lai app           : ngay lap tuc")
+    print("    may offline          : khi lease het han (toi 1 gio) + 60 giay")
+    print("  Luc do backend bi dung va file .exe bi xoa khoi may khach.")
 
 
 def cmd_revoke_device(args: argparse.Namespace) -> None:

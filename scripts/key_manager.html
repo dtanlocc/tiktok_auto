@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quản lí key</title>
+<!--
+  ⛔ KHÔNG TẢI GÌ TỪ BÊN NGOÀI. Không font, không CDN, không script bên thứ ba.
+  Trang này mở ra trong lúc có mật khẩu database và pepper trong tiến trình phục
+  vụ nó; một thẻ <script src> trỏ ra Internet là mời người khác vào cùng origin
+  với thứ đó. Mọi thứ nằm trong file này.
+-->
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --line: #e3e6ea; --text: #15181c;
+    --muted: #6b727c; --accent: #1f6feb; --ok: #17803d; --warn: #9a6700;
+    --bad: #b42318; --chip: #eef1f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #171a1f; --line: #262b33; --text: #e6e8ec;
+      --muted: #9aa2ad; --accent: #4493f8; --ok: #3fb950; --warn: #d29922;
+      --bad: #f85149; --chip: #21262d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    padding: 18px 16px; border-bottom: 1px solid var(--line);
+    display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
+  }
+  h1 { font-size: 18px; margin: 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 16px; }
+  nav { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  nav button {
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+  nav button[aria-current="true"] { border-color: var(--accent); color: var(--accent); }
+  section { display: none; }
+  section[data-active] { display: block; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px; margin-bottom: 16px;
+    /* ⛔ Cuộn NGANG TRONG KHUNG, không để cả trang cuộn ngang. Bảng có 6-7 cột
+       nên ở cửa sổ hẹp nó tràn ra; không có dòng này thì toàn trang trượt và
+       thanh nav lẫn tiêu đề cũng trôi theo. */
+    overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 680px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font: 12px/1.4 Consolas, monospace; background: var(--chip); padding: 2px 5px; border-radius: 4px; }
+  .chip { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--chip); }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input, select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px;
+  }
+  button.primary {
+    background: var(--accent); color: #fff; border: 0; padding: 10px 18px;
+    border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+  button.small {
+    background: transparent; border: 1px solid var(--line); color: var(--text);
+    padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  button.small.danger { border-color: var(--bad); color: var(--bad); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .keybox {
+    border: 2px solid var(--ok); border-radius: 12px; padding: 16px;
+    margin-bottom: 16px; background: var(--panel);
+  }
+  .keybox code { font-size: 16px; user-select: all; word-break: break-all; }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 16px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.18);
+    display: none; max-width: 90vw;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Quản lí key</h1>
+  <span class="muted">chạy local trên máy operator — không ai ngoài máy này vào được</span>
+</header>
+
+<main>
+  <nav>
+    <button data-tab="licenses" aria-current="true">License</button>
+    <button data-tab="create">Phát key mới</button>
+    <button data-tab="devices">Thiết bị</button>
+    <button data-tab="releases">Bản phát hành</button>
+  </nav>
+
+  <section id="licenses" data-active>
+    <div class="panel">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <strong>License</strong>
+        <button class="small" onclick="loadAll()">Tải lại</button>
+      </div>
+      <table><thead><tr>
+        <th>Khách</th><th>Nhóm / quyền</th><th>Giới hạn</th>
+        <th class="num">Máy</th><th class="num">Còn lại</th><th>Trạng thái</th><th></th>
+      </tr></thead><tbody id="licenseRows"></tbody></table>
+    </div>
+  </section>
+
+  <section id="create">
+    <div id="keyReveal"></div>
+    <div class="panel">
+      <strong>Phát key mới</strong>
+      <p class="muted" style="margin:6px 0 14px">
+        Key thật chỉ hiện <b>một lần</b> ngay sau khi tạo — database chỉ giữ digest HMAC,
+        không có đường lấy lại. Nó cũng được ghi ra file trong thư mục operator.
+      </p>
+      <form id="createForm">
+        <div><label>Khách (ghi chú)</label><input name="customer_reference" placeholder="ban-A"></div>
+        <div><label>Gói</label><input name="plan" value="nhom"></div>
+        <div><label>Nhóm (group)</label><input name="group" placeholder="hn01"></div>
+        <div><label>Quyền (role)</label><input name="role" placeholder="member"></div>
+        <div><label>Số account</label><input name="max_accounts" type="number" value="200" min="1"></div>
+        <div><label>Số tab</label><input name="max_tabs" type="number" value="4" min="1"></div>
+        <div><label>Số máy</label><input name="max_devices" type="number" value="1" min="1"></div>
+        <div><label>Số ngày</label><input name="expires_days" type="number" value="30" min="1"></div>
+        <div><label>Kênh</label><select name="channel">
+          <option>stable</option><option>beta</option><option>internal</option>
+        </select></div>
+        <div style="grid-column:1/-1"><label>Tính năng (phẩy)</label>
+          <input name="features" value="accounts.manage,upload.video"></div>
+      </form>
+      <div style="margin-top:14px"><button class="primary" onclick="createKey()">Phát key</button></div>
+    </div>
+  </section>
+
+  <section id="devices">
+    <div class="panel">
+      <strong>Thiết bị đã kích hoạt</strong>
+      <table style="margin-top:10px"><thead><tr>
+        <th>device_id</th><th>License</th><th>Lần đầu</th><th>Thấy cuối</th><th>Trạng thái</th><th></th>
+      </tr></thead><tbody id="deviceRows"></tbody></table>
+    </div>
+  </section>
+
+  <section id="releases">
+    <div class="panel">
+      <strong>Bản phát hành</strong>
+      <p class="muted" style="margin:6px 0 10px">
+        Phát hành bản mới vẫn bằng dòng lệnh (<code>supabase_release_admin.py publish</code>),
+        vì nó ký manifest bằng khoá release trên máy này và cần đường dẫn file.
+      </p>
+      <table><thead><tr>
+        <th>Bản</th><th>Kênh</th><th class="num">MB</th><th>Ngày</th><th>Trạng thái</th><th></th>
+      </tr></thead><tbody id="releaseRows"></tbody></table>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const TOKEN = new URLSearchParams(location.search).get("t") || "";
+
+function toast(message, bad) {
+  const node = document.getElementById("toast");
+  node.textContent = message;
+  node.style.borderColor = bad ? "var(--bad)" : "var(--line)";
+  node.style.display = "block";
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { node.style.display = "none"; }, 5200);
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      "x-tkauto-token": TOKEN,
+      ...(options.body ? { "content-type": "application/json" } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  const text = await response.text();
+  let data = text;
+  try { data = JSON.parse(text); } catch {}
+  if (!response.ok) {
+    throw new Error((data && data.detail) || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+function licenseState(row) {
+  if (row.revoked) return '<span class="bad">đã thu hồi</span>';
+  if (row.days_left <= 0) return '<span class="bad">hết hạn</span>';
+  if (row.days_left <= 3) return '<span class="warn">sắp hết</span>';
+  return '<span class="ok">đang dùng</span>';
+}
+
+async function loadLicenses() {
+  const rows = await api("/api/licenses");
+  document.getElementById("licenseRows").innerHTML = rows.map((row) => `
+    <tr>
+      <td>${esc(row.customer_reference) || "—"}<div class="muted"><code>${esc(row.id)}</code></div></td>
+      <td>${row.group_feature ? `<span class="chip">${esc(row.group_feature)}</span>` : "—"}
+          ${row.role_feature ? ` <span class="chip">${esc(row.role_feature)}</span>` : ""}</td>
+      <td class="muted">${row.max_accounts} acc · ${row.max_tabs} tab</td>
+      <td class="num">${row.active_devices}/${row.max_devices}</td>
+      <td class="num">${row.revoked ? "—" : row.days_left + " ngày"}</td>
+      <td>${licenseState(row)}${row.revoked_reason ? `<div class="muted">${esc(row.revoked_reason)}</div>` : ""}</td>
+      <td>${row.revoked ? "" : `<button class="small danger" onclick="revokeLicense('${esc(row.id)}')">Thu hồi</button>`}</td>
+    </tr>`).join("") || `<tr><td colspan="7" class="muted">Chưa có license nào.</td></tr>`;
+}
+
+async function loadDevices() {
+  const rows = await api("/api/devices");
+  document.getElementById("deviceRows").innerHTML = rows.map((row) => `
+    <tr>
+      <td><code>${esc(row.id)}</code></td>
+      <td class="muted"><code>${esc(row.license_id)}</code></td>
+      <td class="muted">${esc(row.first_at)}</td>
+      <td class="muted">${esc(row.last_at)}</td>
+      <td>${row.revoked_at ? '<span class="bad">đã thu hồi</span>' : '<span class="ok">đang dùng</span>'}</td>
+      <td>${row.revoked_at ? "" : `<button class="small danger" onclick="revokeDevice('${esc(row.id)}')">Thu hồi</button>`}</td>
+    </tr>`).join("") || `<tr><td colspan="6" class="muted">Chưa có thiết bị nào kích hoạt.</td></tr>`;
+}
+
+async function loadReleases() {
+  const rows = await api("/api/releases");
+  document.getElementById("releaseRows").innerHTML = rows.map((row) => `
+    <tr>
+      <td><b>${esc(row.version)}</b> <span class="muted">${esc(row.component)}</span>
+          <div class="muted"><code>${esc(row.id)}</code></div></td>
+      <td class="muted">${esc(row.channel)}</td>
+      <td class="num">${row.size_mb}</td>
+      <td class="muted">${esc(row.published)}</td>
+      <td>${row.active ? '<span class="ok">đang phát</span>' : '<span class="muted">đã tắt</span>'}
+          ${row.mandatory ? ' <span class="chip">bắt buộc</span>' : ""}</td>
+      <td>${row.active ? `<button class="small" onclick="deactivate('${esc(row.id)}')">Ngừng phát</button>` : ""}</td>
+    </tr>`).join("") || `<tr><td colspan="6" class="muted">Chưa phát hành bản nào — bản licensed sẽ KHÔNG chạy được khi chưa có bản nào đang phát.</td></tr>`;
+}
+
+async function loadAll() {
+  try {
+    await Promise.all([loadLicenses(), loadDevices(), loadReleases()]);
+  } catch (error) { toast(error.message, true); }
+}
+
+async function createKey() {
+  const form = document.getElementById("createForm");
+  const data = Object.fromEntries(new FormData(form).entries());
+  const body = {
+    customer_reference: data.customer_reference.trim(),
+    plan: data.plan.trim() || "nhom",
+    group: data.group.trim(),
+    role: data.role.trim(),
+    features: data.features.split(",").map((s) => s.trim()).filter(Boolean),
+    max_accounts: Number(data.max_accounts),
+    max_tabs: Number(data.max_tabs),
+    max_devices: Number(data.max_devices),
+    channel: data.channel,
+    expires_days: Number(data.expires_days),
+  };
+  try {
+    const result = await api("/api/licenses", { method: "POST", body: JSON.stringify(body) });
+    const when = new Date(result.expires_at * 1000).toLocaleString("vi-VN");
+    document.getElementById("keyReveal").innerHTML = `
+      <div class="keybox">
+        <div><b>Key vừa phát — chỉ hiện một lần</b></div>
+        <p class="muted" style="margin:6px 0 10px">Hết hạn ${esc(when)} · đã ghi ra <code>${esc(result.saved_to)}</code></p>
+        <code id="newKey">${esc(result.license_key)}</code>
+        <div class="row" style="margin-top:12px">
+          <button class="small" onclick="copyKey()">Copy key</button>
+          <span class="muted">${esc(result.features.join(", "))}</span>
+        </div>
+      </div>`;
+    toast("Đã phát key.");
+    loadLicenses();
+  } catch (error) { toast(error.message, true); }
+}
+
+function copyKey() {
+  const text = document.getElementById("newKey").textContent;
+  navigator.clipboard.writeText(text).then(
+    () => toast("Đã copy key."),
+    () => toast("Không copy được — bôi đen rồi Ctrl+C.", true),
+  );
+}
+
+async function revokeLicense(id) {
+  const reason = prompt("Lý do thu hồi license này?");
+  if (reason === null) return;
+  try {
+    const result = await api(`/api/licenses/${encodeURIComponent(id)}/revoke`,
+      { method: "POST", body: JSON.stringify({ reason }) });
+    toast(result.note || "Đã thu hồi.");
+    loadAll();
+  } catch (error) { toast(error.message, true); }
+}
+
+async function revokeDevice(id) {
+  if (!confirm("Thu hồi thiết bị này? Ô máy sẽ được trả lại cho license.")) return;
+  try {
+    const result = await api(`/api/devices/${encodeURIComponent(id)}/revoke`,
+      { method: "POST", body: JSON.stringify({ reason: "thu hoi tu giao dien" }) });
+    toast(result.note || "Đã thu hồi thiết bị.");
+    loadAll();
+  } catch (error) { toast(error.message, true); }
+}
+
+async function deactivate(id) {
+  if (!confirm("Ngừng phát bản này? Máy chưa có backend sẽ không tải được gì nếu đây là bản duy nhất đang phát.")) return;
+  try {
+    await api(`/api/releases/${encodeURIComponent(id)}/deactivate`, { method: "POST" });
+    toast("Đã ngừng phát.");
+    loadReleases();
+  } catch (error) { toast(error.message, true); }
+}
+
+document.querySelectorAll("nav button").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach((other) =>
+      other.setAttribute("aria-current", String(other === button)));
+    document.querySelectorAll("section").forEach((section) =>
+      section.toggleAttribute("data-active", section.id === button.dataset.tab));
+  });
+});
+
+if (!TOKEN) {
+  toast("Thiếu token trong URL — mở lại bằng đúng đường mà script in ra.", true);
+} else {
+  loadAll();
+}
+</script>
+</body>
+</html>

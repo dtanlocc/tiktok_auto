@@ -41,6 +41,9 @@ struct BackendRuntime {
     child: Option<Child>,
     port: Option<u16>,
     session_secret: Option<Vec<u8>>,
+    /// Job object giữ CẢ CÂY tiến trình backend - xem `mod backend_job`.
+    #[cfg(windows)]
+    job: Option<backend_job::BackendJob>,
 }
 
 struct SecurityState {
@@ -484,13 +487,109 @@ async fn purge_backend_cache(app: &AppHandle) {
     }
 }
 
+/// Giết CẢ CÂY tiến trình backend, không chỉ tiến trình con trực tiếp.
+///
+/// ⛔ ĐÂY LÀ THỨ LÀM "THU HỒI KEY" CÓ THẬT. Đo ngày 13/10/2026: sau khi thu hồi
+/// license, `invalidate_local_entitlement` chạy đúng — nó xoá file lease và
+/// `backend-current.json` — nhưng **backend vẫn nghe trên cổng và phục vụ bình
+/// thường**, và `backend-*.exe` xoá không được vì đang bị khoá.
+///
+/// Hai nguyên nhân, cùng một gốc:
+///
+/// 1. **Nuitka onefile tạo HAI TẦNG tiến trình.** `backend.exe` là một bootstrap:
+///    nó giải nén rồi spawn một tiến trình CON mới chạy server thật. Đo được:
+///    `backend.exe` pid 27336 (con của launcher) và pid 1040 (con của 27336) —
+///    và **pid 1040 mới là cái nghe cổng**. `child.kill()` chỉ giết 27336.
+/// 2. **Launcher chết thì backend thành mồ côi.** Đóng cửa sổ, crash, hay bị
+///    kill đều để lại cả cây backend chạy tiếp vô thời hạn.
+///
+/// Job object giải quyết cả hai bằng một cơ chế: mọi tiến trình con sinh ra từ
+/// một thành viên của job cũng thuộc job, và `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`
+/// bảo Windows giết sạch job khi handle cuối cùng đóng — kể cả khi launcher
+/// chết đột ngột, vì lúc đó HĐH đóng handle hộ.
+#[cfg(windows)]
+mod backend_job {
+    use std::ffi::c_void;
+    use std::ptr;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    pub struct BackendJob(HANDLE);
+
+    // ⛔ HANDLE là con trỏ thô nên Rust không tự coi nó là Send. Một job handle
+    // của Windows dùng được từ bất kỳ luồng nào, và struct này chỉ được giữ
+    // trong `BackendRuntime` sau một Mutex.
+    unsafe impl Send for BackendJob {}
+    unsafe impl Sync for BackendJob {}
+
+    impl BackendJob {
+        pub fn create() -> Option<Self> {
+            let handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
+            if handle.is_null() {
+                return None;
+            }
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION =
+                unsafe { std::mem::zeroed() };
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let ok = unsafe {
+                SetInformationJobObject(
+                    handle,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                )
+            };
+            if ok == 0 {
+                unsafe { CloseHandle(handle) };
+                return None;
+            }
+            Some(Self(handle))
+        }
+
+        pub fn assign(&self, process: HANDLE) -> bool {
+            unsafe { AssignProcessToJobObject(self.0, process) != 0 }
+        }
+
+        pub fn terminate(&self) {
+            unsafe { TerminateJobObject(self.0, 1) };
+        }
+    }
+
+    impl Drop for BackendJob {
+        fn drop(&mut self) {
+            // Đóng handle cuối cùng = Windows giết sạch job (KILL_ON_JOB_CLOSE).
+            unsafe { CloseHandle(self.0) };
+        }
+    }
+}
+
 async fn stop_backend_runtime(backend: &Arc<Mutex<BackendRuntime>>) {
-    let child = {
+    let (child, job) = {
         let mut runtime = backend.lock().await;
         runtime.port = None;
         runtime.session_secret = None;
-        runtime.child.take()
+        #[cfg(windows)]
+        let job = runtime.job.take();
+        #[cfg(not(windows))]
+        let job: Option<()> = None;
+        (runtime.child.take(), job)
     };
+    // ⛔ GIẾT JOB TRƯỚC, rồi mới tới con trực tiếp. `child.kill()` một mình chỉ
+    // giết tầng bootstrap của Nuitka onefile; server thật là CHÁU và sống sót,
+    // vẫn nghe cổng, vẫn giữ khoá trên file .exe nên `purge_backend_cache` xoá
+    // không được. Đo được đúng như vậy sau một lần thu hồi key.
+    #[cfg(windows)]
+    if let Some(job) = job {
+        job.terminate();
+        drop(job);
+    }
+    #[cfg(not(windows))]
+    let _ = job;
     if let Some(mut child) = child {
         let _ = child.kill().await;
     }
@@ -1167,6 +1266,35 @@ async fn launch_backend(app: AppHandle, state: State<'_, SecurityState>) -> Resu
     let mut child = command
         .spawn()
         .map_err(|_| "Không khởi chạy được backend binary.".to_string())?;
+
+    // ⛔ GÁN VÀO JOB NGAY SAU SPAWN, trước khi gửi bootstrap. Backend chưa làm
+    // gì cho tới khi đọc xong stdin, nên khoảng trống ở đây là nhỏ nhất có thể
+    // mà không phải spawn ở trạng thái suspended. Mọi tiến trình con sinh ra
+    // SAU khi gán đều tự động thuộc job - gồm cả tiến trình server thật mà
+    // bootstrap của Nuitka onefile tạo ra.
+    //
+    // ⛔ KHÔNG CÓ JOB THÌ KHÔNG CHẾT ĐƯỢC. Nếu tạo job thất bại thì vẫn chạy
+    // tiếp, nhưng ghi lại: lúc đó thu hồi key sẽ không dừng được backend đang
+    // chạy, và đó là điều phải biết chứ không phải nuốt đi.
+    #[cfg(windows)]
+    let job = {
+        let created = backend_job::BackendJob::create();
+        match (&created, child.raw_handle()) {
+            (Some(job), Some(handle)) => {
+                if !job.assign(handle as _) {
+                    eprintln!(
+                        "[-] Không gán được backend vào job object; thu hồi key sẽ \
+                         không dừng được tiến trình đang chạy."
+                    );
+                }
+            }
+            _ => eprintln!(
+                "[-] Không tạo được job object cho backend; thu hồi key sẽ không \
+                 dừng được tiến trình đang chạy."
+            ),
+        }
+        created
+    };
     let database_url = format!(
         "sqlite:///{}",
         app_data_dir(&app)?
@@ -1217,9 +1345,20 @@ async fn launch_backend(app: AppHandle, state: State<'_, SecurityState>) -> Resu
     runtime.port = Some(port);
     runtime.session_secret = Some(secret.to_vec());
     runtime.child = Some(child);
+    #[cfg(windows)]
+    {
+        runtime.job = job;
+    }
     drop(runtime);
     if let Err(error) = wait_for_backend(&state.local_http, &state.backend).await {
         let mut failed_runtime = state.backend.lock().await;
+        // ⛔ Giết job trước, cùng lý do với `stop_backend_runtime`: một backend
+        // không lên healthy vẫn có thể đã spawn tiến trình cháu, và cháu đó sẽ
+        // giữ khoá trên file .exe mãi.
+        #[cfg(windows)]
+        if let Some(failed_job) = failed_runtime.job.take() {
+            failed_job.terminate();
+        }
         if let Some(mut failed_child) = failed_runtime.child.take() {
             let _ = failed_child.kill().await;
         }

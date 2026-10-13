@@ -192,10 +192,26 @@ uv run python scripts/supabase_license_admin.py revoke --operator-directory D:/t
 uv run python scripts/supabase_license_admin.py revoke-device --operator-directory D:/tkauto-operator-dev --device-id device_...
 ```
 
-⛔ **Thu hồi có hiệu lực ở lần gia hạn kế tiếp, không phải ngay.** Lease đã phát
-được client kiểm **offline** bằng chữ ký, nên nó hợp lệ tới khi hết hạn — tối đa
-một giờ với TTL mặc định. Muốn nhanh hơn thì hạ `TKAUTO_LEASE_TTL_SECONDS`
-(sàn 300 giây), và trả giá bằng số lần gọi gia hạn.
+⛔ **Thu hồi có hiệu lực ở lần gia hạn kế tiếp, không phải ngay** — và "kế
+tiếp" là bao lâu thì tuỳ tình huống. Đo ngày 13/10/2026 trên máy thật:
+
+| Tình huống | Backend dừng và `.exe` bị xoá sau |
+|---|---|
+| App đang mở, có mạng | **≤ 15 phút** (đợt gia hạn kế tiếp) |
+| Khách mở lại app | **ngay lập tức** |
+| Máy đang offline | khi lease hết hạn (**≤ 1 giờ**) + ≤ 60 giây |
+| Key hết hạn theo `--expires-days` | **≤ 60 giây** |
+
+Ba dòng đầu khác nhau vì **hai cơ chế khác nhau**. Một 403 ở `/lease/renew` làm
+`invalidate_local_entitlement` chạy **ngay** — dừng backend, xoá `.exe`, xoá
+lease; giao diện gọi gia hạn mỗi 15 phút (`SecureBootstrap.tsx:87`) và một lần
+nữa lúc mở app. Máy offline không nhận được 403 nào, nên chỉ còn đường lease tự
+hết hạn rồi watchdog 60 giây đọc ra. Đó là **cố ý**: mất mạng không được phép
+trông giống như bị thu hồi.
+
+Muốn nhanh hơn cho trường hợp offline thì hạ `TKAUTO_LEASE_TTL_SECONDS` (sàn
+300 giây), và trả giá bằng số lần gọi gia hạn — và bằng việc khách phải online
+thường xuyên hơn.
 
 ### Xem từ điện thoại
 
