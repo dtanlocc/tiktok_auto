@@ -193,6 +193,50 @@ def _assert_private(client, repo: str) -> None:
         )
 
 
+def _ensure_not_empty(client, repo: str) -> None:
+    """Mot repo chua co commit nao thi khong tao duoc release.
+
+    ⛔ GitHub tu choi `POST /releases` tren repo trong voi loi "Repository is
+    empty" - vi release phai gan vao mot tag, va khong co commit thi khong co
+    gi de gan. Mot repo vua tao xong luon o trang thai do, nen day khong phai
+    truong hop la: no la truong hop MAC DINH o lan phat hanh dau tien.
+    Tu tao mot commit dau thay vi bat nguoi dung di lam bang tay.
+    """
+    import base64
+
+    response = client.get(
+        f"https://api.github.com/repos/{repo}/commits", params={"per_page": 1}
+    )
+    if response.status_code == 200 and response.json():
+        return
+    if response.status_code not in (409, 404):
+        raise SystemExit(
+            f"Khong doc duoc commit cua {repo} ({response.status_code}): "
+            f"{response.text[:300]}"
+        )
+
+    print(f"  repo {repo} con trong -> tao commit dau")
+    body = (
+        "# tkauto-artifacts\n\n"
+        "Kho artifact cua TikTok Auto. Noi dung thuc nam o phan Releases;\n"
+        "cay nguon nay co y de trong.\n\n"
+        "File duoc phat hanh boi scripts/supabase_release_admin.py.\n"
+    )
+    response = client.put(
+        f"https://api.github.com/repos/{repo}/contents/README.md",
+        json={
+            "message": "chore: khoi tao kho artifact",
+            "content": base64.b64encode(body.encode("utf-8")).decode("ascii"),
+        },
+    )
+    if response.status_code not in (200, 201):
+        raise SystemExit(
+            f"Khong tao duoc commit dau cho {repo} ({response.status_code}): "
+            f"{response.text[:300]}\n"
+            "Token can quyen 'Contents: Read and write'."
+        )
+
+
 def _upload_asset(
     config: dict[str, str], tag: str, source: Path, asset_name: str
 ) -> str:
@@ -200,6 +244,7 @@ def _upload_asset(
     repo = config["repo"]
     with _github(config) as client:
         _assert_private(client, repo)
+        _ensure_not_empty(client, repo)
 
         response = client.get(
             f"https://api.github.com/repos/{repo}/releases/tags/{tag}"

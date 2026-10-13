@@ -25,7 +25,16 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ControlPlaneUrl,
 
-    [string]$Python = "D:\tiktok_auto\.venv\Scripts\python.exe"
+    [string]$Python = "D:\tiktok_auto\.venv\Scripts\python.exe",
+
+    # ⛔ DUNG KHI BACKEND DA DUOC PHAT HANH ROI. Mot lan build backend moi ra
+    # mot binary khac, tuc sha256 khac - va manifest DA KY cho ban cu se khong
+    # con khop file nao, nen moi may khach da tai ban cu se tu choi chay no.
+    # Khi chi can sua launcher (vi du ban va redirect ngay 13/10/2026) thi phai
+    # giu nguyen backend da publish. Backend o release\backend\<Version> van
+    # phai co san; script in sha256 cua no ra de doi chieu bang mat voi
+    # manifest da phat hanh.
+    [switch]$SkipBackend
 )
 
 $ErrorActionPreference = "Stop"
@@ -89,13 +98,23 @@ if (Test-Path -LiteralPath $packageRoot) {
     throw "Da ton tai: $packageRoot"
 }
 
-Step "Build backend co license (secure_entrypoint)"
-# Dung lai nguyen script that, khong viet lai: no da co buoc lam sach
-# credential trong extension va buoc audit artifact.
-& (Join-Path $repoRoot "scripts\build_backend_release.ps1") -Version $Version -Python $Python
 $backendExe = Join-Path $repoRoot ("release\backend\" + $Version + "\backend-" + $Version + ".exe")
-if (-not (Test-Path -LiteralPath $backendExe)) {
-    throw "Khong thay backend vua build: $backendExe"
+if ($SkipBackend) {
+    Step "Bo qua build backend (-SkipBackend); dung ban da co"
+    if (-not (Test-Path -LiteralPath $backendExe)) {
+        throw "Khong thay backend da co: $backendExe. Bo -SkipBackend de build no."
+    }
+    Write-Host ("  sha256: " + (Get-FileHash -LiteralPath $backendExe -Algorithm SHA256).Hash)
+    Write-Host "  phai khop manifest da phat hanh cho $Version"
+}
+else {
+    Step "Build backend co license (secure_entrypoint)"
+    # Dung lai nguyen script that, khong viet lai: no da co buoc lam sach
+    # credential trong extension va buoc audit artifact.
+    & (Join-Path $repoRoot "scripts\build_backend_release.ps1") -Version $Version -Python $Python
+    if (-not (Test-Path -LiteralPath $backendExe)) {
+        throw "Khong thay backend vua build: $backendExe"
+    }
 }
 
 Step "Build launcher desktop (co license, KHONG ky, KHONG updater)"
