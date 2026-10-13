@@ -447,3 +447,10 @@ verify_jwt = false
 # supabase/functions/releases/index.ts.
 [functions.releases]
 verify_jwt = false
+
+# Doi ve tai lay file backend. Ten `artifacts` va hinh duong dan
+# /artifacts/<id>/download bi RANG BUOC boi manifest da ky - doi ten la moi
+# manifest trong DB thanh vo dung. Xem dau file
+# supabase/functions/artifacts/index.ts.
+[functions.artifacts]
+verify_jwt = false

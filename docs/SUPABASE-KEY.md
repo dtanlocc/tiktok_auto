@@ -28,6 +28,9 @@ khớp cả ba endpoint với ba function tên `activate`, `lease`, `releases`.
 | Pepper | `<operator>/secrets/license-key-pepper` **và** secret Edge Function | Có |
 | Khoá ký **lease** | `<operator>/keys/lease-private.pem` **và** secret Edge Function | **Có** — xem mục 7 |
 | Khoá ký **release** | `<operator>/keys/release-private.pem` | **Không, tuyệt đối** |
+| Manifest bản phát hành **đã ký** | bảng `license.releases` | Có — chỉ token, không phải khoá |
+| Bí mật vé tải | `<operator>/secrets/download-grant-secret` **và** secret Edge Function | Có |
+| File backend `.exe` | bucket Storage **private** `releases` | Có |
 | Mật khẩu database | `<operator>/secrets/supabase-database-url` | — |
 
 ⛔ **Khoá release không bao giờ lên mây.** Chiếm được khoá lease chỉ là dùng lậu
@@ -104,8 +107,8 @@ Cả hai chạy ba file trong `supabase/migrations/`. Sau đó bảng nằm ở 
 uv run python scripts/supabase_make_function_env.py --operator-directory D:/tkauto-operator-dev
 ```
 
-Script đọc pepper, `kid` và khoá lease từ thư mục operator rồi ghi
-`<operator>/supabase-functions.env`. Nó không in giá trị nào ra màn hình, và
+Script đọc pepper, `kid`, khoá lease **và bí mật vé tải** từ thư mục operator
+rồi ghi `<operator>/supabase-functions.env`. Nó không in giá trị nào ra màn hình, và
 khoá riêng được ghi dạng **base64 một dòng** — `importLeasePrivateKey` gỡ đầu
 PEM và mọi khoảng trắng trước khi decode, nên một dòng thì không thể bị mất dấu
 dòng khi đi qua `secrets set`, dashboard, hay một lần copy-paste. Một PEM mất
@@ -130,13 +133,13 @@ có thông báo nào nói lý do.
 
 ---
 
-## 5. Deploy ba function
+## 5. Deploy bốn function
 
 ```bash
-tools/supabase-cli/node_modules/.bin/supabase functions deploy activate lease releases
+tools/supabase-cli/node_modules/.bin/supabase functions deploy activate lease releases artifacts
 ```
 
-`supabase/config.toml` đã đặt `verify_jwt = false` cho cả ba. Đó là **bắt buộc,
+`supabase/config.toml` đã đặt `verify_jwt = false` cho cả bốn. Đó là **bắt buộc,
 không phải lỗ hổng**: launcher không gửi header `Authorization` nào, nên để mặc
 định thì mọi request bị 401 trước khi vào function. Tắt nó không làm yếu gì, vì
 anon key vốn được nhúng vào app khách — một bí mật nằm trong file `.exe` gửi cho
@@ -231,33 +234,109 @@ nhất trong cả thiết kế.
 
 ---
 
-## 8. Những gì đường này **không** có
+## 8. Key hết hạn thì code biến mất — và tải lại khi có key
 
-⛔ **Không có auto-update, không có update bắt buộc.** Function `releases` luôn
-trả `update_available: false`, và đó là câu trả lời **đúng**: không có bản phát
-hành nào được ghi nhận trên Supabase, vì phát hành cần manifest ký bằng khoá
-release — khoá không được đưa lên mây. Hệ quả: gửi bản backend mới bằng tay, và
-cơ chế `mandatory` không có đường nào để bật.
+Đây là thứ launcher **đã** làm sẵn, không phải tính năng mới:
 
-Function đó vẫn **phải** tồn tại: `SecureBootstrap.tsx:62` gọi
-`await invoke('check_backend_update')` **không có try/catch**, ngay trước
-`launch_backend`. Thiếu nó thì endpoint trả 404, invoke ném lỗi, phase thành
-`error`, và **backend không bao giờ chạy** — dù kích hoạt đã thành công.
+- [lib.rs:488](../frontend/src-tauri/src/lib.rs:488) `spawn_entitlement_monitor`
+  chạy **mỗi 60 giây**: lease không còn hợp lệ → dừng backend → **xoá
+  `backend-*.exe` và `backend-current.json`** khỏi `%LOCALAPPDATA%`.
+- Server trả 403/426 (thu hồi / dưới sàn phiên bản) →
+  `invalidate_local_entitlement` → xoá thêm cả file lease.
+- [lib.rs:1055](../frontend/src-tauri/src/lib.rs:1055) `launch_backend` **không
+  có đường dự phòng**: không có `.exe` là không chạy.
+- Tải lại tự động: sau khi xoá, `current_version` thành `"0.0.0"` nên bản nào
+  cũng "mới hơn" → tải về, đối chiếu sha256 + kích thước với **manifest đã ký**
+  rồi mới chạy.
 
-⛔ **Không có endpoint admin trên Internet.** Tạo và thu hồi key đi thẳng vào
-Postgres bằng mật khẩu database. Một endpoint tạo key công khai là thứ nguy hiểm
-nhất có thể dựng.
+⛔ **Phải ship bản licensed, không phải bản friends.** Bản friends nhúng backend
+vào installer (`trusted_friends_backend`) và bỏ qua hẳn phần kiểm update — khách
+đã có code trong tay, không có gì để xoá. `build_licensed_unsigned_release.ps1`
+đặt `TKAUTO_FRIEND_BUILD = $null` nên nó **là** bản licensed.
 
-⛔ **Không có `/v1/artifacts/{id}/download`.** Đi cùng mục auto-update ở trên.
+⛔ **Và phải có một bản phát hành đang bật, nếu không bản licensed KHÔNG CHẠY
+NỔI LẦN ĐẦU.** `check_backend_update` là đường **duy nhất** lấy backend binary
+về. Nếu `releases/check` trả `update_available: false` khi máy chưa có backend
+thì `launch_backend` chết với *"Backend binary chưa được cài."* — không phải sau
+khi hết hạn, mà ngay lần chạy đầu. Kiểm bằng:
 
-Muốn đủ cả ba thì phải dùng control plane Python (đã có sẵn cả ba endpoint) sau
-một tunnel — `scripts/run_control_plane_dev.ps1` và
-`deploy/control-plane/`. Supabase vẫn dùng được làm database cho nó: đặt
-`TKAUTO_CONTROL_DATABASE_URL` thành connection string ở mục 2.
+```bash
+uv run python scripts/supabase_release_admin.py list --operator-directory D:/tkauto-operator-dev
+```
+
+### Phát hành một bản
+
+Lần đầu, tạo bucket **private**:
+
+```bash
+uv run python scripts/supabase_release_admin.py init-bucket --operator-directory D:/tkauto-operator-dev
+```
+
+Rồi mỗi lần có bản mới:
+
+```bash
+uv run python scripts/supabase_release_admin.py publish --operator-directory D:/tkauto-operator-dev --file release/backend/0.1.12/backend-0.1.12.exe --version 0.1.12 --minimum-launcher-version 0.1.0
+```
+
+Script kiểm đầu PE (`MZ`), tính sha256, **ký manifest ngay tại máy này** bằng
+`keys/release-private.pem`, tự xác thực lại bằng khoá công khai, tải file lên
+Storage, rồi ghi một dòng vào `license.releases`.
+
+⛔ **Khoá ký release không bao giờ rời máy.** Chỉ **chuỗi token đã ký** được lưu
+lên Supabase; Edge Function phát lại chuỗi đó chứ không ký gì. Chiếm được
+Supabase thì cấp được lease (dùng lậu app) nhưng **không ký được manifest** —
+tức không gửi được bản cài độc cho khách. Đây là ranh giới quan trọng nhất trong
+cả hệ thống.
+
+⛔ **`download_url` trong manifest phải cố định**, vì nó nằm trong phần đã ký.
+Nên nó trỏ vào function `artifacts`
+(`/functions/v1/artifacts/<artifact_id>/download`), **không** trỏ thẳng vào
+signed URL của Storage — signed URL hết hạn sau vài phút và sẽ làm manifest đã ký
+thành vô dụng. Đổi tên function `artifacts` là mọi manifest trong DB chết theo.
+
+Ngừng phát một bản (file vẫn còn trong Storage, máy đang tải dở không bị đứt):
+
+```bash
+uv run python scripts/supabase_release_admin.py deactivate --operator-directory D:/tkauto-operator-dev --artifact-id artifact_...
+```
+
+### Nói thẳng về chống dịch ngược
+
+Cơ chế này **nâng rào**, không phải khoá cửa:
+
+- Ai đã từng có key hợp lệ thì **copy được** `backend-*.exe` trong lúc còn hạn.
+  Xoá bản local không lấy lại được bản họ đã giữ.
+- Nuitka biên dịch khó đọc hơn `.py` nhiều, nhưng **không phải hộp đen** —
+  chuỗi, cấu trúc module, tên hàm vẫn moi ra được.
+
+Giá trị thật: **người hết hạn không dùng tiếp được**, và **người chưa từng trả
+tiền không có code**. Không phải: "người đã từng trả tiền không đọc được code".
+Muốn mức sau thì phần lõi phải chạy trên server chứ không gửi xuống máy khách —
+việc khác hẳn.
+
+Và một hệ quả cố ý phải biết trước: khách **offline quá 1 giờ** (TTL lease mặc
+định) sẽ bị xoá `.exe` và cần mạng để tải lại.
 
 ---
 
-## 9. Đã kiểm được gì, và chưa kiểm được gì
+## 9. Những gì đường này vẫn **không** có
+
+⛔ **Không có endpoint admin trên Internet.** Tạo/thu hồi key và phát hành đi
+thẳng vào Postgres bằng mật khẩu database. Một endpoint tạo key công khai là thứ
+nguy hiểm nhất có thể dựng.
+
+⛔ **`mandatory` được lưu nhưng chưa dùng tới.** Cột có, manifest ký kèm, nhưng
+chưa có đường nào buộc khách cập nhật ngay.
+
+⛔ **Egress Storage có hạn.** Free tier 5 GB/tháng — với bản 41 MB là khoảng
+120 lần tải mỗi tháng. Mỗi vòng hết-hạn-rồi-gia-hạn là một lần tải lại, nên con
+số đó chia cho số máy. Vượt thì chuyển sang Cloudflare R2 (không tính egress);
+`download_url` trỏ vào function `artifacts` chứ không trỏ thẳng vào Storage nên
+đổi chỗ chứa không cần ký lại manifest nào.
+
+---
+
+## 10. Đã kiểm được gì, và chưa kiểm được gì
 
 **Đã kiểm, tự động, chạy cùng `pytest`:**
 
@@ -328,6 +407,25 @@ Và 14 phép từ **góc nhìn kẻ tấn công có anon key** (tức bất kỳ
 ⛔ **404 chứ không phải 403, và đó là điều muốn.** Bảng nằm ở schema `license`
 nên PostgREST không có đường nào tới nó — không phải "bị từ chối" mà là "không
 tồn tại". Một 403 còn tiết lộ là có bảng tên đó.
+
+Và **14 phép cho cả chuỗi phát hành**, với một bản backend thật 41,4 MB đã
+publish lên Storage:
+
+| Đo gì | Kết quả |
+|---|---|
+| `releases/check` khi máy chưa có backend | `update_available: true` |
+| Manifest verify bằng khoá **release** thật | đúng kid |
+| `download_url` trỏ vào function `artifacts` | đúng |
+| `GET download_url` kèm vé | **302** sang Storage signed URL |
+| Tải thật từ Storage | 200, **41,4 MB** |
+| Kích thước và **sha256** so với manifest đã ký | **khớp** |
+| Dùng lại cùng một vé | **401** (vé một lần) |
+| Đã là bản mới nhất | `update_available: false` |
+
+⛔ **Phép sha256 là phép quan trọng nhất ở đây.** Nó chứng minh file đi từ máy
+operator, qua Storage, về tới client mà không đổi một byte — và client kiểm nó
+bằng **chữ ký của khoá release**, khoá không nằm trên Supabase. Đó là thứ ngăn
+một Supabase bị chiếm gửi bản cài độc cho khách.
 
 **Còn lại một phép phải đo bằng tay:** build bản desktop với
 `TKAUTO_CONTROL_PLANE_URL` ở trên rồi kích hoạt một key → app phải lên tới

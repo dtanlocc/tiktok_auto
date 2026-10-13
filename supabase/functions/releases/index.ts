@@ -1,24 +1,25 @@
 // POST /functions/v1/releases/check
 //
-// ⛔ FUNCTION NAY LA DIEU KIEN DE APP CHAY DUOC, khong phai mot tinh nang
-// thêm. `SecureBootstrap.tsx:62` goi `await invoke('check_backend_update')`
-// KHONG co try/catch, ngay truoc `launch_backend`. Thieu function nay thi
-// duong `{base}/v1/releases/check` tra 404, invoke nem loi, phase thanh
-// 'error', va backend khong bao gio chay - ke ca khi kich hoat da thanh cong.
+// ⛔ FUNCTION NAY LA DIEU KIEN DE APP CHAY, khong phai mot tinh nang them.
+// `check_backend_update` (lib.rs:833) la duong DUY NHAT launcher lay backend
+// binary ve. Neu no tra `update_available: false` khi may chua co backend thi
+// `launch_backend` goi `load_backend_pointer` roi chet voi "Backend binary
+// chua duoc cai." - NGAY LAN CHAY DAU, khong phai sau khi het han. Ban dau
+// function nay luon tra false va do la mot ban licensed khong bao gio khoi
+// dong duoc.
 //
-// ⛔ VA NO LUON TRA `update_available: false`. Do la cau tra loi DUNG chu
-// khong phai mot stub: khong co ban phat hanh nao duoc ghi nhan tren Supabase,
-// vi phat hanh can manifest da ky bang KHOA RELEASE - khoa do khong duoc dua
-// len may cua ben thu ba. Hai hau qua (khong auto-update, khong update bat
-// buoc) duoc ghi o dau file
-// supabase/migrations/20261013000200_release_check.sql va trong
-// docs/SUPABASE-KEY.md.
+// ⛔ CHON BAN PHAT HANH O DAY, KHONG O SQL. Postgres tra ve danh sach ung
+// vien; viec so sanh semver (ke ca prerelease) dung `compareSemver` trong
+// lease.ts - ham DA duoc do tung truong hop voi `_compare_semver` cua Python
+// bang `test_supabase_lease_parity.py`. Viet ban so sanh thu ba trong plpgsql
+// la tu them mot cho de lech.
 //
-// ⛔ VAN KIEM BANG CHUNG THIET BI DU CHANG CAP GI. Mot endpoint tra loi cho
-// bat ky ai la mot endpoint khong ai kiem, va no se duoc sao chep lam mau cho
-// endpoint sau. Ngoai ra ban Python kiem day du o cho nay, nen bo di la hai
-// ban cu xu khac nhau o mot thu de thay.
+// ⛔ VA KHOA KY RELEASE KHONG O DAY. `signed_manifest` duoc ky o may operator
+// roi luu vao DB; function nay phat lai chuoi do. Chiem duoc Supabase khong
+// ky duoc mot manifest moi, tuc khong gui duoc ban cai doc cho khach.
 
+import { compareSemver } from "../_shared/lease.ts";
+import { issueDownloadGrant } from "../_shared/grant.ts";
 import {
   canonicalDeviceProof,
   importDevicePublicKey,
@@ -33,6 +34,7 @@ import {
   loadConfig,
   parseStrict,
   readJsonBody,
+  requireDelivery,
   verdictResponse,
 } from "../_shared/service.ts";
 
@@ -46,6 +48,13 @@ interface ReleaseCheckPayload {
   component: string;
   current_version: string;
   target: string;
+}
+
+interface Candidate {
+  id: string;
+  version: string;
+  minimum_launcher_version: string;
+  signed_manifest: string;
 }
 
 const SPEC = {
@@ -67,6 +76,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   let config;
   try {
     config = await loadConfig();
+    requireDelivery(config);
   } catch (error) {
     console.error("cau hinh sai:", error);
     return jsonResponse(500, { detail: "Server is misconfigured." });
@@ -82,10 +92,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return jsonResponse(422, { detail: `Invalid request: ${(error as Error).message}` });
   }
 
-  // ⛔ KHONG kiem phien ban client o day. Ban Python cung khong
+  // ⛔ KHONG kiem san phien ban client o day. Ban Python cung khong
   // (`check_release` khong goi `enforce_client_version`), va do la dung: mot
-  // client qua cu phai duoc BIET la co ban moi, chu khong phai bi tu choi o
-  // dung cho no hoi ve ban moi.
+  // client qua cu phai duoc BIET la co ban moi, chu khong bi tu choi o dung
+  // cho no hoi ve ban moi.
 
   let lookup: Record<string, unknown>;
   try {
@@ -109,8 +119,6 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return jsonResponse(500, { detail: "Stored device key is unreadable." });
   }
 
-  // Giong ban Python: action mang ca component, phien ban hien tai va target,
-  // nen mot bang chung ky cho lan kiem nay khong dung lai cho lan khac.
   const action =
     `RELEASE:${payload.component}:${payload.current_version}:${payload.target}`;
   const proofOk = await verifyDeviceProof(
@@ -148,6 +156,8 @@ Deno.serve(async (request: Request): Promise<Response> => {
       p_rate_bucket: clientBucket(request, "device"),
       p_rate_limit: config.deviceRateLimitPerMinute,
       p_rate_window: 60,
+      p_component: payload.component,
+      p_target: payload.target,
     });
   } catch (error) {
     console.error("tkauto_release_check that bai:", error);
@@ -157,9 +167,41 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return verdictResponse(String(verdict.code ?? ""));
   }
 
-  // ⛔ BA TRUONG CON LAI DUOC BO HAN, khong gui null. `ReleaseCheckResponse`
-  // trong lib.rs khai chung la `Option<_>` nen thieu la None; con gui null thi
-  // cung None - nhung bo han thi phan hoi noi dung mot dieu: khong co gi de
-  // tai. Launcher thoat ngay o `if !response.update_available`.
-  return jsonResponse(200, { update_available: false });
+  // Giong ban Python: chi nhung ban MOI HON ban dang cai, va chi nhung ban ma
+  // launcher hien tai du moi de chay.
+  const candidates = (verdict.releases as Candidate[] | undefined) ?? [];
+  let best: Candidate | null = null;
+  try {
+    for (const item of candidates) {
+      if (compareSemver(item.version, payload.current_version) <= 0) continue;
+      if (compareSemver(payload.app_version, item.minimum_launcher_version) < 0) {
+        continue;
+      }
+      if (best === null || compareSemver(item.version, best.version) > 0) {
+        best = item;
+      }
+    }
+  } catch (error) {
+    // Mot phien ban sai dinh dang trong DB la loi cua minh, khong phai cua
+    // khach - nhung van phai tra loi, va 422 la ma ban Python dung.
+    console.error("phien ban trong so dang ky khong hop le:", error);
+    return jsonResponse(422, { detail: "Release version is invalid." });
+  }
+
+  if (best === null) {
+    return jsonResponse(200, { update_available: false });
+  }
+
+  const grant = await issueDownloadGrant(config.downloadGrantSecret, {
+    artifactId: best.id,
+    deviceId: payload.device_id,
+    ttlSeconds: config.downloadGrantTtlSeconds,
+  });
+
+  return jsonResponse(200, {
+    update_available: true,
+    signed_manifest: best.signed_manifest,
+    download_grant: grant.token,
+    grant_expires_at: grant.expiresAt,
+  });
 });

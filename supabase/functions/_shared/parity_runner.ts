@@ -10,6 +10,7 @@
 
 import { canonicalJson, compareSemver, importLeasePrivateKey, signLease } from "./lease.ts";
 import { effectiveFeatures } from "./service.ts";
+import { grantDigest, issueDownloadGrant, verifyDownloadGrant } from "./grant.ts";
 import {
   canonicalDeviceProof,
   digestLicenseKey,
@@ -24,7 +25,10 @@ type Op =
   | { op: "device_id"; public_key_pem: string }
   | { op: "device_proof"; action: string; device_id: string; issued_at: number; nonce: string; app_version: string }
   | { op: "compare_semver"; left: string; right: string }
-  | { op: "effective_features"; features: string[] };
+  | { op: "effective_features"; features: string[] }
+  | { op: "issue_grant"; secret: string; artifact_id: string; device_id: string; ttl: number }
+  | { op: "verify_grant"; secret: string; token: string; artifact_id: string }
+  | { op: "grant_digest"; token: string };
 
 function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -81,6 +85,23 @@ for (const item of operations) {
     }
     case "effective_features": {
       results.push(effectiveFeatures(item.features));
+      break;
+    }
+    case "issue_grant": {
+      const out = await issueDownloadGrant(item.secret, {
+        artifactId: item.artifact_id,
+        deviceId: item.device_id,
+        ttlSeconds: item.ttl,
+      });
+      results.push({ token: out.token, expires_at: out.expiresAt });
+      break;
+    }
+    case "verify_grant": {
+      results.push(await verifyDownloadGrant(item.secret, item.token, item.artifact_id));
+      break;
+    }
+    case "grant_digest": {
+      results.push(await grantDigest(item.token));
       break;
     }
     default: {

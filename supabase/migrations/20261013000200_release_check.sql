@@ -8,19 +8,18 @@
 -- Kich hoat thanh cong van khong dung duoc app. Do la ly do file nay ton tai,
 -- khong phai de cho du tinh nang.
 --
--- ⛔ VA KHONG CO BANG `releases` NAO O DAY, CO Y. Phat hanh ban moi can hai
--- thu nua: manifest DA KY bang khoa release, va ve tai mot lan cho artifact.
--- Khoa release KHONG duoc dua len Supabase - chiem duoc khoa lease chi la dung
--- lau app mien phi, con chiem duoc khoa release la GUI DUOC BAN CAI DOC cho
--- khach. Nen endpoint nay luon tra `update_available: false`, va do la cau tra
--- loi DUNG: khong co ban phat hanh nao duoc ghi nhan o day.
+-- ⛔ BAN DAU FILE NAY LUON TRA `update_available: false`, VA DO LA MOT LO.
+-- Ly do luc do: phat hanh can manifest ky bang khoa release, va khoa do khong
+-- duoc dua len Supabase. Nhung `check_backend_update` la duong DUY NHAT
+-- launcher lay backend binary ve, nen "khong co ban nao" cung co nghia la
+-- KHONG TAI DUOC GI - va mot ban licensed tro vao Supabase khong khoi dong
+-- duoc ngay lan chay dau, chu khong phai chi mat auto-update.
 --
--- Hai hau qua, noi ro de khong ai tuong la da co:
---   1. KHONG CO AUTO-UPDATE tren duong Supabase. Gui ban backend moi bang tay.
---   2. KHONG CO UPDATE BAT BUOC. Co che `mandatory` khong co duong nao de bat.
--- Muon co ca hai thi phai dung control plane Python (co `/v1/releases/check`
--- va `/v1/artifacts/{id}/download` day du) sau mot tunnel - xem
--- docs/SUPABASE-KEY.md.
+-- 20261013000300_release_registry.sql sua han dieu do, va giai duoc mau thuan
+-- tuong nhu khong the: manifest duoc KY O MAY OPERATOR
+-- (`scripts/supabase_release_admin.py`) roi chi CHUOI DA KY duoc luu vao DB.
+-- Khoa release van khong roi may. File nay giu lai de lich su migration lien
+-- mach; ham o day bi `drop` o cuoi file 000300 vi ban moi co 9 tham so.
 
 create or replace function public.tkauto_release_check(
     p_device_id    text,

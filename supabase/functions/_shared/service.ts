@@ -20,6 +20,10 @@ export interface Config {
   deviceRateLimitPerMinute: number;
   supabaseUrl: string;
   serviceRoleKey: string;
+  /** ⛔ Rong khi chua bat phan phat ban phat hanh - xem `requireDelivery`. */
+  downloadGrantSecret: string;
+  downloadGrantTtlSeconds: number;
+  releaseBucket: string;
 }
 
 function required(name: string): string {
@@ -41,6 +45,13 @@ function optionalInt(name: string, fallback: number): number {
     throw new Error(`${name} phai la so nguyen`);
   }
   return parsed;
+}
+
+function optionalText(name: string): string {
+  const raw = (globalThis as { Deno?: { env: { get(k: string): string | undefined } } })
+    .Deno?.env.get(name) ?? (globalThis as { process?: { env: Record<string, string | undefined> } })
+      .process?.env[name];
+  return (raw ?? "").trim();
 }
 
 let cached: Config | null = null;
@@ -96,8 +107,37 @@ export async function loadConfig(): Promise<Config> {
     ),
     supabaseUrl: required("SUPABASE_URL").replace(/\/+$/, ""),
     serviceRoleKey: required("SUPABASE_SERVICE_ROLE_KEY"),
+    // ⛔ TUY CHON, va `requireDelivery` ben duoi la cho bat buoc no. Hai
+    // function activate/lease khong can bi mat nay, nen doi no o `loadConfig`
+    // se lam ca he thong khong chay duoc chi vi chua bat phan phat ban phat
+    // hanh. Nhung `releases`/`artifacts` thi KHONG duoc chay voi mot bi mat
+    // rong - mot HMAC khoa rong la mot ve ai cung ky duoc.
+    downloadGrantSecret: optionalText("TKAUTO_DOWNLOAD_GRANT_SECRET"),
+    downloadGrantTtlSeconds: optionalInt("TKAUTO_DOWNLOAD_GRANT_TTL_SECONDS", 300),
+    releaseBucket: optionalText("TKAUTO_RELEASE_BUCKET") || "releases",
   };
+  if (
+    cached.downloadGrantTtlSeconds < 60 ||
+    cached.downloadGrantTtlSeconds > 900
+  ) {
+    throw new Error("TKAUTO_DOWNLOAD_GRANT_TTL_SECONDS phai trong [60, 900]");
+  }
   return cached;
+}
+
+/**
+ * Doi bi mat ve tai, cho hai function phat hanh.
+ *
+ * ⛔ TU CHOI KHOA NGAN, khong chi khoa rong. Mot HMAC voi khoa 8 ky tu la mot
+ * ve do duoc; va giong ban Python (`validate_runtime` doi >= 32 ky tu), sai
+ * cau hinh phai lam function chet chu khong phai chay yeu hon.
+ */
+export function requireDelivery(config: Config): void {
+  if (config.downloadGrantSecret.length < 32) {
+    throw new Error(
+      "TKAUTO_DOWNLOAD_GRANT_SECRET phai dai it nhat 32 ky tu de bat phan phat ban phat hanh",
+    );
+  }
 }
 
 /**

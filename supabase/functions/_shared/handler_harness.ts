@@ -19,7 +19,7 @@
 // device_id, xac thuc chu ky, dung digest, va ky lease.
 
 interface Job {
-  fn: "activate" | "lease" | "releases";
+  fn: "activate" | "lease" | "releases" | "artifacts";
   env: Record<string, string>;
   request: {
     url: string;
@@ -29,6 +29,11 @@ interface Job {
   };
   /** Phan xet tra ve cho tung ten RPC, theo thu tu goi. */
   rpc: Record<string, unknown[]>;
+  /**
+   * Phan hoi cho lenh ky signed URL cua Storage.
+   * Bo trong = chua dat (harness tra 500); `null` = gia lap Storage su co.
+   */
+  storage?: { signedURL: string } | null;
 }
 
 function readStdin(): Promise<string> {
@@ -44,6 +49,7 @@ const job: Job = JSON.parse(await readStdin());
 
 let handler: ((request: Request) => Promise<Response>) | null = null;
 const rpcCalls: { name: string; args: unknown }[] = [];
+const storageCalls: { path: string; body: unknown }[] = [];
 const pending: Record<string, unknown[]> = {};
 for (const [name, list] of Object.entries(job.rpc ?? {})) {
   pending[name] = [...list];
@@ -63,6 +69,28 @@ for (const [name, list] of Object.entries(job.rpc ?? {})) {
   init?: RequestInit,
 ): Promise<Response> => {
   const url = typeof input === "string" ? input : input.toString();
+
+  // ⛔ CHAN LOI GOI STORAGE API. Function `artifacts` ky signed URL qua
+  // `/storage/v1/object/sign/...`; khong chan thi bai test di ra Internet
+  // that va phu thuoc mot bucket that.
+  const storage = /\/storage\/v1\/object\/sign\/(.+)$/.exec(url);
+  if (storage) {
+    storageCalls.push({ path: storage[1], body: init?.body ? JSON.parse(String(init.body)) : null });
+    if (job.storage === undefined) {
+      return new Response(JSON.stringify({ message: "harness khong co phan xet storage" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (job.storage === null) {
+      return new Response("storage loi", { status: 503 });
+    }
+    return new Response(JSON.stringify(job.storage), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const match = /\/rest\/v1\/rpc\/([A-Za-z0-9_]+)$/.exec(url);
   if (!match) throw new Error(`harness khong biet URL nay: ${url}`);
   const name = match[1];
@@ -87,6 +115,7 @@ const modules = {
   activate: "../activate/index.ts",
   lease: "../lease/index.ts",
   releases: "../releases/index.ts",
+  artifacts: "../artifacts/index.ts",
 };
 await import(new URL(modules[job.fn], import.meta.url).href);
 
@@ -100,6 +129,9 @@ const request = new Request(job.request.url, {
   body: job.request.body === undefined ? undefined : JSON.stringify(job.request.body),
 });
 
+// ⛔ KHONG de fetch cua handler di ra Internet that. Function `artifacts` goi
+// Storage API de ky signed URL; neu khong chan thi bai test lai phu thuoc
+// mang va vao mot bucket that.
 const response = await (handler as (request: Request) => Promise<Response>)(request);
 const text = await response.text();
 let parsed: unknown = text;
@@ -115,5 +147,6 @@ process.stdout.write(
     headers: Object.fromEntries(response.headers.entries()),
     body: parsed,
     rpc_calls: rpcCalls,
+    storage_calls: storageCalls,
   }),
 );

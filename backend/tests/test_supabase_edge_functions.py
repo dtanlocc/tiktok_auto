@@ -37,6 +37,7 @@ _HARNESS = _REPO_ROOT / "supabase" / "functions" / "_shared" / "handler_harness.
 _LEASE_SEED = bytes(range(64, 96))
 _KEY_ID = "lease-dev-2026-01"
 _PEPPER = "p" * 48
+_GRANT_SECRET = "g" * 48
 _BASE = "https://example.supabase.co/functions/v1"
 
 
@@ -87,6 +88,10 @@ def _env(**overrides: str) -> dict[str, str]:
         "TKAUTO_MINIMUM_BACKEND_VERSION": "0.1.0",
         "SUPABASE_URL": "https://example.supabase.co",
         "SUPABASE_SERVICE_ROLE_KEY": "service-role-key-for-the-test",
+        # ⛔ `releases` va `artifacts` goi `requireDelivery`, nen thieu bi mat
+        # nay la ca hai tra 500. `activate`/`lease` thi khong can no.
+        "TKAUTO_DOWNLOAD_GRANT_SECRET": _GRANT_SECRET,
+        "TKAUTO_RELEASE_BUCKET": "releases",
     }
     base.update(overrides)
     return base
@@ -738,3 +743,292 @@ def test_every_function_directory_holds_an_index_file():
         if not item.is_dir() or item.name.startswith("_"):
             continue
         assert (item / "index.ts").is_file(), f"{item.name} khong co index.ts"
+
+
+# =============================================================================
+# Phan phat ban phat hanh: releases tra manifest + ve, artifacts doi ve lay file
+# =============================================================================
+
+def _candidate(version: str, *, min_launcher: str = "0.1.0", artifact_id: str | None = None) -> dict:
+    flat = version.replace(".", "").replace("-", "")
+    return {
+        "id": artifact_id or f"artifact_{flat}",
+        "version": version,
+        "minimum_launcher_version": min_launcher,
+        # Chuoi gia: bai test khong kiem noi dung manifest (no duoc ky o may
+        # operator bang ReleaseManifestSigner, co test rieng), chi kiem rang
+        # function phat lai DUNG chuoi do.
+        "signed_manifest": f"manifest-da-ky-cho-{version}",
+    }
+
+
+def _release_job(device: Device, candidates: list[dict], *, current="0.0.0",
+                 app_version="0.1.11", env_overrides: dict | None = None) -> dict:
+    issued_at = int(time.time())
+    nonce = secrets.token_urlsafe(24)
+    action = f"RELEASE:backend:{current}:windows-x86_64"
+    canonical = (
+        f"TKAUTO-{action}-v1\n{device.device_id}\n{issued_at}\n{nonce}\n{app_version}"
+    ).encode()
+    return {
+        "fn": "releases",
+        "env": _env(**(env_overrides or {})),
+        "request": {
+            "url": f"{_BASE}/releases/check",
+            "body": {
+                "device_id": device.device_id,
+                "issued_at": issued_at,
+                "nonce": nonce,
+                "signature": _b64url(device.key.sign(canonical)),
+                "app_version": app_version,
+                "license_id": "lic_0123456789abcdef",
+                "component": "backend",
+                "current_version": current,
+                "target": "windows-x86_64",
+            },
+        },
+        "rpc": {
+            "tkauto_renew_device": [{"ok": True, "public_key_pem": device.public_pem}],
+            "tkauto_release_check": [{"ok": True, "releases": candidates}],
+        },
+    }
+
+
+def test_a_newer_release_comes_back_with_a_manifest_and_a_usable_grant():
+    """⛔ Khong co duong nay thi ban licensed khong bao gio khoi dong duoc.
+
+    `check_backend_update` la duong DUY NHAT launcher lay backend binary
+    (lib.rs:833). Truoc 13/10/2026 function nay luon tra
+    `update_available: false`, nen `launch_backend` chet voi "Backend binary
+    chua duoc cai." ngay lan chay dau - khong phai sau khi het han.
+    """
+    from control_plane.app.security import verify_download_grant
+
+    device = Device()
+    result = _run(_release_job(device, [_candidate("0.1.12")]))
+    assert result["status"] == 200, result
+    body = result["body"]
+    assert body["update_available"] is True
+    assert body["signed_manifest"] == "manifest-da-ky-cho-0.1.12"
+
+    # Ve phai dung duoc o ban Python, va phai rang buoc dung thiet bi.
+    claims = verify_download_grant(
+        _GRANT_SECRET, body["download_grant"], "artifact_0112"
+    )
+    assert claims["device_id"] == device.device_id
+    assert claims["expires_at"] == body["grant_expires_at"]
+    assert body["grant_expires_at"] > int(time.time())
+
+
+def test_the_highest_version_wins_and_a_release_beats_its_own_prerelease():
+    device = Device()
+    result = _run(
+        _release_job(
+            device,
+            [
+                _candidate("0.1.12"),
+                _candidate("0.2.0"),
+                _candidate("0.2.0-rc.1"),
+                _candidate("0.1.13"),
+            ],
+        )
+    )
+    assert result["status"] == 200, result
+    assert result["body"]["signed_manifest"] == "manifest-da-ky-cho-0.2.0"
+
+
+def test_a_release_not_newer_than_the_installed_one_is_not_offered():
+    device = Device()
+    result = _run(_release_job(device, [_candidate("0.1.11")], current="0.1.11"))
+    assert result["status"] == 200, result
+    assert result["body"] == {"update_available": False}
+
+
+def test_a_release_that_needs_a_newer_launcher_is_skipped():
+    """Giong ban Python: `app_version >= minimum_launcher_version` moi duoc."""
+    device = Device()
+    result = _run(
+        _release_job(
+            device,
+            [_candidate("0.2.0", min_launcher="9.0.0"), _candidate("0.1.12")],
+            app_version="0.1.11",
+        )
+    )
+    assert result["status"] == 200, result
+    assert result["body"]["signed_manifest"] == "manifest-da-ky-cho-0.1.12"
+
+
+def test_no_candidate_at_all_is_a_clean_no_update():
+    device = Device()
+    result = _run(_release_job(device, []))
+    assert result["status"] == 200, result
+    assert result["body"] == {"update_available": False}
+
+
+def test_a_malformed_version_in_the_registry_is_reported_not_crashed():
+    device = Device()
+    bad = _candidate("0.1.12")
+    bad["version"] = "khong-phai-semver"
+    result = _run(_release_job(device, [bad]))
+    assert result["status"] == 422, result
+    assert result["body"]["detail"] == "Release version is invalid."
+
+
+def test_release_delivery_refuses_to_run_without_a_usable_grant_secret():
+    """⛔ Mot HMAC voi khoa rong la mot ve ai cung ky duoc."""
+    device = Device()
+    for value in ("", "ngan-qua"):
+        result = _run(
+            _release_job(device, [_candidate("0.1.12")],
+                         env_overrides={"TKAUTO_DOWNLOAD_GRANT_SECRET": value})
+        )
+        assert result["status"] == 500, (value, result)
+        assert result["body"]["detail"] == "Server is misconfigured."
+        assert result["rpc_calls"] == []
+
+
+_SIGNED_OBJECT = {"ok": True, "storage_object": "backend-0.1.12.exe",
+                  "sha256": "0" * 64, "size_bytes": 41_000_000}
+
+
+def _artifact_job(artifact_id: str, token: str, *, rpc: dict,
+                  storage="mac-dinh", path: str | None = None,
+                  method: str = "GET") -> dict:
+    url = (f"{_BASE}/artifacts/{artifact_id}/download" if path is None
+           else f"https://example.supabase.co/functions/v1{path}")
+    job = {
+        "fn": "artifacts",
+        "env": _env(),
+        "request": {
+            "url": url,
+            "method": method,
+            "headers": {"authorization": f"Bearer {token}"},
+        },
+        "rpc": rpc,
+    }
+    job["storage"] = (
+        {"signedURL": "/object/sign/releases/backend-0.1.12.exe?token=abc"}
+        if storage == "mac-dinh" else storage
+    )
+    return job
+
+
+def _grant(device: Device, artifact_id: str, ttl: int = 300) -> str:
+    from control_plane.app.security import issue_download_grant
+
+    token, _ = issue_download_grant(
+        _GRANT_SECRET, artifact_id=artifact_id, device_id=device.device_id,
+        ttl_seconds=ttl,
+    )
+    return token
+
+
+def test_a_valid_grant_redirects_to_a_short_lived_storage_url():
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(
+        _artifact_job("artifact_0112", token,
+                      rpc={"tkauto_claim_download": [_SIGNED_OBJECT]})
+    )
+    assert result["status"] == 302, result
+    assert result["headers"]["location"].startswith(
+        "https://example.supabase.co/storage/v1/object/sign/releases/"
+    )
+    assert result["headers"]["cache-control"] == "no-store"
+    # Phai ky dung object ma DB chi ra, khong phai artifact_id.
+    assert result["storage_calls"] == [
+        {"path": "releases/backend-0.1.12.exe", "body": {"expiresIn": 300}}
+    ]
+    # Dau ve gui len DB phai la sha256 cua chinh ve.
+    assert result["rpc_calls"][0]["args"]["p_grant_digest"] == hashlib.sha256(
+        token.encode()
+    ).hexdigest()
+
+
+def test_a_grant_for_a_different_artifact_is_refused():
+    """⛔ Khong co phep kiem nay thi mot ve hop le tai duoc MOI file."""
+    device = Device()
+    token = _grant(device, "artifact_khac")
+    result = _run(_artifact_job("artifact_0112", token, rpc={}))
+    assert result["status"] == 401, result
+    assert result["rpc_calls"] == [], "Ve sai artifact van goi vao DB"
+
+
+@pytest.mark.parametrize(
+    ("token", "why"),
+    [("", "khong co ve"), ("rac", "ve rac"), ("a.b.c", "ba phan")],
+)
+def test_a_missing_or_malformed_grant_is_refused_before_the_database(token, why):
+    result = _run(_artifact_job("artifact_0112", token, rpc={}))
+    assert result["status"] == 401, (why, result)
+    assert result["rpc_calls"] == []
+
+
+def test_an_expired_grant_is_refused():
+    device = Device()
+    token = _grant(device, "artifact_0112", ttl=-10)
+    result = _run(_artifact_job("artifact_0112", token, rpc={}))
+    assert result["status"] == 401, result
+    assert result["rpc_calls"] == []
+
+
+def test_a_grant_already_used_cannot_be_used_again():
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(
+        _artifact_job("artifact_0112", token,
+                      rpc={"tkauto_claim_download": [{"ok": False, "code": "grant_already_used"}]})
+    )
+    assert result["status"] == 401, result
+    # Khong noi ro la "da dung" hay "khong ton tai".
+    assert result["body"]["detail"] == "Download authorization is invalid."
+    assert result["storage_calls"] == []
+
+
+def test_a_revoked_device_cannot_download_even_with_a_fresh_grant():
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(
+        _artifact_job("artifact_0112", token,
+                      rpc={"tkauto_claim_download": [{"ok": False, "code": "device_invalid"}]})
+    )
+    assert result["status"] == 403, result
+    assert result["storage_calls"] == []
+
+
+def test_a_storage_outage_is_reported_as_unavailable_not_as_a_refusal():
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(
+        _artifact_job("artifact_0112", token,
+                      rpc={"tkauto_claim_download": [_SIGNED_OBJECT]},
+                      storage=None)
+    )
+    assert result["status"] == 503, result
+    assert result["body"]["detail"] == "Artifact storage is unavailable."
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/artifacts",
+        "/artifacts/download",
+        "/artifacts/artifact_0112",
+        "/artifacts/artifact_0112/khac",
+        "/artifacts/a/b/download",
+    ],
+)
+def test_only_the_exact_download_path_is_answered(path):
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(_artifact_job("artifact_0112", token, rpc={}, path=path))
+    assert result["status"] in (401, 404), (path, result)
+    assert result["rpc_calls"] == []
+    assert result["storage_calls"] == []
+
+
+def test_a_post_to_the_artifact_endpoint_is_refused():
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(_artifact_job("artifact_0112", token, rpc={}, method="POST"))
+    assert result["status"] == 405, result
