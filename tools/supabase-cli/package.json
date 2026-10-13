@@ -1,0 +1,11 @@
+{
+  "name": "tkauto-supabase-cli",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Chi de ghim ban Supabase CLI. Khong phai mot package cua du an.",
+  "//1": "Supabase KHONG ho tro `npm i -g supabase` (bao loi 'Installing Supabase CLI as a global module is not supported'). Cach chinh chu tren Windows la dev dependency, nen no nam o day thay vi global - va nam trong mot thu muc rieng de khong lan vao package.json cua frontend.",
+  "//2": "Ghim chinh xac, khong dung dau ^. CLI nay doi migration va cau hinh project; mot ban minor tu nhay co the doi hanh vi `functions deploy` giua hai may.",
+  "devDependencies": {
+    "supabase": "2.120.0"
+  }
+}

@@ -70,3 +70,8 @@ old_3/
 # .gitmodules, nen may nao clone ve cung nhan mot thu muc trong va
 # `git submodule update --init --recursive` bao "No url found".
 tools/invisible-playwright-mcp/
+
+# Supabase CLI duoc ghim trong tools/supabase-cli/package.json; node_modules
+# cua no la 60+ MB binary tai ve theo may, khong theo repo.
+tools/supabase-cli/node_modules/
+tools/supabase-cli/package-lock.json
