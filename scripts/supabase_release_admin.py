@@ -1,12 +1,22 @@
-"""Phat hanh mot ban backend: ky manifest O MAY NAY, tai file len Cloudflare
-R2, ghi mot dong vao so dang ky tren Supabase.
+"""Phat hanh mot ban backend: ky manifest O MAY NAY, tai file len mot GitHub
+Release trong repo PRIVATE, ghi mot dong vao so dang ky tren Supabase.
 
-⛔ FILE NAM TREN R2, KHONG PHAI Supabase Storage. Do ngay 13/10/2026: Free plan
-cua Supabase chan upload o 50 MB va khong nang duoc tu dashboard, trong khi
-backend 0.1.12 la 50,7 MiB - vuot dung 0,7 MiB. R2 cho 10 GB luu, khong tinh
-egress, mot PUT toi 5 GB. Doi duoc cho chua ma khong phai ky lai manifest nao
-la vi `download_url` tro vao function `artifacts` chu khong tro thang vao cho
-chua - mot lop gian tiep dat them ngay tu dau, va gio no tra cong.
+⛔ BA CHO CHUA DA THU, theo dung thu tu bi loai:
+  1. Supabase Storage - Free plan chan upload o 50 MB va KHONG nang duoc tu
+     dashboard; backend 0.1.12 la 50,7 MiB, vuot dung 0,7 MiB.
+  2. Cloudflare R2 - mien phi 10 GB va khong tinh egress, nhung DOI THEM
+     PHUONG THUC THANH TOAN de bat lan dau.
+  3. GitHub Release tren repo private - asset toi 2 GB, khong the, va tai
+     khoan GitHub thi da co.
+
+Doi duoc cho chua BA LAN ma khong phai ky lai mot manifest nao la vi
+`download_url` tro vao function `artifacts` chu khong tro thang vao cho chua -
+mot lop gian tiep dat tu dau, va no da tra cong ba lan.
+
+⛔ REPO PHAI LA PRIVATE, va script nay TU CHOI chay neu khong. Asset cua
+release tren repo public tai duoc khong can xac thuc gi, va luc do ca chuoi ve
+tai + kiem thiet bi + kiem license thanh trang tri. Repo `tiktok_auto` hien la
+PUBLIC nen artifact KHONG duoc nam o do - phai la mot repo rieng.
 
 ⛔ KHOA KY RELEASE KHONG BAO GIO ROI MAY NAY, va do la ca y nghia cua cach lam
 nay. Manifest duoc ky tai day bang `<operator>/keys/release-private.pem`, roi
@@ -25,7 +35,7 @@ theo.
 
 Dung:
 
-  # Lan dau: kiem thong tin R2 (bucket phai tu tao trong Cloudflare Dashboard)
+  # Lan dau: kiem token va repo (repo private phai tu tao tren GitHub)
   uv run python scripts/supabase_release_admin.py check-storage \\
       --operator-directory D:/tkauto-operator-dev
 
@@ -60,12 +70,9 @@ from app.security.release import (  # noqa: E402
 )
 from control_plane.app.models import new_id  # noqa: E402
 
-import r2_sigv4  # noqa: E402
-
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DATABASE_URL_FILE = "secrets/supabase-database-url"
-_R2_FILE = "secrets/r2-credentials.json"
-_DEFAULT_BUCKET = "releases"
+_GITHUB_FILE = "secrets/github-artifacts.json"
 
 
 def _read(path: Path, *, minimum: int = 1) -> str:
@@ -123,118 +130,153 @@ def _release_signer(operator: Path) -> ReleaseManifestSigner:
     return ReleaseManifestSigner.from_pem(key_id, pem)
 
 
-def _r2_config(operator: Path) -> dict[str, str]:
-    """Doc thong tin R2 tu thu muc operator.
-
-    ⛔ VI SAO R2 CHU KHONG PHAI Supabase Storage. Do ngay 13/10/2026: Free plan
-    cua Supabase chan upload o 50 MB va KHONG nang duoc tu dashboard, trong khi
-    backend 0.1.12 la 50,7 MiB - vuot dung 0,7 MiB. R2 cho 10 GB luu, khong
-    tinh egress, mot PUT toi 5 GB. Doi duoc cho chua ma khong phai ky lai
-    manifest nao la vi `download_url` tro vao function `artifacts`.
-    """
-    path = operator / _R2_FILE
+def _github_config(operator: Path) -> dict[str, str]:
+    """Doc repo + token tu thu muc operator."""
+    path = operator / _GITHUB_FILE
     if not path.is_file():
         raise SystemExit(
-            f"Thieu {_R2_FILE} trong {operator}.\n"
-            "Tao file JSON voi bon truong, lay o Cloudflare Dashboard -> R2:\n"
-            '  {"account_id": "<32 hex>", "bucket": "releases",\n'
-            '   "access_key_id": "...", "secret_access_key": "..."}\n'
-            "Token can quyen 'Object Read & Write' cho dung bucket do."
+            f"Thieu {_GITHUB_FILE} trong {operator}.\n"
+            "Tao mot repo PRIVATE moi chi de chua artifact, roi tao mot\n"
+            "fine-grained PAT chi co quyen doc/ghi Contents cua dung repo do.\n"
+            'Ghi file JSON: {"repo": "owner/ten-repo", "token": "github_pat_..."}'
         )
     data = json.loads(path.read_text(encoding="utf-8"))
-    missing = [
-        name
-        for name in ("account_id", "bucket", "access_key_id", "secret_access_key")
-        if not str(data.get(name, "")).strip()
-    ]
+    missing = [name for name in ("repo", "token") if not str(data.get(name, "")).strip()]
     if missing:
-        raise SystemExit(f"{_R2_FILE} thieu truong: {', '.join(missing)}")
-    account = str(data["account_id"]).strip()
-    if len(account) != 32 or any(c not in "0123456789abcdef" for c in account.lower()):
-        raise SystemExit(
-            "account_id phai la 32 ky tu hex (Cloudflare Dashboard -> R2 -> "
-            f"Account ID); dang co {account!r}."
-        )
-    return {name: str(data[name]).strip() for name in data if isinstance(data[name], str)} | {
-        "account_id": account
-    }
+        raise SystemExit(f"{_GITHUB_FILE} thieu truong: {', '.join(missing)}")
+    repo = str(data["repo"]).strip()
+    if repo.count("/") != 1 or not all(repo.split("/")):
+        raise SystemExit(f"repo phai dang owner/ten-repo; dang co {repo!r}.")
+    return {"repo": repo, "token": str(data["token"]).strip()}
 
 
-def _r2_put(config: dict[str, str], key: str, source: Path, payload_sha256: str) -> None:
-    """Day file len R2 bang mot PUT da ky SigV4."""
-    import time
-
+def _github(config: dict[str, str]):
     import httpx
 
-    size = source.stat().st_size
-    url, headers = r2_sigv4.signed_put_headers(
-        account_id=config["account_id"],
-        bucket=config["bucket"],
-        key=key,
-        access_key_id=config["access_key_id"],
-        secret_access_key=config["secret_access_key"],
-        payload_sha256=payload_sha256,
-        content_length=size,
-        content_type="application/octet-stream",
-        amz_date=time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()),
+    return httpx.Client(
+        timeout=600,
+        headers={
+            "accept": "application/vnd.github+json",
+            "authorization": f"Bearer {config['token']}",
+            "x-github-api-version": "2022-11-28",
+            # GitHub tu choi request khong co User-Agent.
+            "user-agent": "tkauto-release-admin",
+        },
+        follow_redirects=True,
     )
-    # ⛔ DOC CA FILE VAO BO NHO, co y. SigV4 cho PUT ky sha256 THAT cua than
-    # request, nen than khong the duoc tinh dan trong luc gui; va 51 MB trong
-    # RAM tren may phat trien la khong dang ke. Doi lai, R2 tu choi mot than bi
-    # doi tren duong di - mot phep kiem mien phi truoc khi launcher doi chieu
-    # sha256 voi manifest da ky.
-    body = source.read_bytes()
-    with httpx.Client(timeout=600) as client:
-        response = client.put(url, headers=headers, content=body)
-    if response.status_code not in (200, 201):
+
+
+def _assert_private(client, repo: str) -> None:
+    """⛔ TU CHOI MOT REPO PUBLIC. Day la phep kiem quan trong nhat trong file.
+
+    Asset cua release tren repo public tai duoc khong can xac thuc gi; dat
+    artifact o do la bo het phan kiem quyen ma van tuong la con.
+    """
+    response = client.get(f"https://api.github.com/repos/{repo}")
+    if response.status_code == 404:
         raise SystemExit(
-            f"R2 tu choi upload (HTTP {response.status_code}): "
-            f"{response.text[:400]}"
+            f"Khong thay repo {repo}. Voi repo private, GitHub tra 404 ca khi "
+            "repo co that nhung token khong co quyen doc no - nen kiem lai ca "
+            "ten repo lan quyen cua token."
         )
+    if response.status_code != 200:
+        raise SystemExit(
+            f"GitHub tra ve {response.status_code} khi doc repo: "
+            f"{response.text[:300]}"
+        )
+    if not response.json().get("private", False):
+        raise SystemExit(
+            f"Repo {repo} dang PUBLIC. Asset cua release tren repo public tai "
+            "duoc khong can xac thuc gi, nen toan bo phan kiem ve tai/thiet "
+            "bi/license tro thanh trang tri. Doi repo thanh private, hoac dung "
+            "mot repo khac."
+        )
+
+
+def _upload_asset(
+    config: dict[str, str], tag: str, source: Path, asset_name: str
+) -> str:
+    """Tao release (neu chua co) roi tai asset len. Tra ve asset id."""
+    repo = config["repo"]
+    with _github(config) as client:
+        _assert_private(client, repo)
+
+        response = client.get(
+            f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+        )
+        if response.status_code == 200:
+            release = response.json()
+        else:
+            response = client.post(
+                f"https://api.github.com/repos/{repo}/releases",
+                json={
+                    "tag_name": tag,
+                    "name": tag,
+                    "draft": False,
+                    "prerelease": False,
+                    "body": "Artifact do scripts/supabase_release_admin.py tai len.",
+                },
+            )
+            if response.status_code not in (200, 201):
+                raise SystemExit(
+                    f"Khong tao duoc release {tag}: {response.status_code} "
+                    f"{response.text[:300]}"
+                )
+            release = response.json()
+
+        # ⛔ MOT TEN ASSET CHI TON TAI MOT LAN TRONG MOT RELEASE. GitHub tra
+        # 422 neu trung, va luc do thong bao khong noi ro la trung - nen kiem
+        # truoc va noi thang.
+        for existing in release.get("assets", []):
+            if existing.get("name") == asset_name:
+                raise SystemExit(
+                    f"Release {tag} da co asset ten {asset_name} (id "
+                    f"{existing.get('id')}). Xoa no tren GitHub roi chay lai, "
+                    "hoac phat hanh voi so phien ban khac."
+                )
+
+        # ⛔ DOC CA FILE VAO BO NHO, co y: 51 MB tren may phat trien la khong
+        # dang ke, va `httpx` can biet do dai de dat Content-Length.
+        body = source.read_bytes()
+        response = client.post(
+            f"https://uploads.github.com/repos/{repo}/releases/"
+            f"{release['id']}/assets",
+            params={"name": asset_name},
+            content=body,
+            headers={"content-type": "application/octet-stream"},
+        )
+        if response.status_code not in (200, 201):
+            raise SystemExit(
+                f"GitHub tu choi upload (HTTP {response.status_code}): "
+                f"{response.text[:400]}"
+            )
+        asset_id = response.json().get("id")
+        if not isinstance(asset_id, int):
+            raise SystemExit(f"GitHub khong tra ve asset id: {response.text[:300]}")
+        return str(asset_id)
 
 
 def cmd_check_storage(args: argparse.Namespace) -> None:
-    """Kiem thong tin R2 truoc khi phat hanh lan dau.
-
-    ⛔ KHONG TAO BUCKET HO. Tao bucket R2 can Cloudflare API voi mot token
-    quyen rong hon han quyen can de day file; giu token o muc "Object Read &
-    Write" cho DUNG mot bucket thi an toan hon, va doi lay viec phai tu bam
-    "Create bucket" mot lan trong dashboard.
-    """
-    import time
-
-    import httpx
-
-    config = _r2_config(args.operator_directory)
-    bucket = config["bucket"]
-    # Ky mot GET cho mot key chac chan khong ton tai: 404 nghia la thong tin
-    # dang nhap DUNG va bucket co that; 403 nghia la sai khoa hoac sai quyen.
-    url = r2_sigv4.presign_get(
-        account_id=config["account_id"],
-        bucket=bucket,
-        key="__kiem-thong-tin-dang-nhap__",
-        access_key_id=config["access_key_id"],
-        secret_access_key=config["secret_access_key"],
-        expires_seconds=60,
-        amz_date=time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()),
-    )
-    with httpx.Client(timeout=60) as client:
-        response = client.get(url)
-    if response.status_code == 404:
-        print(f"R2 OK: bucket '{bucket}' co that va thong tin dang nhap dung.")
-        print("  (404 la ket qua mong doi: key kiem thu khong ton tai.)")
-        return
-    if response.status_code == 403:
-        raise SystemExit(
-            "R2 tra ve 403. Thuong la: sai access key/secret, token khong co "
-            f"quyen 'Object Read & Write', hoac bucket '{bucket}' thuoc account "
-            "khac. Kiem lai trong Cloudflare Dashboard -> R2 -> API tokens."
+    """Kiem token va repo truoc khi phat hanh lan dau."""
+    config = _github_config(args.operator_directory)
+    with _github(config) as client:
+        _assert_private(client, config["repo"])
+        response = client.get(
+            f"https://api.github.com/repos/{config['repo']}/releases",
+            params={"per_page": 5},
         )
-    if response.status_code in (301, 404) or "NoSuchBucket" in response.text:
-        raise SystemExit(f"Khong thay bucket '{bucket}' trong account nay.")
-    raise SystemExit(
-        f"R2 tra ve HTTP {response.status_code}: {response.text[:400]}"
-    )
+    if response.status_code != 200:
+        raise SystemExit(
+            f"Token doc duoc repo nhung khong liet ke duoc release "
+            f"({response.status_code}). Token can quyen Contents: Read and "
+            f"write. {response.text[:200]}"
+        )
+    releases = response.json()
+    print(f"GitHub OK: {config['repo']} la repo PRIVATE va token doc/ghi duoc.")
+    print(f"  release dang co: {len(releases)}")
+    for item in releases:
+        assets = ", ".join(a["name"] for a in item.get("assets", [])) or "(khong co)"
+        print(f"    {item['tag_name']}: {assets}")
 
 
 def cmd_publish(args: argparse.Namespace) -> None:
@@ -301,9 +343,19 @@ def cmd_publish(args: argparse.Namespace) -> None:
     if envelope.manifest.artifact_id != artifact_id:
         raise SystemExit("Manifest tu kiem lai khong khop artifact_id.")
 
-    r2 = _r2_config(operator)
-    print(f"Tai len R2: {r2['bucket']}/{storage_object} ({size_bytes / 1048576:.1f} MiB)")
-    _r2_put(r2, storage_object, source, sha256)
+    github = _github_config(operator)
+    tag = f"{args.component}-{args.version}"
+    print(
+        f"Tai len GitHub: {github['repo']} release {tag}, asset "
+        f"{storage_object} ({size_bytes / 1048576:.1f} MiB)"
+    )
+    # ⛔ `storage_object` GIU ASSET ID, khong giu ten file. Day la mot dinh vi
+    # doi theo cho chua: voi Supabase Storage no la duong dan trong bucket, voi
+    # R2 cung vay, con voi GitHub thi ten file KHONG du de tai - phai co asset
+    # id. Cot do duoc coi la mot dinh vi khong trong suot, va chi function
+    # `artifacts` biet cach doc no.
+    asset_name = storage_object
+    storage_object = _upload_asset(github, tag, source, asset_name)
 
     with _connect(operator) as connection:
         with connection.cursor() as cursor:
@@ -338,6 +390,7 @@ def cmd_publish(args: argparse.Namespace) -> None:
     print(f"  version     : {args.version} ({args.channel}, {args.target})")
     print(f"  sha256      : {sha256}")
     print(f"  kich thuoc  : {size_bytes / 1024 / 1024:.1f} MB")
+    print(f"  asset id    : {storage_object}")
     print(f"  download_url: {download_url}")
 
 
@@ -396,14 +449,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--operator-directory", type=Path, default=argparse.SUPPRESS)
-    common.add_argument("--bucket", default=argparse.SUPPRESS)
     parser.add_argument("--operator-directory", type=Path, default=None)
-    parser.add_argument("--bucket", default=_DEFAULT_BUCKET)
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser(
         "check-storage", parents=[common],
-        help="Kiem thong tin dang nhap R2 va bucket",
+        help="Kiem token va repo private tren GitHub",
     )
 
     publish = sub.add_parser("publish", parents=[common], help="Phat hanh mot ban")
@@ -429,8 +480,6 @@ def main() -> None:
         raise SystemExit(
             "Thieu --operator-directory. Dat o truoc hay sau subcommand deu duoc."
         )
-    if not hasattr(args, "bucket") or args.bucket is None:
-        args.bucket = _DEFAULT_BUCKET
     args.operator_directory = args.operator_directory.expanduser().resolve()
     if not args.operator_directory.is_dir():
         raise SystemExit(f"Khong thay thu muc operator: {args.operator_directory}")

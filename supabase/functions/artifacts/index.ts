@@ -15,14 +15,13 @@
 // Function nay la lop co dinh o giua: kiem ve, roi ky mot URL ngan han NGAY
 // LUC DO va chuyen huong sang do.
 //
-// ⛔ VA CHINH LOP DO CUU DUOC MOT LAN DOI CHO CHUA. Ban dau file nam tren
-// Supabase Storage; Free plan chan upload o 50 MB va backend 0.1.12 la 50,7
-// MiB - vuot dung 0,7 MiB va khong nang duoc tren plan mien phi. Chuyen sang
-// Cloudflare R2 (10 GB, khong tinh egress, PUT toi 5 GB) chi phai sua function
-// nay; KHONG phai ky lai mot manifest nao.
+// ⛔ VA CHINH LOP DO CUU DUOC BA LAN DOI CHO CHUA. Supabase Storage bi loai
+// (Free plan chan upload o 50 MB, backend la 50,7 MiB); Cloudflare R2 bi loai
+// (doi them phuong thuc thanh toan de bat); cuoi cung la GitHub Release tren
+// repo private. Ba lan doi, KHONG mot manifest nao phai ky lai.
 
 import { grantDigest, verifyDownloadGrant } from "../_shared/grant.ts";
-import { amzDateFrom, presignR2Get } from "../_shared/r2.ts";
+import { resolveAssetLocation } from "../_shared/github_release.ts";
 import {
   callRpc,
   clientBucket,
@@ -108,32 +107,38 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return verdictResponse(code);
   }
 
-  // ⛔ KY URL NGAY LUC NAY, han bang han con lai cua ve. Bucket R2 la private,
-  // nen day la duong duy nhat ra file - va no het han ngay sau do.
-  //
-  // ⛔ KY TAI CHO, KHONG GOI MANG. Khac ban Supabase Storage truoc day (phai
-  // POST sang /storage/v1/object/sign roi doi tra loi), SigV4 la mot phep bam
-  // thuan - khong co luot di mang nao, khong co gi de that bai vi mang, va
-  // khong co do tre. Do la mot ly do nua R2 hon o cho nay.
-  let signed: string;
+  // ⛔ DOI ASSET ID THANH URL NGAN HAN, va KHONG tu truyen byte neu tranh
+  // duoc. GitHub tra 302 sang mot URL da mang chu ky trong query; doc Location
+  // roi chuyen huong thi 51 MB di thang tu CDN cua GitHub ve may khach, khong
+  // qua Edge Function. Token khong he ra khoi function.
+  let location;
   try {
-    signed = await presignR2Get(
-      {
-        accountId: config.r2AccountId,
-        bucket: config.r2Bucket,
-        accessKeyId: config.r2AccessKeyId,
-        secretAccessKey: config.r2SecretAccessKey,
-      },
+    location = await resolveAssetLocation(
+      { repo: config.githubRepo, token: config.githubToken },
       String(verdict.storage_object),
-      {
-        expiresSeconds: config.downloadGrantTtlSeconds,
-        amzDate: amzDateFrom(Math.floor(Date.now() / 1000)),
-      },
     );
   } catch (error) {
-    console.error("ky URL R2 that bai:", error);
+    console.error("khong lay duoc duong tai asset:", error);
     return jsonResponse(503, { detail: "Artifact storage is unavailable." });
   }
+
+  // ⛔ TRUONG HOP GITHUB TU TRUYEN BYTE. Tai lieu noi ro client phai xu ly duoc
+  // ca hai ("either redirect the client to the location, or stream it directly
+  // if possible"), nen khong duoc gia dinh chi co 302. Duong nay ton bang
+  // thong cua project va co the cham tran 150 giay wall-clock voi may khach
+  // cham, nhung van tot hon tra loi mot ma loi cho mot phan hoi hop le.
+  if (location.url === null && location.streamed !== null) {
+    console.warn("GitHub truyen byte truc tiep thay vi chuyen huong");
+    return new Response(location.streamed.body, {
+      status: 200,
+      headers: {
+        "content-type": "application/octet-stream",
+        "content-length": location.streamed.headers.get("content-length") ?? "",
+        "cache-control": "no-store",
+      },
+    });
+  }
+  const signed = location.url as string;
 
   // ⛔ 302, KHONG PHAI TU TRUYEN BYTE. File backend ~51 MB; day la Edge
   // Function, khong phai CDN - truyen qua day la tra gia CPU va cham tran

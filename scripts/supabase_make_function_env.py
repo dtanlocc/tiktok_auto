@@ -91,23 +91,21 @@ def main() -> None:
                 "Tao lai bang scripts/initialize_operator_environment.py."
             )
 
-    # ⛔ THONG TIN R2: file backend nam tren Cloudflare R2, khong phai Supabase
-    # Storage - Free plan cua Supabase chan upload o 50 MB va backend da vuot.
-    # Doc tu cung file ma script phat hanh doc, de hai ben khong the tro vao
-    # hai bucket khac nhau.
-    r2_path = operator / "secrets" / "r2-credentials.json"
-    r2 = {}
-    if r2_path.is_file():
-        raw = json.loads(r2_path.read_text(encoding="utf-8"))
-        r2 = {
-            name: str(raw.get(name, "")).strip()
-            for name in ("account_id", "bucket", "access_key_id", "secret_access_key")
+    # ⛔ KHO ARTIFACT: file backend nam trong mot GitHub Release tren repo
+    # PRIVATE. Supabase Storage bi loai (Free plan chan upload o 50 MB, backend
+    # la 50,7 MiB) va Cloudflare R2 bi loai (doi them phuong thuc thanh toan de
+    # bat). Doc tu cung file ma script phat hanh doc, de hai ben khong the tro
+    # vao hai repo khac nhau.
+    gh_path = operator / "secrets" / "github-artifacts.json"
+    github = {}
+    if gh_path.is_file():
+        raw = json.loads(gh_path.read_text(encoding="utf-8"))
+        github = {
+            name: str(raw.get(name, "")).strip() for name in ("repo", "token")
         }
-        missing_r2 = [name for name, value in r2.items() if not value]
-        if missing_r2:
-            raise SystemExit(
-                f"{r2_path.name} thieu truong: {', '.join(missing_r2)}"
-            )
+        missing_gh = [name for name, value in github.items() if not value]
+        if missing_gh:
+            raise SystemExit(f"{gh_path.name} thieu truong: {', '.join(missing_gh)}")
 
     lines = [
         "# File nay do scripts/supabase_make_function_env.py sinh ra.",
@@ -127,11 +125,9 @@ def main() -> None:
         lines.append(f"TKAUTO_LEASE_TTL_SECONDS={args.lease_ttl_seconds}")
     if grant_secret:
         lines.append(f"TKAUTO_DOWNLOAD_GRANT_SECRET={grant_secret}")
-    if r2:
-        lines.append(f"TKAUTO_R2_ACCOUNT_ID={r2['account_id']}")
-        lines.append(f"TKAUTO_R2_BUCKET={r2['bucket']}")
-        lines.append(f"TKAUTO_R2_ACCESS_KEY_ID={r2['access_key_id']}")
-        lines.append(f"TKAUTO_R2_SECRET_ACCESS_KEY={r2['secret_access_key']}")
+    if github:
+        lines.append(f"TKAUTO_GITHUB_REPO={github['repo']}")
+        lines.append(f"TKAUTO_GITHUB_TOKEN={github['token']}")
 
     out = operator / _OUTPUT_NAME
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -148,11 +144,11 @@ def main() -> None:
     else:
         print("  ve tai   : KHONG CO - hai function releases/artifacts se tra 500.")
         print(f"             Thieu {grant_path}")
-    if r2:
-        print(f"  R2       : bucket '{r2['bucket']}', account {r2['account_id'][:8]}...")
+    if github:
+        print(f"  artifact : {github['repo']} (GitHub Release, repo private)")
     else:
-        print("  R2       : KHONG CO - function artifacts se tra 500.")
-        print(f"             Thieu {r2_path}")
+        print("  artifact : KHONG CO - function artifacts se tra 500.")
+        print(f"             Thieu {gh_path}")
     print()
     print("Dat len Supabase:")
     print("  tools/supabase-cli/node_modules/.bin/supabase secrets set \\")

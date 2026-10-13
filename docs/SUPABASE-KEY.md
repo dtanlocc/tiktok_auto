@@ -30,8 +30,8 @@ khớp cả ba endpoint với ba function tên `activate`, `lease`, `releases`.
 | Khoá ký **release** | `<operator>/keys/release-private.pem` | **Không, tuyệt đối** |
 | Manifest bản phát hành **đã ký** | bảng `license.releases` | Có — chỉ token, không phải khoá |
 | Bí mật vé tải | `<operator>/secrets/download-grant-secret` **và** secret Edge Function | Có |
-| File backend `.exe` | bucket **Cloudflare R2** private `releases` | Không — ở R2, xem mục 8 |
-| Khoá S3 của R2 | `<operator>/secrets/r2-credentials.json` **và** secret Edge Function | Có |
+| File backend `.exe` | **GitHub Release** trên một repo **private** | Không — ở GitHub, xem mục 8 |
+| PAT đọc repo artifact | `<operator>/secrets/github-artifacts.json` **và** secret Edge Function | Có |
 | Mật khẩu database | `<operator>/secrets/supabase-database-url` | — |
 
 ⛔ **Khoá release không bao giờ lên mây.** Chiếm được khoá lease chỉ là dùng lậu
@@ -275,85 +275,68 @@ chứa mà **không phải ký lại manifest nào** là vì `download_url` tr�
 `artifacts` chứ không trỏ thẳng vào chỗ chứa — lớp gián tiếp đặt từ đầu, giờ nó
 trả công.
 
-#### Dựng R2 lần đầu, từng bước
+#### Chỗ chứa file: ba lần đổi, và vì sao
 
-**Mức miễn phí** theo [tài liệu Cloudflare](https://developers.cloudflare.com/r2/pricing/):
-10 GB-tháng lưu, 1 triệu lượt ghi (Class A), 10 triệu lượt đọc (Class B),
-**egress không tính tiền**. Với một nhóm nhỏ thì không chạm tới.
+⛔ **Supabase Storage — loại.** Free plan chặn upload ở **50 MB** và
+[không nâng được từ dashboard](https://supabase.com/docs/guides/troubleshooting/upload-file-size-restrictions-Y4wQLT);
+backend 0.1.12 là **50,7 MiB**, vượt đúng 0,7 MiB.
 
-⛔ **Cloudflare có thể đòi thêm phương thức thanh toán để bật R2 lần đầu**, dù
-mức miễn phí là thật. Tài liệu chính chủ không nói gì về chuyện này; các hướng
-dẫn bên thứ ba thì nói có. Nếu không muốn đưa thẻ thì dùng đường **GitHub
-Release trên một repo private** — cũng miễn phí, asset tới 2 GB, và chỉ phải
-sửa function `artifacts`.
+⛔ **Cloudflare R2 — loại.** Miễn phí 10 GB và không tính egress, nhưng **đòi
+thêm phương thức thanh toán** để bật lần đầu (đo ngày 13/10/2026 — tài liệu
+chính chủ của Cloudflare không nói gì về việc này).
 
-**1. Bật R2 và lấy Account ID**
+✅ **GitHub Release trên một repo private.** Asset tới 2 GB, không thẻ, và tài
+khoản GitHub thì đã có.
 
-- Vào <https://dash.cloudflare.com> → đăng nhập (hoặc đăng ký).
-- Thanh bên trái → **R2 Object Storage**.
-- Bấm nút bật R2 nếu nó hỏi (**Enable R2** / **Purchase R2 plan** — chọn gói
-  **Free**).
-- **Account ID** là 32 ký tự hex. Nó nằm ở cột phải trang R2, và cũng nằm
-  trong URL: `dash.cloudflare.com/<account_id>/r2/...`. Lấy từ URL là chắc nhất.
+Đổi được chỗ chứa **ba lần mà không phải ký lại một manifest nào** là vì
+`download_url` trỏ vào function `artifacts` chứ không trỏ thẳng vào chỗ chứa.
+Lớp gián tiếp đó đặt từ đầu để signed URL ngắn hạn không làm manifest chết — nó
+đã trả công ba lần.
 
-**2. Tạo bucket**
+#### Dựng kho artifact lần đầu, từng bước
 
-- **Create bucket**.
-- Tên: `releases` (đúng chữ này, hoặc đổi thì phải đổi cả `bucket` trong file
-  thông tin đăng nhập ở bước 4).
-- Location: **Automatic** (hoặc **Asia-Pacific** cho gần).
-- Storage class: **Standard**. ⛔ Không chọn *Infrequent Access* — mức miễn phí
-  **không** áp cho loại đó.
-- **Create bucket**.
+**1. Tạo một repo PRIVATE riêng**
 
-⛔ **Đừng bật Public Development URL.** Nó nằm trong tab **Settings** của
-bucket. Bật nó là bất kỳ ai biết đường dẫn đều tải được file backend — và lúc
-đó toàn bộ chuỗi vé tải, kiểm thiết bị, kiểm license trở thành trang trí.
+- <https://github.com/new> → tên ví dụ `tkauto-artifacts` → chọn **Private** →
+  Create.
 
-**3. Tạo API token**
+⛔ **Không dùng repo `tiktok_auto`.** Repo đó đang **public**, và asset của
+release trên repo public tải được **không cần xác thực gì** — lúc đó toàn bộ
+chuỗi vé tải, kiểm thiết bị, kiểm license trở thành trang trí.
+`supabase_release_admin.py` **từ chối chạy** nếu repo không private.
 
-- Vẫn trong **R2** → **API** → **Manage API tokens** → **Create API token**
-  (hoặc **Create Account API token**).
-- Permission: **Object Read & Write**. ⛔ Không chọn *Admin Read & Write* —
-  token đó tạo/xoá được cả bucket, mà việc phát hành chỉ cần ghi object.
-- **Specify bucket(s)**: chọn đúng `releases`. Đừng để *Apply to all buckets*.
-- TTL: để mặc định.
-- **Create**.
-- Nó hiện ra **Access Key ID** và **Secret Access Key**. ⛔ **Secret chỉ hiện
-  một lần** — copy ngay. Mất thì tạo token mới, không xem lại được.
+**2. Tạo fine-grained PAT**
 
-**4. Ghi vào thư mục operator**
+- <https://github.com/settings/personal-access-tokens/new>
+- **Repository access** → *Only select repositories* → chọn đúng repo vừa tạo.
+- **Permissions → Repository permissions → Contents: Read and write.** ⛔ Chỉ
+  một quyền này; release asset nằm dưới Contents.
+- Expiration: tuỳ anh. Hết hạn thì phát hành báo 404 và phải tạo token mới.
+- Generate → copy token (`github_pat_...`). ⛔ **Chỉ hiện một lần.**
 
-Vào `<operator>/secrets/r2-credentials.json`:
+**3. Ghi vào thư mục operator**
+
+`<operator>/secrets/github-artifacts.json`:
 
 ```json
-{
-  "account_id": "<32 ký tự hex ở bước 1>",
-  "bucket": "releases",
-  "access_key_id": "<ở bước 3>",
-  "secret_access_key": "<ở bước 3>"
-}
+{"repo": "dtanlocc/tkauto-artifacts", "token": "github_pat_..."}
 ```
 
-⛔ **File này nằm ngoài repo**, như mọi bí mật operator khác. Đừng copy vào cây
-git, đừng dán vào chat.
+⛔ **File này nằm ngoài repo**, như mọi bí mật operator khác.
 
-**5. Kiểm trước khi phát hành**
+**4. Kiểm trước khi phát hành**
 
 ```bash
 uv run python scripts/supabase_release_admin.py check-storage --operator-directory D:/tkauto-operator-dev
 ```
 
-Nó ký một GET cho một key **chắc chắn không tồn tại**, nên:
-
 | Nhận được | Nghĩa là |
 |---|---|
-| **404** | **Đúng rồi** — thông tin đăng nhập hợp lệ và bucket có thật |
-| 403 | Sai access key/secret, token thiếu quyền *Object Read & Write*, hoặc bucket thuộc account khác |
-| `NoSuchBucket` | Tên bucket sai, hoặc chưa tạo |
-| lỗi `account_id phải là 32 ký tự hex` | Dán nhầm Account ID (hay dán nhầm Zone ID) |
+| `GitHub OK: ... là repo PRIVATE và token đọc/ghi được` | xong |
+| `Repo ... đang PUBLIC` | đổi repo thành private, hoặc dùng repo khác |
+| `Không thấy repo ...` | sai tên repo **hoặc** token không có quyền đọc nó — với repo private GitHub trả 404 cho cả hai, cố ý, để không tiết lộ repo có tồn tại |
 
-**6. Đẩy thông tin R2 lên Edge Function**
+**5. Đẩy thông tin lên Edge Function**
 
 ```bash
 uv run python scripts/supabase_make_function_env.py --operator-directory D:/tkauto-operator-dev
@@ -363,8 +346,8 @@ uv run python scripts/supabase_make_function_env.py --operator-directory D:/tkau
 tools/supabase-cli/node_modules/.bin/supabase secrets set --env-file D:/tkauto-operator-dev/supabase-functions.env
 ```
 
-Script đọc **cùng một file** `r2-credentials.json` mà bước phát hành đọc, nên
-hai bên không thể trỏ vào hai bucket khác nhau.
+Script đọc **cùng một file** `github-artifacts.json` mà bước phát hành đọc, nên
+hai bên không thể trỏ vào hai repo khác nhau.
 
 Rồi mỗi lần có bản mới:
 
@@ -373,12 +356,14 @@ uv run python scripts/supabase_release_admin.py publish --operator-directory D:/
 ```
 
 Script kiểm đầu PE (`MZ`), tính sha256, **ký manifest ngay tại máy này** bằng
-`keys/release-private.pem`, tự xác thực lại bằng khoá công khai, tải file lên R2
-bằng một **PUT đã ký SigV4**, rồi ghi một dòng vào `license.releases`.
+`keys/release-private.pem`, tự xác thực lại bằng khoá công khai, kiểm repo đúng
+là **private**, tạo release `backend-<version>` rồi tải asset lên, và ghi một
+dòng vào `license.releases`.
 
-⛔ **PUT ký sha256 thật của thân request**, không phải `UNSIGNED-PAYLOAD`. Nhờ
-vậy R2 tự từ chối một thân bị đổi trên đường đi — một phép kiểm miễn phí, trước
-khi launcher đối chiếu sha256 với manifest đã ký.
+⛔ **`storage_object` giữ asset id, không giữ tên file.** Với GitHub thì tên file
+không đủ để tải — phải có asset id. Cột đó là một định vị không trong suốt mà
+chỉ function `artifacts` biết cách đọc; nhờ vậy đổi chỗ chứa không phải đổi
+schema.
 
 ⛔ **Khoá ký release không bao giờ rời máy.** Chỉ **chuỗi token đã ký** được lưu
 lên Supabase; Edge Function phát lại chuỗi đó chứ không ký gì. Chiếm được
@@ -426,9 +411,11 @@ nguy hiểm nhất có thể dựng.
 ⛔ **`mandatory` được lưu nhưng chưa dùng tới.** Cột có, manifest ký kèm, nhưng
 chưa có đường nào buộc khách cập nhật ngay.
 
-⛔ **R2 free tier: 10 GB lưu, 1 triệu lượt ghi và 10 triệu lượt đọc mỗi
-tháng, egress không tính tiền.** Với một nhóm nhỏ thì không chạm tới. Đây là lý
-do chọn R2 thay vì Supabase Storage, ngoài chuyện trần 50 MB.
+⛔ **Băng thông GitHub Release không có hạn mức công bố**, và byte đi thẳng từ
+CDN của GitHub về máy khách — **không** qua Edge Function. Đó là lý do function
+`artifacts` gọi GitHub với `redirect: "manual"` rồi chuyển hướng, chứ không tự
+truyền byte: tự truyền thì tốn băng thông của project Supabase **và** chạm trần
+150 giây wall-clock nếu máy khách tải chậm (51 MB ở 300 KB/s là ~170 giây).
 
 ---
 

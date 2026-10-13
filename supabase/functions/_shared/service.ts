@@ -2,6 +2,7 @@
 // lease.
 
 import { type LeaseClaims, compareSemver, importLeasePrivateKey, signLease } from "./lease.ts";
+import { isValidRepo } from "./github_release.ts";
 
 // ⛔ GIOI HAN THAN BODY. Ban Python co `max_request_body_bytes` (128 KiB) va
 // Edge Function khong co gioi han nao san: thieu cho nay thi mot POST vai
@@ -24,18 +25,20 @@ export interface Config {
   downloadGrantSecret: string;
   downloadGrantTtlSeconds: number;
   /**
-   * Cloudflare R2 - noi chua file backend.
+   * GitHub Release tren mot repo PRIVATE - noi chua file backend.
    *
-   * ⛔ KHONG DUNG Supabase Storage, va do la mot quyet dinh bi BUOC: Free plan
-   * cua Supabase chan upload o 50 MB va khong nang duoc tu dashboard, trong
-   * khi backend 0.1.12 la 50,7 MiB. R2 cho 10 GB luu, khong tinh egress, mot
-   * PUT toi 5 GB. Doi duoc cho chua ma khong phai ky lai manifest nao la vi
-   * `download_url` tro vao function `artifacts` chu khong tro thang vao Storage.
+   * ⛔ BA CHO CHUA DA THU, theo dung thu tu bi loai:
+   *   1. Supabase Storage - Free plan chan upload o 50 MB, khong nang duoc;
+   *      backend 0.1.12 la 50,7 MiB.
+   *   2. Cloudflare R2 - mien phi va khong tinh egress, nhung doi them phuong
+   *      thuc thanh toan de bat lan dau.
+   *   3. GitHub Release repo private - asset toi 2 GB, khong the.
+   * Doi duoc cho chua ba lan ma KHONG phai ky lai mot manifest nao la vi
+   * `download_url` tro vao function `artifacts` chu khong tro thang vao cho
+   * chua. Lop gian tiep do da tra cong ba lan.
    */
-  r2AccountId: string;
-  r2Bucket: string;
-  r2AccessKeyId: string;
-  r2SecretAccessKey: string;
+  githubRepo: string;
+  githubToken: string;
 }
 
 function required(name: string): string {
@@ -126,10 +129,8 @@ export async function loadConfig(): Promise<Config> {
     // rong - mot HMAC khoa rong la mot ve ai cung ky duoc.
     downloadGrantSecret: optionalText("TKAUTO_DOWNLOAD_GRANT_SECRET"),
     downloadGrantTtlSeconds: optionalInt("TKAUTO_DOWNLOAD_GRANT_TTL_SECONDS", 300),
-    r2AccountId: optionalText("TKAUTO_R2_ACCOUNT_ID"),
-    r2Bucket: optionalText("TKAUTO_R2_BUCKET") || "releases",
-    r2AccessKeyId: optionalText("TKAUTO_R2_ACCESS_KEY_ID"),
-    r2SecretAccessKey: optionalText("TKAUTO_R2_SECRET_ACCESS_KEY"),
+    githubRepo: optionalText("TKAUTO_GITHUB_REPO"),
+    githubToken: optionalText("TKAUTO_GITHUB_TOKEN"),
   };
   if (
     cached.downloadGrantTtlSeconds < 60 ||
@@ -153,23 +154,20 @@ export function requireDelivery(config: Config): void {
       "TKAUTO_DOWNLOAD_GRANT_SECRET phai dai it nhat 32 ky tu de bat phan phat ban phat hanh",
     );
   }
-  // ⛔ DOI DU CA BON, khong chi "co cai nao thi dung cai do". Thieu mot bien
-  // thi `presignR2Get` van ky ra mot URL - mot URL tro vao host rong hoac ky
-  // bang khoa rong - va R2 tra 403 khong noi gi ve nguyen nhan. Dung lai o day
-  // thi thong bao noi dung ten bien thieu.
+  // ⛔ DOI DU CA HAI. Thieu token thi moi request sang GitHub la 401 va
+  // function tra 503 - mot su co khong co nguyen nhan ro rang trong log cua
+  // khach. Dung lai o day thi thong bao noi dung ten bien thieu.
   const missing = (
     [
-      ["TKAUTO_R2_ACCOUNT_ID", config.r2AccountId],
-      ["TKAUTO_R2_BUCKET", config.r2Bucket],
-      ["TKAUTO_R2_ACCESS_KEY_ID", config.r2AccessKeyId],
-      ["TKAUTO_R2_SECRET_ACCESS_KEY", config.r2SecretAccessKey],
+      ["TKAUTO_GITHUB_REPO", config.githubRepo],
+      ["TKAUTO_GITHUB_TOKEN", config.githubToken],
     ] as const
   ).filter(([, value]) => !value).map(([name]) => name);
   if (missing.length > 0) {
-    throw new Error(`Thieu cau hinh R2: ${missing.join(", ")}`);
+    throw new Error(`Thieu cau hinh kho artifact: ${missing.join(", ")}`);
   }
-  if (!/^[0-9a-f]{32}$/.test(config.r2AccountId)) {
-    throw new Error("TKAUTO_R2_ACCOUNT_ID phai la 32 ky tu hex");
+  if (!isValidRepo(config.githubRepo)) {
+    throw new Error("TKAUTO_GITHUB_REPO phai dang owner/repo");
   }
 }
 

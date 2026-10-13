@@ -30,10 +30,10 @@ interface Job {
   /** Phan xet tra ve cho tung ten RPC, theo thu tu goi. */
   rpc: Record<string, unknown[]>;
   /**
-   * Phan hoi cho lenh ky signed URL cua Storage.
-   * Bo trong = chua dat (harness tra 500); `null` = gia lap Storage su co.
+   * Phan hoi gia cho api.github.com. Bo trong = chua dat (harness tra 500);
+   * `null` = gia lap GitHub su co.
    */
-  storage?: { signedURL: string } | null;
+  github?: { status: number; location?: string; body?: string } | null;
 }
 
 function readStdin(): Promise<string> {
@@ -49,7 +49,7 @@ const job: Job = JSON.parse(await readStdin());
 
 let handler: ((request: Request) => Promise<Response>) | null = null;
 const rpcCalls: { name: string; args: unknown }[] = [];
-const storageCalls: { path: string; body: unknown }[] = [];
+const githubCalls: Record<string, unknown>[] = [];
 const pending: Record<string, unknown[]> = {};
 for (const [name, list] of Object.entries(job.rpc ?? {})) {
   pending[name] = [...list];
@@ -70,24 +70,36 @@ for (const [name, list] of Object.entries(job.rpc ?? {})) {
 ): Promise<Response> => {
   const url = typeof input === "string" ? input : input.toString();
 
-  // ⛔ CHAN LOI GOI STORAGE API. Function `artifacts` ky signed URL qua
-  // `/storage/v1/object/sign/...`; khong chan thi bai test di ra Internet
-  // that va phu thuoc mot bucket that.
-  const storage = /\/storage\/v1\/object\/sign\/(.+)$/.exec(url);
-  if (storage) {
-    storageCalls.push({ path: storage[1], body: init?.body ? JSON.parse(String(init.body)) : null });
-    if (job.storage === undefined) {
-      return new Response(JSON.stringify({ message: "harness khong co phan xet storage" }), {
-        status: 500,
-        headers: { "content-type": "application/json" },
+  // ⛔ CHAN LOI GOI GITHUB API. Function `artifacts` doi asset id thanh URL
+  // ngan han qua api.github.com; khong chan thi bai test di ra Internet that
+  // va phu thuoc mot repo private that cung mot token that.
+  const asset = /api\.github\.com\/repos\/(.+)\/releases\/assets\/([0-9]+)$/
+    .exec(url);
+  if (asset) {
+    githubCalls.push({
+      repo: asset[1],
+      assetId: asset[2],
+      accept: (init?.headers as Record<string, string>)?.accept ?? null,
+      // ⛔ Ghi lai CA redirect mode: dung "follow" thay vi "manual" la fetch tu
+      // di theo va keo ca 51 MB vao Edge Function. Bai test phai thay duoc.
+      redirect: init?.redirect ?? "follow",
+      authorized: Boolean((init?.headers as Record<string, string>)?.authorization),
+    });
+    if (job.github === undefined) {
+      return new Response("harness khong co phan xet github", { status: 500 });
+    }
+    if (job.github === null) {
+      return new Response("github loi", { status: 503 });
+    }
+    if (job.github.status === 200) {
+      return new Response(job.github.body ?? "noi dung asset", {
+        status: 200,
+        headers: { "content-length": String((job.github.body ?? "noi dung asset").length) },
       });
     }
-    if (job.storage === null) {
-      return new Response("storage loi", { status: 503 });
-    }
-    return new Response(JSON.stringify(job.storage), {
-      status: 200,
-      headers: { "content-type": "application/json" },
+    return new Response(null, {
+      status: job.github.status,
+      headers: job.github.location ? { location: job.github.location } : {},
     });
   }
 
@@ -147,6 +159,6 @@ process.stdout.write(
     headers: Object.fromEntries(response.headers.entries()),
     body: parsed,
     rpc_calls: rpcCalls,
-    storage_calls: storageCalls,
+    github_calls: githubCalls,
   }),
 );

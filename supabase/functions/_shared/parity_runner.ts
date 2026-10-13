@@ -11,7 +11,6 @@
 import { canonicalJson, compareSemver, importLeasePrivateKey, signLease } from "./lease.ts";
 import { effectiveFeatures } from "./service.ts";
 import { grantDigest, issueDownloadGrant, verifyDownloadGrant } from "./grant.ts";
-import { amzDateFrom, canonicalGetQuery, canonicalGetRequest, presignR2Get, type R2Config } from "./r2.ts";
 import {
   canonicalDeviceProof,
   digestLicenseKey,
@@ -29,10 +28,7 @@ type Op =
   | { op: "effective_features"; features: string[] }
   | { op: "issue_grant"; secret: string; artifact_id: string; device_id: string; ttl: number }
   | { op: "verify_grant"; secret: string; token: string; artifact_id: string }
-  | { op: "grant_digest"; token: string }
-  | { op: "r2_presign"; config: R2Config; key: string; expires: number; amz_date: string }
-  | { op: "r2_canonical"; config: R2Config; key: string; expires: number; amz_date: string }
-  | { op: "amz_date"; epoch: number };
+  | { op: "grant_digest"; token: string };
 
 function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -106,25 +102,6 @@ for (const item of operations) {
     }
     case "grant_digest": {
       results.push(await grantDigest(item.token));
-      break;
-    }
-    case "r2_presign": {
-      try {
-        results.push(await presignR2Get(item.config, item.key,
-          { expiresSeconds: item.expires, amzDate: item.amz_date }));
-      } catch (error) {
-        results.push({ error: (error as Error).message });
-      }
-      break;
-    }
-    case "r2_canonical": {
-      const query = canonicalGetQuery(item.config,
-        { expiresSeconds: item.expires, amzDate: item.amz_date });
-      results.push(canonicalGetRequest(item.config, item.key, query));
-      break;
-    }
-    case "amz_date": {
-      results.push(amzDateFrom(item.epoch));
       break;
     }
     default: {

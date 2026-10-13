@@ -913,13 +913,56 @@ async fn check_backend_update(
     }
     let url = Url::parse(&manifest.download_url)
         .map_err(|_| "URL tải trong manifest không hợp lệ.".to_string())?;
-    let download = state
+    let mut download = state
         .control_http
         .get(url)
         .bearer_auth(grant)
         .send()
         .await
         .map_err(|_| "Không tải được backend binary.".to_string())?;
+
+    // ⛔ ĐI THEO ĐÚNG MỘT REDIRECT, VÀ BỎ CREDENTIAL KHI ĐI. `control_http`
+    // được dựng với `Policy::none()` (có chủ ý: không để một control plane bị
+    // chiếm lái client đi đâu tuỳ ý), nên nếu không xử lý ở đây thì một 302 rơi
+    // thẳng vào `!is_success()` bên dưới và báo "Máy chủ từ chối tải backend
+    // (HTTP 302)" — thông báo nói sai hẳn nguyên nhân.
+    //
+    // Mà kho artifact thì BẮT BUỘC phải redirect: file nằm ở một chỗ chứa
+    // ngoài (GitHub Release asset), và endpoint `/artifacts/<id>/download` chỉ
+    // là lớp cố định ở giữa để `download_url` trong manifest ĐÃ KÝ không phải
+    // đổi theo từng URL ngắn hạn.
+    //
+    // ⛔ KHÔNG mang theo `Authorization`. Vé tải là bí mật giữa mình và client;
+    // gửi nó sang CDN của bên thứ ba là để nó vào log của người khác mà không
+    // được gì — URL đích đã tự mang chữ ký trong query. (Đo 13/10/2026: URL
+    // asset của GitHub chạy cả khi có lẫn không có header đó, nhưng presigned
+    // URL kiểu S3 thì TỪ CHỐI khi thấy hai cơ chế xác thực, nên bỏ đi là cách
+    // duy nhất đúng cho cả hai.)
+    if download.status().is_redirection() {
+        let location = download
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .ok_or_else(|| "Máy chủ chuyển hướng tải nhưng không có Location.".to_string())?
+            .to_string();
+        let target = Url::parse(&location)
+            .map_err(|_| "URL chuyển hướng tải không hợp lệ.".to_string())?;
+        if target.scheme() != "https" {
+            return Err("URL chuyển hướng tải phải là HTTPS.".to_string());
+        }
+        download = state
+            .control_http
+            .get(target)
+            .send()
+            .await
+            .map_err(|_| "Không tải được backend binary từ kho artifact.".to_string())?;
+        // Một redirect nữa là dấu hiệu sai cấu hình, không phải chuyện bình
+        // thường — dừng ở đây thay vì đi vòng.
+        if download.status().is_redirection() {
+            return Err("Kho artifact chuyển hướng quá nhiều lần.".to_string());
+        }
+    }
+
     if !download.status().is_success() {
         return Err(format!(
             "Máy chủ từ chối tải backend (HTTP {}).",

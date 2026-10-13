@@ -38,14 +38,17 @@ _LEASE_SEED = bytes(range(64, 96))
 _KEY_ID = "lease-dev-2026-01"
 _PEPPER = "p" * 48
 _GRANT_SECRET = "g" * 48
-#: Cau hinh R2 gia. `TKAUTO_R2_ACCOUNT_ID` phai la 32 ky tu hex, vi
+#: Kho artifact gia. `TKAUTO_GITHUB_REPO` phai dang owner/repo, vi
 #: `requireDelivery` kiem dinh dang do.
-_R2_ENV = {
-    "TKAUTO_R2_ACCOUNT_ID": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
-    "TKAUTO_R2_BUCKET": "releases",
-    "TKAUTO_R2_ACCESS_KEY_ID": "AKIAEXAMPLEKEYID0000",
-    "TKAUTO_R2_SECRET_ACCESS_KEY": "wJalrXUtnFEMI-K7MDENG-bPxRfiCYEXAMPLEKEY",
+_ARTIFACT_ENV = {
+    "TKAUTO_GITHUB_REPO": "dtanlocc/tkauto-artifacts",
+    "TKAUTO_GITHUB_TOKEN": "github_pat_khong_phai_token_that",
 }
+#: URL ngan han GitHub tra ve o header Location cua 302.
+_SIGNED_URL = (
+    "https://release-assets.githubusercontent.com/github-production-release-asset/"
+    "212/abc?token=mot-chu-ky-trong-query"
+)
 _BASE = "https://example.supabase.co/functions/v1"
 
 
@@ -99,7 +102,7 @@ def _env(**overrides: str) -> dict[str, str]:
         # ⛔ `releases` va `artifacts` goi `requireDelivery`, nen thieu bi mat
         # nay la ca hai tra 500. `activate`/`lease` thi khong can no.
         "TKAUTO_DOWNLOAD_GRANT_SECRET": _GRANT_SECRET,
-        **_R2_ENV,
+        **_ARTIFACT_ENV,
     }
     base.update(overrides)
     return base
@@ -895,12 +898,15 @@ def test_release_delivery_refuses_to_run_without_a_usable_grant_secret():
         assert result["rpc_calls"] == []
 
 
-_SIGNED_OBJECT = {"ok": True, "storage_object": "backend-0.1.12.exe",
-                  "sha256": "0" * 64, "size_bytes": 41_000_000}
+#: ⛔ `storage_object` GIU ASSET ID, khong giu ten file. Voi GitHub thi ten file
+#: khong du de tai - phai co asset id; cot do la mot dinh vi khong trong suot
+#: ma chi function `artifacts` biet cach doc.
+_SIGNED_OBJECT = {"ok": True, "storage_object": "599854636",
+                  "sha256": "0" * 64, "size_bytes": 53_159_424}
 
 
 def _artifact_job(artifact_id: str, token: str, *, rpc: dict,
-                  storage="mac-dinh", path: str | None = None,
+                  github="mac-dinh", path: str | None = None,
                   method: str = "GET") -> dict:
     url = (f"{_BASE}/artifacts/{artifact_id}/download" if path is None
            else f"https://example.supabase.co/functions/v1{path}")
@@ -914,9 +920,9 @@ def _artifact_job(artifact_id: str, token: str, *, rpc: dict,
         },
         "rpc": rpc,
     }
-    job["storage"] = (
-        {"signedURL": "/object/sign/releases/backend-0.1.12.exe?token=abc"}
-        if storage == "mac-dinh" else storage
+    job["github"] = (
+        {"status": 302, "location": _SIGNED_URL}
+        if github == "mac-dinh" else github
     )
     return job
 
@@ -931,20 +937,14 @@ def _grant(device: Device, artifact_id: str, ttl: int = 300) -> str:
     return token
 
 
-def test_a_valid_grant_redirects_to_a_presigned_r2_url():
-    """⛔ So chu ky voi ban Python ky, khong chi kiem "co giong URL khong".
+def test_a_valid_grant_redirects_to_the_short_lived_github_url():
+    """⛔ Va kiem CA `redirect: "manual"` trong loi goi GitHub.
 
-    Mot URL dung dang nhung ky sai thi R2 tra 403 ma khong noi gi ve nguyen
-    nhan - loi se lo ra khi khach bam cap nhat, tren may khach. Nen phep kiem
-    o day la: dung `r2_sigv4` cua Python ky lai voi CHINH `X-Amz-Date` ma
-    function da dung, roi so tung byte.
+    Voi mac dinh ("follow") thi fetch tu di theo 302 va tra ve 200 kem 51 MB -
+    tuc Edge Function phai tu truyen het so byte do: ton bang thong cua project
+    va cham tran 150 giay wall-clock neu may khach tai cham. Bai test nay la
+    thu duy nhat giu cho cho do khong bi doi thanh "follow".
     """
-    import sys
-    from urllib.parse import parse_qs, urlsplit
-
-    sys.path.insert(0, str(_REPO_ROOT / "scripts"))
-    import r2_sigv4
-
     device = Device()
     token = _grant(device, "artifact_0112")
     result = _run(
@@ -952,32 +952,81 @@ def test_a_valid_grant_redirects_to_a_presigned_r2_url():
                       rpc={"tkauto_claim_download": [_SIGNED_OBJECT]})
     )
     assert result["status"] == 302, result
-    location = result["headers"]["location"]
-    assert location.startswith(
-        f"https://{_R2_ENV['TKAUTO_R2_ACCOUNT_ID']}.r2.cloudflarestorage.com/releases/"
-    ), location
+    assert result["headers"]["location"] == _SIGNED_URL
     assert result["headers"]["cache-control"] == "no-store"
-    # Khong con luot di mang nao de ky URL: SigV4 la phep bam thuan.
-    assert result["storage_calls"] == []
 
-    query = parse_qs(urlsplit(location).query)
-    assert query["X-Amz-Expires"] == ["300"]
-    expected = r2_sigv4.presign_get(
-        account_id=_R2_ENV["TKAUTO_R2_ACCOUNT_ID"],
-        bucket="releases",
-        # Phai ky dung object ma DB chi ra, khong phai artifact_id.
-        key="backend-0.1.12.exe",
-        access_key_id=_R2_ENV["TKAUTO_R2_ACCESS_KEY_ID"],
-        secret_access_key=_R2_ENV["TKAUTO_R2_SECRET_ACCESS_KEY"],
-        expires_seconds=300,
-        amz_date=query["X-Amz-Date"][0],
-    )
-    assert location == expected
+    (call,) = result["github_calls"]
+    # Phai goi dung asset id ma DB chi ra, khong phai artifact_id.
+    assert call["assetId"] == "599854636"
+    assert call["repo"] == "dtanlocc/tkauto-artifacts"
+    assert call["accept"] == "application/octet-stream"
+    assert call["redirect"] == "manual"
+    assert call["authorized"] is True
 
     # Dau ve gui len DB phai la sha256 cua chinh ve.
     assert result["rpc_calls"][0]["args"]["p_grant_digest"] == hashlib.sha256(
         token.encode()
     ).hexdigest()
+
+
+def test_github_streaming_the_bytes_directly_is_still_handled():
+    """⛔ Tai lieu GitHub noi ro co the xay ra, nen khong duoc gia dinh chi 302.
+
+    "either redirect the client to the location, or stream it directly if
+    possible". Neu gap truong hop do ma function tra loi mot ma loi thi mot
+    phan hoi HOP LE bi bien thanh that bai.
+    """
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(
+        _artifact_job("artifact_0112", token,
+                      rpc={"tkauto_claim_download": [_SIGNED_OBJECT]},
+                      github={"status": 200, "body": "noi dung backend gia"})
+    )
+    assert result["status"] == 200, result
+    assert result["body"] == "noi dung backend gia"
+    assert result["headers"]["cache-control"] == "no-store"
+
+
+def test_a_github_outage_is_reported_as_unavailable_not_as_a_refusal():
+    """⛔ 503, khong phai 401/403.
+
+    `lib.rs:is_authoritative_entitlement_denial` coi 403 la "may chu noi
+    khong" va se XOA lease cung backend cua khach. Mot su co cua kho artifact
+    khong duoc bien thanh mot lan thu hoi license.
+    """
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(
+        _artifact_job("artifact_0112", token,
+                      rpc={"tkauto_claim_download": [_SIGNED_OBJECT]},
+                      github=None)
+    )
+    assert result["status"] == 503, result
+    assert result["body"]["detail"] == "Artifact storage is unavailable."
+
+
+def test_a_redirect_without_a_location_header_is_not_passed_on():
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(
+        _artifact_job("artifact_0112", token,
+                      rpc={"tkauto_claim_download": [_SIGNED_OBJECT]},
+                      github={"status": 302})
+    )
+    assert result["status"] == 503, result
+
+
+def test_a_non_https_redirect_target_is_refused():
+    """Mot Location http:// se lam launcher tai qua ket noi khong ma hoa."""
+    device = Device()
+    token = _grant(device, "artifact_0112")
+    result = _run(
+        _artifact_job("artifact_0112", token,
+                      rpc={"tkauto_claim_download": [_SIGNED_OBJECT]},
+                      github={"status": 302, "location": "http://khong-ma-hoa/x"})
+    )
+    assert result["status"] == 503, result
 
 
 def test_a_grant_for_a_different_artifact_is_refused():
@@ -1017,7 +1066,7 @@ def test_a_grant_already_used_cannot_be_used_again():
     assert result["status"] == 401, result
     # Khong noi ro la "da dung" hay "khong ton tai".
     assert result["body"]["detail"] == "Download authorization is invalid."
-    assert result["storage_calls"] == []
+    assert result["github_calls"] == []
 
 
 def test_a_revoked_device_cannot_download_even_with_a_fresh_grant():
@@ -1028,23 +1077,21 @@ def test_a_revoked_device_cannot_download_even_with_a_fresh_grant():
                       rpc={"tkauto_claim_download": [{"ok": False, "code": "device_invalid"}]})
     )
     assert result["status"] == 403, result
-    assert result["storage_calls"] == []
+    assert result["github_calls"] == []
 
 
 @pytest.mark.parametrize(
     ("overrides", "why"),
     [
-        ({"TKAUTO_R2_ACCOUNT_ID": ""}, "thieu account id"),
-        ({"TKAUTO_R2_ACCESS_KEY_ID": ""}, "thieu access key"),
-        ({"TKAUTO_R2_SECRET_ACCESS_KEY": ""}, "thieu secret"),
-        ({"TKAUTO_R2_ACCOUNT_ID": "khong-phai-hex"}, "account id sai dinh dang"),
+        ({"TKAUTO_GITHUB_REPO": ""}, "thieu repo"),
+        ({"TKAUTO_GITHUB_TOKEN": ""}, "thieu token"),
+        ({"TKAUTO_GITHUB_REPO": "khong-co-dau-gach-cheo"}, "repo sai dinh dang"),
+        ({"TKAUTO_GITHUB_REPO": "a/b/c"}, "repo co hai dau gach cheo"),
     ],
 )
-def test_broken_r2_configuration_stops_the_function_instead_of_signing_garbage(
-    overrides, why
-):
-    """⛔ Thieu mot bien thi SigV4 VAN ky ra mot URL - ky bang khoa rong, tro
-    vao host rong - va R2 tra 403 khong noi gi ve nguyen nhan. Dung lai o
+def test_broken_artifact_configuration_stops_the_function(overrides, why):
+    """⛔ Thieu token thi moi request sang GitHub la 401 va function tra 503 -
+    mot su co khong co nguyen nhan ro rang trong log cua khach. Dung lai o
     `requireDelivery` thi thong bao noi dung ten bien thieu.
     """
     device = Device()
@@ -1056,25 +1103,6 @@ def test_broken_r2_configuration_stops_the_function_instead_of_signing_garbage(
     assert result["status"] == 500, (why, result)
     assert result["body"]["detail"] == "Server is misconfigured."
     assert result["rpc_calls"] == []
-
-
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/artifacts",
-        "/artifacts/download",
-        "/artifacts/artifact_0112",
-        "/artifacts/artifact_0112/khac",
-        "/artifacts/a/b/download",
-    ],
-)
-def test_only_the_exact_download_path_is_answered(path):
-    device = Device()
-    token = _grant(device, "artifact_0112")
-    result = _run(_artifact_job("artifact_0112", token, rpc={}, path=path))
-    assert result["status"] in (401, 404), (path, result)
-    assert result["rpc_calls"] == []
-    assert result["storage_calls"] == []
 
 
 def test_a_post_to_the_artifact_endpoint_is_refused():
