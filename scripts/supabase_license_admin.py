@@ -296,12 +296,30 @@ def cmd_revoke_device(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--operator-directory", required=True, type=Path)
+    # ⛔ CO NHAN CA HAI THU TU, va do la mot loi da xay ra thay vi mot su tu te.
+    # Ban dau `--operator-directory` chi nam o parser goc, nen
+    # `... apply-schema --operator-directory X` - dung thu tu ma con nguoi go,
+    # va dung thu tu ghi trong docs/SUPABASE-KEY.md - bao "the following
+    # arguments are required: --operator-directory" trong khi no DANG o tren
+    # dong lenh. Mot thong bao loi noi sai su that.
+    #
+    # `default=SUPPRESS` o parser con la phan bat buoc: khong co no thi khi co
+    # duoc dat o truoc subcommand, parser con van ghi None de len gia tri do
+    # (cai bay co dien cua argparse) va co bien thanh mat.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--operator-directory", type=Path, default=argparse.SUPPRESS
+    )
+    parser.add_argument("--operator-directory", type=Path, default=None)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("apply-schema", help="Chay cac file supabase/migrations/*.sql")
+    sub.add_parser(
+        "apply-schema",
+        parents=[common],
+        help="Chay cac file supabase/migrations/*.sql",
+    )
 
-    create = sub.add_parser("create", help="Phat mot license key moi")
+    create = sub.add_parser("create", parents=[common], help="Phat mot license key moi")
     create.add_argument("--customer-reference", default="")
     create.add_argument("--plan", default="nhom")
     create.add_argument("--features", default="")
@@ -314,18 +332,25 @@ def main() -> None:
                         choices=("internal", "beta", "stable"))
     create.add_argument("--expires-days", type=int, default=30)
 
-    listing = sub.add_parser("list", help="Xem license dang co")
+    listing = sub.add_parser("list", parents=[common], help="Xem license dang co")
     listing.add_argument("--limit", type=int, default=50)
 
-    revoke = sub.add_parser("revoke", help="Thu hoi mot license")
+    revoke = sub.add_parser("revoke", parents=[common], help="Thu hoi mot license")
     revoke.add_argument("--license-id", required=True)
     revoke.add_argument("--reason", required=True)
 
-    revoke_device = sub.add_parser("revoke-device", help="Thu hoi mot thiet bi")
+    revoke_device = sub.add_parser("revoke-device", parents=[common], help="Thu hoi mot thiet bi")
     revoke_device.add_argument("--device-id", required=True)
     revoke_device.add_argument("--reason", default="")
 
     args = parser.parse_args()
+    if args.operator_directory is None:
+        raise SystemExit(
+            "Thieu --operator-directory. Dat o truoc hay sau subcommand deu "
+            "duoc, vi du:\n"
+            "  scripts/supabase_license_admin.py apply-schema "
+            "--operator-directory D:/tkauto-operator-dev"
+        )
     args.operator_directory = args.operator_directory.expanduser().resolve()
     if not args.operator_directory.is_dir():
         raise SystemExit(f"Khong thay thu muc operator: {args.operator_directory}")

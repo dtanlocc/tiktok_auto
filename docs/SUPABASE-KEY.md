@@ -46,8 +46,23 @@ Tôi không tạo tài khoản hộ được. Anh làm:
 4. Ghi lại **project ref**: đoạn trong URL dashboard,
    `https://supabase.com/dashboard/project/<ref>`.
 
-Rồi lấy connection string: **Project Settings → Database → Connection string →
-URI**, chọn **Session pooler** (cổng 5432, không phải 6543), và dán vào:
+Rồi lấy connection string: bấm nút **Connect** ở **đầu trang project** (cạnh
+tên project), rồi chọn **Session pooler**.
+
+⛔ **Không phải Project Settings → Database.** Bản đầu của tài liệu này ghi
+đường đó và nó sai: Supabase đã chuyển chuỗi kết nối ra nút `Connect` ở thanh
+trên. Nếu lần sau không thấy nút đó thì tra
+<https://supabase.com/docs/guides/database/connecting-to-postgres> chứ đừng
+tìm trong Settings.
+
+Chọn **Session pooler** (cổng **5432**), không phải Transaction pooler (6543) và
+không phải Direct connection. Direct connection là IPv6 với project mới, còn
+Session pooler được proxy qua IPv4 miễn phí — trên máy này IPv6 không chắc
+thông. Mật khẩu database chỉ hiện **một lần** lúc tạo project; mất rồi thì reset
+ngay trong hộp thoại `Connect` (hoặc Database → Settings), và reset sẽ làm đứt
+mọi kết nối đang mở.
+
+Dán vào:
 
 ```
 <operator>/secrets/supabase-database-url
@@ -252,19 +267,32 @@ một tunnel — `scripts/run_control_plane_dev.ps1` và
 | `backend/tests/test_supabase_edge_functions.py` | Chạy **chính ba handler** bằng Node với bằng chứng thiết bị thật; chữ ký giả → 401 và **không chạm Postgres**; từng mã phán xét → đúng mã HTTP; cấu hình yếu → function chết chứ không chạy yếu; DB sự cố → 503 chứ không 403. |
 | `backend/tests/test_supabase_sql_is_parseable.py` | Mọi câu lệnh **và mọi thân plpgsql** qua được parser của chính PostgreSQL (libpg_query); không bảng nào rơi vào `public`. |
 
-**Chưa kiểm được — phải anh kiểm bằng một lần kích hoạt thật:**
+**Đã kiểm trên database thật**, ngày 13/10/2026, project
+`ipuszafddmavvxjqvhsj` (ap-southeast-2), Postgres 17.11 — 26 phép đo, gọi thẳng
+hàm plpgsql qua psycopg rồi dọn sạch dữ liệu thử:
 
-Máy phát triển này không có Postgres (Docker Desktop có cài nhưng service
-`com.docker.service` đang Stopped, bật nó cần quyền admin), nên `supabase start`
-không chạy được. Hệ quả: **toàn bộ hành vi trong plpgsql chưa từng chạy** — khoá
-hàng license, đếm thiết bị so với `max_devices`, chống phát lại nonce, chống dò
-tần số. Cú pháp đúng, hành vi chưa đo.
+| Đo gì | Kết quả |
+|---|---|
+| `anon` và `authenticated` gọi `tkauto_activate` | **không gọi được** |
+| `service_role` gọi | được |
+| Bảng key nằm ở `public` | không có cái nào |
+| RLS trên mọi bảng, số policy | bật, 0 policy |
+| Chống phát lại nonce | chặn |
+| Cùng máy, nonce mới | cho qua |
+| Vượt `max_devices = 1` | chặn (`device_limit`) |
+| Cùng `device_id`, khoá công khai khác | chặn (`device_conflict`) |
+| Thu hồi thiết bị rồi kích hoạt lại | chặn (`device_revoked`) |
+| Digest key sai | chặn (`license_invalid`) |
+| Thu hồi license | chặn |
+| Chống dò tần số 10/phút, gọi 12 lần | 10 qua, 2 chặn |
+| View rút `group.` từ `features` | đúng |
 
-Sau khi deploy, đo bốn thứ này:
+⛔ **Phép đo đầu bảng là phép quan trọng nhất.** Mặc định Postgres cho PUBLIC
+gọi mọi hàm mới, và `public` là schema PostgREST phục vụ — nếu `anon` gọi được
+`tkauto_activate` thì ai có file `.exe` cũng gọi `/rest/v1/rpc/tkauto_activate`
+trực tiếp và **bỏ qua toàn bộ phần kiểm chữ ký thiết bị**. Đo được `false` mới
+là bằng chứng; đọc code chỉ là ý định.
 
-1. **Kích hoạt một key** → app lên được tới `ready`.
-2. **Kích hoạt máy thứ hai** với `--max-devices 1` → phải bị từ chối (HTTP 403).
-3. **Thu hồi thiết bị rồi kích hoạt lại cùng máy đó** → phải bị từ chối. (Đúng
-   chỗ này bản Python từng có lỗ: `activate` không đọc `revoked_at`, chỉ `renew`
-   đọc — đã sửa ngày 13/10/2026 kèm test hồi quy.)
-4. **Gọi `/activate` sai key hơn 10 lần trong một phút** → phải nhận 429.
+**Còn lại một phép phải đo bằng tay sau khi deploy function:** kích hoạt một key
+thật từ bản desktop → app phải lên tới `ready`. Đó là phép duy nhất đi qua cả
+chuỗi thật: launcher → Edge Function → Postgres → verify lease trong launcher.
