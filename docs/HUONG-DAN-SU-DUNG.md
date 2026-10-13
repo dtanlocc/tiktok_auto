@@ -247,7 +247,14 @@ những thứ không thuộc việc của mình. App tự `upgrade head` lúc kh
 Chưa chạy bao giờ: `LICENSE_*` đang để trống nên hiện **không có rào nào**, và
 bản friends cố ý không cần key.
 
-Khi muốn bật:
+📖 **Muốn bật mà không có domain và không trả tiền hosting: đọc
+[SUPABASE-KEY.md](SUPABASE-KEY.md).** Đường đó dùng Supabase làm nơi lưu key và
+làm luôn endpoint kích hoạt — `*.supabase.co` cho HTTPS thật nên launcher tin nó
+mà không phải cài CA, và không cần bật máy ở nhà. Đổi lại thì **không có
+auto-update và không có update bắt buộc**, lý do ghi trong mục 8 của file đó.
+
+Bảng dưới đây là đường control plane Python đầy đủ — cần một endpoint HTTPS mà
+client tin, nhưng có cả ba endpoint kể cả phát hành bản mới:
 
 | Việc | Ở đâu |
 |---|---|

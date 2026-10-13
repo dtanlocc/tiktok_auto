@@ -4,6 +4,9 @@
 hướng dẫn từ đầu đến cuối: nạp proxy và account, đăng nhập, đổi hồ sơ, đăng
 video, đóng gói `.exe`, quản lí key. File này chỉ nói về **cài đặt và dựng**.
 
+🔑 Phát key license qua Supabase (không cần domain, không cần hosting):
+[docs/SUPABASE-KEY.md](docs/SUPABASE-KEY.md).
+
 Backend FastAPI + frontend React/Tauri, điều khiển trình duyệt qua
 [`invisible_playwright`](https://github.com/feder-cr/invisible_playwright) —
 **bản chính chủ trên PyPI**, ghim `==0.30.0` trong `pyproject.toml`.

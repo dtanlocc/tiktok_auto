@@ -1,0 +1,13 @@
+# Supabase
+.branches
+.temp
+
+# dotenvx
+.env.keys
+.env.local
+.env.*.local
+
+# ⛔ `.env` o day CHUA KHOA RIENG KY LEASE va pepper - do la file duoc dua cho
+# `supabase secrets set --env-file`. Mot lan commit la phai doi khoa lease va
+# ky lai moi lease dang chay. Mau khong co bi mat la .env.example.
+.env

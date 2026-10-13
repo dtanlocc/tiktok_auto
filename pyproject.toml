@@ -57,6 +57,17 @@ dev = [
     # standalone build that imports nothing but fastapi, and cured by the
     # bump alone.
     "nuitka>=4.2.2",
+    # ⛔ DE CO THE KIEM SQL CUA SUPABASE MA KHONG CAN POSTGRES. `pglast` goi
+    # libpg_query - parser cua chinh PostgreSQL - nen no bat duoc loi cu phap
+    # trong `supabase/migrations/*.sql` KE CA TRONG THAN plpgsql, thu ma
+    # khong mot linter nao khac doc duoc.
+    #
+    # Khong phai cho tien: may phat trien nay khong co Postgres (Docker
+    # Desktop co cai nhung service bi Stopped va bat no can quyen admin), nen
+    # neu khong co cho nay thi duong duy nhat phat hien mot dau phay thieu la
+    # chay migration len du an THAT cua khach. Xem
+    # backend/tests/test_supabase_sql_is_parseable.py.
+    "pglast>=8.5",
 ]
 
 # ⛔ KHONG CO CAU HINH NAY THI LENH TEST TRONG README KHONG CHAY. Do ngay

@@ -1,0 +1,4 @@
+{
+  "type": "module",
+  "//": "Chi de Node coi cac file .ts o day la ESM. Node quyet dinh kieu module theo package.json gan nhat, va khong co file nay thi `import` trong lease.ts bi doc nhu CommonJS roi vo - tuc test doi chieu parity khong chay duoc. Deno (ban that tren Supabase) khong can file nay va khong bi anh huong. Khong khai dependency nao o day va khong duoc khai: ca hai module chi dung WebCrypto."
+}
