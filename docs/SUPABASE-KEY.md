@@ -86,20 +86,26 @@ Cả hai chạy ba file trong `supabase/migrations/`. Sau đó bảng nằm ở 
 ## 4. Đặt secret cho Edge Function
 
 ```bash
-cp supabase/.env.example supabase/.env
+uv run python scripts/supabase_make_function_env.py --operator-directory D:/tkauto-operator-dev
 ```
 
-Điền vào `supabase/.env` (file này đã bị gitignore). Lấy khoá lease dạng một
-dòng:
+Script đọc pepper, `kid` và khoá lease từ thư mục operator rồi ghi
+`<operator>/supabase-functions.env`. Nó không in giá trị nào ra màn hình, và
+khoá riêng được ghi dạng **base64 một dòng** — `importLeasePrivateKey` gỡ đầu
+PEM và mọi khoảng trắng trước khi decode, nên một dòng thì không thể bị mất dấu
+dòng khi đi qua `secrets set`, dashboard, hay một lần copy-paste. Một PEM mất
+dấu dòng là function **chết lúc deploy**, không phải lúc test.
+
+⛔ **File đó nằm ngoài repo, có lý do.** Bản đầu của tài liệu này bảo ghi vào
+`supabase/.env`; đó là một bước lùi vì nó đặt khoá riêng ký lease **vào trong**
+cây làm việc của git. File ấy có bị gitignore, nhưng "có bị gitignore" là một
+lớp bảo vệ, còn "không bao giờ nằm trong repo" thì không cần lớp nào.
+`supabase/.env.example` vẫn giữ làm bản liệt kê các biến.
+
+Rồi đẩy lên:
 
 ```bash
-uv run python -c "import re,sys;print(re.sub(r'-----[A-Z ]+-----|\s+','',open(sys.argv[1]).read()))" D:/tkauto-operator-dev/keys/lease-private.pem
-```
-
-Rồi:
-
-```bash
-tools/supabase-cli/node_modules/.bin/supabase secrets set --env-file supabase/.env
+tools/supabase-cli/node_modules/.bin/supabase secrets set --env-file D:/tkauto-operator-dev/supabase-functions.env
 ```
 
 ⛔ **Pepper phải khớp tuyệt đối** giữa `<operator>/secrets/license-key-pepper`
