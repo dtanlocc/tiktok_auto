@@ -23,7 +23,19 @@ export interface Config {
   /** ⛔ Rong khi chua bat phan phat ban phat hanh - xem `requireDelivery`. */
   downloadGrantSecret: string;
   downloadGrantTtlSeconds: number;
-  releaseBucket: string;
+  /**
+   * Cloudflare R2 - noi chua file backend.
+   *
+   * ⛔ KHONG DUNG Supabase Storage, va do la mot quyet dinh bi BUOC: Free plan
+   * cua Supabase chan upload o 50 MB va khong nang duoc tu dashboard, trong
+   * khi backend 0.1.12 la 50,7 MiB. R2 cho 10 GB luu, khong tinh egress, mot
+   * PUT toi 5 GB. Doi duoc cho chua ma khong phai ky lai manifest nao la vi
+   * `download_url` tro vao function `artifacts` chu khong tro thang vao Storage.
+   */
+  r2AccountId: string;
+  r2Bucket: string;
+  r2AccessKeyId: string;
+  r2SecretAccessKey: string;
 }
 
 function required(name: string): string {
@@ -114,7 +126,10 @@ export async function loadConfig(): Promise<Config> {
     // rong - mot HMAC khoa rong la mot ve ai cung ky duoc.
     downloadGrantSecret: optionalText("TKAUTO_DOWNLOAD_GRANT_SECRET"),
     downloadGrantTtlSeconds: optionalInt("TKAUTO_DOWNLOAD_GRANT_TTL_SECONDS", 300),
-    releaseBucket: optionalText("TKAUTO_RELEASE_BUCKET") || "releases",
+    r2AccountId: optionalText("TKAUTO_R2_ACCOUNT_ID"),
+    r2Bucket: optionalText("TKAUTO_R2_BUCKET") || "releases",
+    r2AccessKeyId: optionalText("TKAUTO_R2_ACCESS_KEY_ID"),
+    r2SecretAccessKey: optionalText("TKAUTO_R2_SECRET_ACCESS_KEY"),
   };
   if (
     cached.downloadGrantTtlSeconds < 60 ||
@@ -137,6 +152,24 @@ export function requireDelivery(config: Config): void {
     throw new Error(
       "TKAUTO_DOWNLOAD_GRANT_SECRET phai dai it nhat 32 ky tu de bat phan phat ban phat hanh",
     );
+  }
+  // ⛔ DOI DU CA BON, khong chi "co cai nao thi dung cai do". Thieu mot bien
+  // thi `presignR2Get` van ky ra mot URL - mot URL tro vao host rong hoac ky
+  // bang khoa rong - va R2 tra 403 khong noi gi ve nguyen nhan. Dung lai o day
+  // thi thong bao noi dung ten bien thieu.
+  const missing = (
+    [
+      ["TKAUTO_R2_ACCOUNT_ID", config.r2AccountId],
+      ["TKAUTO_R2_BUCKET", config.r2Bucket],
+      ["TKAUTO_R2_ACCESS_KEY_ID", config.r2AccessKeyId],
+      ["TKAUTO_R2_SECRET_ACCESS_KEY", config.r2SecretAccessKey],
+    ] as const
+  ).filter(([, value]) => !value).map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(`Thieu cau hinh R2: ${missing.join(", ")}`);
+  }
+  if (!/^[0-9a-f]{32}$/.test(config.r2AccountId)) {
+    throw new Error("TKAUTO_R2_ACCOUNT_ID phai la 32 ky tu hex");
   }
 }
 

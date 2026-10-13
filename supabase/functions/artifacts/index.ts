@@ -10,12 +10,19 @@
 // `scripts/supabase_release_admin.py` ky dung chuoi do. Doi ten function la
 // moi manifest da ky trong DB thanh vo dung.
 //
-// ⛔ VA DO LA LY DO KHONG TRO THANG VAO SIGNED URL CUA STORAGE. Signed URL het
-// han sau vai phut; nhet no vao mot manifest ky mot lan la manifest chet theo.
-// Function nay la lop co dinh o giua: kiem ve, roi ky mot signed URL ngan han
-// NGAY LUC DO va chuyen huong sang do.
+// ⛔ VA DO LA LY DO KHONG TRO THANG VAO URL CUA CHO CHUA. URL da ky het han
+// sau vai phut; nhet no vao mot manifest ky mot lan la manifest chet theo.
+// Function nay la lop co dinh o giua: kiem ve, roi ky mot URL ngan han NGAY
+// LUC DO va chuyen huong sang do.
+//
+// ⛔ VA CHINH LOP DO CUU DUOC MOT LAN DOI CHO CHUA. Ban dau file nam tren
+// Supabase Storage; Free plan chan upload o 50 MB va backend 0.1.12 la 50,7
+// MiB - vuot dung 0,7 MiB va khong nang duoc tren plan mien phi. Chuyen sang
+// Cloudflare R2 (10 GB, khong tinh egress, PUT toi 5 GB) chi phai sua function
+// nay; KHONG phai ky lai mot manifest nao.
 
 import { grantDigest, verifyDownloadGrant } from "../_shared/grant.ts";
+import { amzDateFrom, presignR2Get } from "../_shared/r2.ts";
 import {
   callRpc,
   clientBucket,
@@ -101,45 +108,34 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return verdictResponse(code);
   }
 
-  // ⛔ KY SIGNED URL NGAY LUC NAY, han bang han con lai cua ve. Bucket la
-  // private, nen day la duong duy nhat ra file - va no het han ngay sau do.
+  // ⛔ KY URL NGAY LUC NAY, han bang han con lai cua ve. Bucket R2 la private,
+  // nen day la duong duy nhat ra file - va no het han ngay sau do.
+  //
+  // ⛔ KY TAI CHO, KHONG GOI MANG. Khac ban Supabase Storage truoc day (phai
+  // POST sang /storage/v1/object/sign roi doi tra loi), SigV4 la mot phep bam
+  // thuan - khong co luot di mang nao, khong co gi de that bai vi mang, va
+  // khong co do tre. Do la mot ly do nua R2 hon o cho nay.
   let signed: string;
   try {
-    const response = await fetch(
-      `${config.supabaseUrl}/storage/v1/object/sign/${config.releaseBucket}/${verdict.storage_object}`,
+    signed = await presignR2Get(
       {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          apikey: config.serviceRoleKey,
-          authorization: `Bearer ${config.serviceRoleKey}`,
-        },
-        body: JSON.stringify({ expiresIn: config.downloadGrantTtlSeconds }),
+        accountId: config.r2AccountId,
+        bucket: config.r2Bucket,
+        accessKeyId: config.r2AccessKeyId,
+        secretAccessKey: config.r2SecretAccessKey,
+      },
+      String(verdict.storage_object),
+      {
+        expiresSeconds: config.downloadGrantTtlSeconds,
+        amzDate: amzDateFrom(Math.floor(Date.now() / 1000)),
       },
     );
-    if (!response.ok) {
-      throw new Error(`${response.status} ${await response.text()}`);
-    }
-    const body = (await response.json()) as { signedURL?: string };
-    if (!body.signedURL) throw new Error("Storage khong tra ve signedURL");
-    // ⛔ NOI CHUOI, KHONG DUNG `new URL(path, base)`. Cach do am tham BO phan
-    // duong dan cua base khi path bat dau bang "/": Storage tra ve
-    // "/object/sign/<bucket>/<file>?token=..." nen
-    // `new URL(that, "https://x/storage/v1")` ra "https://x/object/sign/..."
-    // - mat han "/storage/v1", va 404. Bai test
-    // `test_a_valid_grant_redirects_to_a_short_lived_storage_url` bat duoc
-    // dung cho nay. Van nhan ca dang URL tuyet doi, vi mot so ban Storage tra
-    // ve nhu vay.
-    const raw = body.signedURL;
-    signed = /^https?:\/\//i.test(raw)
-      ? raw
-      : `${config.supabaseUrl}/storage/v1/${raw.replace(/^\/+/, "")}`;
   } catch (error) {
-    console.error("ky signed URL that bai:", error);
+    console.error("ky URL R2 that bai:", error);
     return jsonResponse(503, { detail: "Artifact storage is unavailable." });
   }
 
-  // ⛔ 302, KHONG PHAI TU TRUYEN BYTE. File backend ~41 MB; day la Edge
+  // ⛔ 302, KHONG PHAI TU TRUYEN BYTE. File backend ~51 MB; day la Edge
   // Function, khong phai CDN - truyen qua day la tra gia CPU va cham tran
   // kich thuoc phan hoi. Signed URL di thang tu Storage.
   //

@@ -46,7 +46,6 @@ def main() -> None:
     parser.add_argument("--operator-directory", required=True, type=Path)
     parser.add_argument("--minimum-client-version", default="0.1.0")
     parser.add_argument("--minimum-backend-version", default="0.1.0")
-    parser.add_argument("--release-bucket", default="releases")
     parser.add_argument(
         "--lease-ttl-seconds",
         type=int,
@@ -92,6 +91,24 @@ def main() -> None:
                 "Tao lai bang scripts/initialize_operator_environment.py."
             )
 
+    # ⛔ THONG TIN R2: file backend nam tren Cloudflare R2, khong phai Supabase
+    # Storage - Free plan cua Supabase chan upload o 50 MB va backend da vuot.
+    # Doc tu cung file ma script phat hanh doc, de hai ben khong the tro vao
+    # hai bucket khac nhau.
+    r2_path = operator / "secrets" / "r2-credentials.json"
+    r2 = {}
+    if r2_path.is_file():
+        raw = json.loads(r2_path.read_text(encoding="utf-8"))
+        r2 = {
+            name: str(raw.get(name, "")).strip()
+            for name in ("account_id", "bucket", "access_key_id", "secret_access_key")
+        }
+        missing_r2 = [name for name, value in r2.items() if not value]
+        if missing_r2:
+            raise SystemExit(
+                f"{r2_path.name} thieu truong: {', '.join(missing_r2)}"
+            )
+
     lines = [
         "# File nay do scripts/supabase_make_function_env.py sinh ra.",
         "# ⛔ CO KHOA RIENG KY LEASE. Khong copy vao repo, khong gui qua chat.",
@@ -110,7 +127,11 @@ def main() -> None:
         lines.append(f"TKAUTO_LEASE_TTL_SECONDS={args.lease_ttl_seconds}")
     if grant_secret:
         lines.append(f"TKAUTO_DOWNLOAD_GRANT_SECRET={grant_secret}")
-        lines.append(f"TKAUTO_RELEASE_BUCKET={args.release_bucket}")
+    if r2:
+        lines.append(f"TKAUTO_R2_ACCOUNT_ID={r2['account_id']}")
+        lines.append(f"TKAUTO_R2_BUCKET={r2['bucket']}")
+        lines.append(f"TKAUTO_R2_ACCESS_KEY_ID={r2['access_key_id']}")
+        lines.append(f"TKAUTO_R2_SECRET_ACCESS_KEY={r2['secret_access_key']}")
 
     out = operator / _OUTPUT_NAME
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -123,10 +144,15 @@ def main() -> None:
     print(f"  khoa ky  : {len(single_line)} ky tu base64, mot dong")
     print(f"  san ban  : {args.minimum_client_version} / {args.minimum_backend_version}")
     if grant_secret:
-        print(f"  ve tai   : {len(grant_secret)} ky tu, bucket '{args.release_bucket}'")
+        print(f"  ve tai   : {len(grant_secret)} ky tu")
     else:
         print("  ve tai   : KHONG CO - hai function releases/artifacts se tra 500.")
         print(f"             Thieu {grant_path}")
+    if r2:
+        print(f"  R2       : bucket '{r2['bucket']}', account {r2['account_id'][:8]}...")
+    else:
+        print("  R2       : KHONG CO - function artifacts se tra 500.")
+        print(f"             Thieu {r2_path}")
     print()
     print("Dat len Supabase:")
     print("  tools/supabase-cli/node_modules/.bin/supabase secrets set \\")

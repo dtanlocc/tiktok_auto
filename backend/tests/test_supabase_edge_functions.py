@@ -38,6 +38,14 @@ _LEASE_SEED = bytes(range(64, 96))
 _KEY_ID = "lease-dev-2026-01"
 _PEPPER = "p" * 48
 _GRANT_SECRET = "g" * 48
+#: Cau hinh R2 gia. `TKAUTO_R2_ACCOUNT_ID` phai la 32 ky tu hex, vi
+#: `requireDelivery` kiem dinh dang do.
+_R2_ENV = {
+    "TKAUTO_R2_ACCOUNT_ID": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+    "TKAUTO_R2_BUCKET": "releases",
+    "TKAUTO_R2_ACCESS_KEY_ID": "AKIAEXAMPLEKEYID0000",
+    "TKAUTO_R2_SECRET_ACCESS_KEY": "wJalrXUtnFEMI-K7MDENG-bPxRfiCYEXAMPLEKEY",
+}
 _BASE = "https://example.supabase.co/functions/v1"
 
 
@@ -91,7 +99,7 @@ def _env(**overrides: str) -> dict[str, str]:
         # ⛔ `releases` va `artifacts` goi `requireDelivery`, nen thieu bi mat
         # nay la ca hai tra 500. `activate`/`lease` thi khong can no.
         "TKAUTO_DOWNLOAD_GRANT_SECRET": _GRANT_SECRET,
-        "TKAUTO_RELEASE_BUCKET": "releases",
+        **_R2_ENV,
     }
     base.update(overrides)
     return base
@@ -923,7 +931,20 @@ def _grant(device: Device, artifact_id: str, ttl: int = 300) -> str:
     return token
 
 
-def test_a_valid_grant_redirects_to_a_short_lived_storage_url():
+def test_a_valid_grant_redirects_to_a_presigned_r2_url():
+    """⛔ So chu ky voi ban Python ky, khong chi kiem "co giong URL khong".
+
+    Mot URL dung dang nhung ky sai thi R2 tra 403 ma khong noi gi ve nguyen
+    nhan - loi se lo ra khi khach bam cap nhat, tren may khach. Nen phep kiem
+    o day la: dung `r2_sigv4` cua Python ky lai voi CHINH `X-Amz-Date` ma
+    function da dung, roi so tung byte.
+    """
+    import sys
+    from urllib.parse import parse_qs, urlsplit
+
+    sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+    import r2_sigv4
+
     device = Device()
     token = _grant(device, "artifact_0112")
     result = _run(
@@ -931,14 +952,28 @@ def test_a_valid_grant_redirects_to_a_short_lived_storage_url():
                       rpc={"tkauto_claim_download": [_SIGNED_OBJECT]})
     )
     assert result["status"] == 302, result
-    assert result["headers"]["location"].startswith(
-        "https://example.supabase.co/storage/v1/object/sign/releases/"
-    )
+    location = result["headers"]["location"]
+    assert location.startswith(
+        f"https://{_R2_ENV['TKAUTO_R2_ACCOUNT_ID']}.r2.cloudflarestorage.com/releases/"
+    ), location
     assert result["headers"]["cache-control"] == "no-store"
-    # Phai ky dung object ma DB chi ra, khong phai artifact_id.
-    assert result["storage_calls"] == [
-        {"path": "releases/backend-0.1.12.exe", "body": {"expiresIn": 300}}
-    ]
+    # Khong con luot di mang nao de ky URL: SigV4 la phep bam thuan.
+    assert result["storage_calls"] == []
+
+    query = parse_qs(urlsplit(location).query)
+    assert query["X-Amz-Expires"] == ["300"]
+    expected = r2_sigv4.presign_get(
+        account_id=_R2_ENV["TKAUTO_R2_ACCOUNT_ID"],
+        bucket="releases",
+        # Phai ky dung object ma DB chi ra, khong phai artifact_id.
+        key="backend-0.1.12.exe",
+        access_key_id=_R2_ENV["TKAUTO_R2_ACCESS_KEY_ID"],
+        secret_access_key=_R2_ENV["TKAUTO_R2_SECRET_ACCESS_KEY"],
+        expires_seconds=300,
+        amz_date=query["X-Amz-Date"][0],
+    )
+    assert location == expected
+
     # Dau ve gui len DB phai la sha256 cua chinh ve.
     assert result["rpc_calls"][0]["args"]["p_grant_digest"] == hashlib.sha256(
         token.encode()
@@ -996,16 +1031,31 @@ def test_a_revoked_device_cannot_download_even_with_a_fresh_grant():
     assert result["storage_calls"] == []
 
 
-def test_a_storage_outage_is_reported_as_unavailable_not_as_a_refusal():
+@pytest.mark.parametrize(
+    ("overrides", "why"),
+    [
+        ({"TKAUTO_R2_ACCOUNT_ID": ""}, "thieu account id"),
+        ({"TKAUTO_R2_ACCESS_KEY_ID": ""}, "thieu access key"),
+        ({"TKAUTO_R2_SECRET_ACCESS_KEY": ""}, "thieu secret"),
+        ({"TKAUTO_R2_ACCOUNT_ID": "khong-phai-hex"}, "account id sai dinh dang"),
+    ],
+)
+def test_broken_r2_configuration_stops_the_function_instead_of_signing_garbage(
+    overrides, why
+):
+    """⛔ Thieu mot bien thi SigV4 VAN ky ra mot URL - ky bang khoa rong, tro
+    vao host rong - va R2 tra 403 khong noi gi ve nguyen nhan. Dung lai o
+    `requireDelivery` thi thong bao noi dung ten bien thieu.
+    """
     device = Device()
     token = _grant(device, "artifact_0112")
-    result = _run(
-        _artifact_job("artifact_0112", token,
-                      rpc={"tkauto_claim_download": [_SIGNED_OBJECT]},
-                      storage=None)
-    )
-    assert result["status"] == 503, result
-    assert result["body"]["detail"] == "Artifact storage is unavailable."
+    job = _artifact_job("artifact_0112", token,
+                        rpc={"tkauto_claim_download": [_SIGNED_OBJECT]})
+    job["env"].update(overrides)
+    result = _run(job)
+    assert result["status"] == 500, (why, result)
+    assert result["body"]["detail"] == "Server is misconfigured."
+    assert result["rpc_calls"] == []
 
 
 @pytest.mark.parametrize(

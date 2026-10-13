@@ -1,5 +1,12 @@
-"""Phat hanh mot ban backend qua Supabase: ky manifest O MAY NAY, tai file len
-Storage, ghi mot dong vao so dang ky.
+"""Phat hanh mot ban backend: ky manifest O MAY NAY, tai file len Cloudflare
+R2, ghi mot dong vao so dang ky tren Supabase.
+
+⛔ FILE NAM TREN R2, KHONG PHAI Supabase Storage. Do ngay 13/10/2026: Free plan
+cua Supabase chan upload o 50 MB va khong nang duoc tu dashboard, trong khi
+backend 0.1.12 la 50,7 MiB - vuot dung 0,7 MiB. R2 cho 10 GB luu, khong tinh
+egress, mot PUT toi 5 GB. Doi duoc cho chua ma khong phai ky lai manifest nao
+la vi `download_url` tro vao function `artifacts` chu khong tro thang vao cho
+chua - mot lop gian tiep dat them ngay tu dau, va gio no tra cong.
 
 ⛔ KHOA KY RELEASE KHONG BAO GIO ROI MAY NAY, va do la ca y nghia cua cach lam
 nay. Manifest duoc ky tai day bang `<operator>/keys/release-private.pem`, roi
@@ -18,8 +25,8 @@ theo.
 
 Dung:
 
-  # Lan dau: tao bucket private
-  uv run python scripts/supabase_release_admin.py init-bucket \\
+  # Lan dau: kiem thong tin R2 (bucket phai tu tao trong Cloudflare Dashboard)
+  uv run python scripts/supabase_release_admin.py check-storage \\
       --operator-directory D:/tkauto-operator-dev
 
   # Phat hanh
@@ -37,12 +44,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess
 import sys
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
@@ -53,9 +60,11 @@ from app.security.release import (  # noqa: E402
 )
 from control_plane.app.models import new_id  # noqa: E402
 
+import r2_sigv4  # noqa: E402
+
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_CLI = _REPO_ROOT / "tools" / "supabase-cli" / "node_modules" / ".bin" / "supabase.cmd"
 _DATABASE_URL_FILE = "secrets/supabase-database-url"
+_R2_FILE = "secrets/r2-credentials.json"
 _DEFAULT_BUCKET = "releases"
 
 
@@ -114,51 +123,118 @@ def _release_signer(operator: Path) -> ReleaseManifestSigner:
     return ReleaseManifestSigner.from_pem(key_id, pem)
 
 
-def _run_cli(arguments: list[str], *, cwd: Path | None = None) -> None:
-    if not _CLI.is_file():
-        raise SystemExit(
-            f"Khong thay Supabase CLI o {_CLI}. Chay `npm install` trong "
-            "tools/supabase-cli/."
-        )
-    # ⛔ GOI SHIM .cmd, KHONG PHAI .ps1. ExecutionPolicy mac dinh cua Windows
-    # chan file .ps1 ("running scripts is disabled on this system"); shim .cmd
-    # khong chiu chinh sach do. Da gap dung loi nay voi `supabase login`.
-    result = subprocess.run(
-        [str(_CLI), *arguments], cwd=str(cwd or _REPO_ROOT)
-    )
-    if result.returncode != 0:
-        raise SystemExit(f"Lenh CLI that bai: supabase {' '.join(arguments)}")
+def _r2_config(operator: Path) -> dict[str, str]:
+    """Doc thong tin R2 tu thu muc operator.
 
-
-def cmd_init_bucket(args: argparse.Namespace) -> None:
-    """Tao bucket PRIVATE qua SQL.
-
-    ⛔ `public = false` LA BAT BUOC. Bucket public nghia la bat ky ai biet
-    duong dan deu tai duoc file backend - va luc do ca chuoi ve tai, kiem
-    thiet bi, kiem license tro thanh trang tri. Script nay tu choi bat mot
-    bucket dang public thanh noi chua ban phat hanh.
+    ⛔ VI SAO R2 CHU KHONG PHAI Supabase Storage. Do ngay 13/10/2026: Free plan
+    cua Supabase chan upload o 50 MB va KHONG nang duoc tu dashboard, trong khi
+    backend 0.1.12 la 50,7 MiB - vuot dung 0,7 MiB. R2 cho 10 GB luu, khong
+    tinh egress, mot PUT toi 5 GB. Doi duoc cho chua ma khong phai ky lai
+    manifest nao la vi `download_url` tro vao function `artifacts`.
     """
-    with _connect(args.operator_directory) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "select public from storage.buckets where id = %s", (args.bucket,)
-            )
-            row = cursor.fetchone()
-            if row is not None:
-                if row[0]:
-                    raise SystemExit(
-                        f"Bucket '{args.bucket}' dang la PUBLIC. Mot bucket public "
-                        "lam toan bo phan kiem quyen tai thanh vo nghia. Doi no "
-                        "thanh private trong dashboard, hoac dung mot ten khac."
-                    )
-                print(f"Bucket '{args.bucket}' da co va dang private.")
-                return
-            cursor.execute(
-                "insert into storage.buckets (id, name, public) values (%s, %s, false)",
-                (args.bucket, args.bucket),
-            )
-        connection.commit()
-    print(f"Da tao bucket private '{args.bucket}'.")
+    path = operator / _R2_FILE
+    if not path.is_file():
+        raise SystemExit(
+            f"Thieu {_R2_FILE} trong {operator}.\n"
+            "Tao file JSON voi bon truong, lay o Cloudflare Dashboard -> R2:\n"
+            '  {"account_id": "<32 hex>", "bucket": "releases",\n'
+            '   "access_key_id": "...", "secret_access_key": "..."}\n'
+            "Token can quyen 'Object Read & Write' cho dung bucket do."
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    missing = [
+        name
+        for name in ("account_id", "bucket", "access_key_id", "secret_access_key")
+        if not str(data.get(name, "")).strip()
+    ]
+    if missing:
+        raise SystemExit(f"{_R2_FILE} thieu truong: {', '.join(missing)}")
+    account = str(data["account_id"]).strip()
+    if len(account) != 32 or any(c not in "0123456789abcdef" for c in account.lower()):
+        raise SystemExit(
+            "account_id phai la 32 ky tu hex (Cloudflare Dashboard -> R2 -> "
+            f"Account ID); dang co {account!r}."
+        )
+    return {name: str(data[name]).strip() for name in data if isinstance(data[name], str)} | {
+        "account_id": account
+    }
+
+
+def _r2_put(config: dict[str, str], key: str, source: Path, payload_sha256: str) -> None:
+    """Day file len R2 bang mot PUT da ky SigV4."""
+    import time
+
+    import httpx
+
+    size = source.stat().st_size
+    url, headers = r2_sigv4.signed_put_headers(
+        account_id=config["account_id"],
+        bucket=config["bucket"],
+        key=key,
+        access_key_id=config["access_key_id"],
+        secret_access_key=config["secret_access_key"],
+        payload_sha256=payload_sha256,
+        content_length=size,
+        content_type="application/octet-stream",
+        amz_date=time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()),
+    )
+    # ⛔ DOC CA FILE VAO BO NHO, co y. SigV4 cho PUT ky sha256 THAT cua than
+    # request, nen than khong the duoc tinh dan trong luc gui; va 51 MB trong
+    # RAM tren may phat trien la khong dang ke. Doi lai, R2 tu choi mot than bi
+    # doi tren duong di - mot phep kiem mien phi truoc khi launcher doi chieu
+    # sha256 voi manifest da ky.
+    body = source.read_bytes()
+    with httpx.Client(timeout=600) as client:
+        response = client.put(url, headers=headers, content=body)
+    if response.status_code not in (200, 201):
+        raise SystemExit(
+            f"R2 tu choi upload (HTTP {response.status_code}): "
+            f"{response.text[:400]}"
+        )
+
+
+def cmd_check_storage(args: argparse.Namespace) -> None:
+    """Kiem thong tin R2 truoc khi phat hanh lan dau.
+
+    ⛔ KHONG TAO BUCKET HO. Tao bucket R2 can Cloudflare API voi mot token
+    quyen rong hon han quyen can de day file; giu token o muc "Object Read &
+    Write" cho DUNG mot bucket thi an toan hon, va doi lay viec phai tu bam
+    "Create bucket" mot lan trong dashboard.
+    """
+    import time
+
+    import httpx
+
+    config = _r2_config(args.operator_directory)
+    bucket = config["bucket"]
+    # Ky mot GET cho mot key chac chan khong ton tai: 404 nghia la thong tin
+    # dang nhap DUNG va bucket co that; 403 nghia la sai khoa hoac sai quyen.
+    url = r2_sigv4.presign_get(
+        account_id=config["account_id"],
+        bucket=bucket,
+        key="__kiem-thong-tin-dang-nhap__",
+        access_key_id=config["access_key_id"],
+        secret_access_key=config["secret_access_key"],
+        expires_seconds=60,
+        amz_date=time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()),
+    )
+    with httpx.Client(timeout=60) as client:
+        response = client.get(url)
+    if response.status_code == 404:
+        print(f"R2 OK: bucket '{bucket}' co that va thong tin dang nhap dung.")
+        print("  (404 la ket qua mong doi: key kiem thu khong ton tai.)")
+        return
+    if response.status_code == 403:
+        raise SystemExit(
+            "R2 tra ve 403. Thuong la: sai access key/secret, token khong co "
+            f"quyen 'Object Read & Write', hoac bucket '{bucket}' thuoc account "
+            "khac. Kiem lai trong Cloudflare Dashboard -> R2 -> API tokens."
+        )
+    if response.status_code in (301, 404) or "NoSuchBucket" in response.text:
+        raise SystemExit(f"Khong thay bucket '{bucket}' trong account nay.")
+    raise SystemExit(
+        f"R2 tra ve HTTP {response.status_code}: {response.text[:400]}"
+    )
 
 
 def cmd_publish(args: argparse.Namespace) -> None:
@@ -225,28 +301,9 @@ def cmd_publish(args: argparse.Namespace) -> None:
     if envelope.manifest.artifact_id != artifact_id:
         raise SystemExit("Manifest tu kiem lai khong khop artifact_id.")
 
-    print(f"Tai len Storage: ss:///{args.bucket}/{storage_object}")
-    # ⛔ `--experimental` LA BAT BUOC: `supabase storage cp` tu choi chay ma
-    # khong co no ("must set the --experimental flag to run this command").
-    # Va vi no la lenh experimental, cu phap co the doi giua hai ban CLI - do
-    # la mot ly do nua de `tools/supabase-cli/package.json` ghim chinh xac
-    # 2.120.0 thay vi dung dau `^`.
-    #
-    # ⛔ NGUON PHAI LA TEN FILE TRAN, KHONG PHAI DUONG DAN TUYET DOI WINDOWS.
-    # CLI phan tich doi so nhu URI, nen `D:\...` bi hieu la scheme "D" va no
-    # bao "Unsupported operation / Run cp -r to copy between local
-    # directories" - mot thong bao khong he noi gi ve nguyen nhan. Nen chay CLI
-    # ngay trong thu muc chua file va dua ten tran, con `--workdir` chi cho no
-    # cho tim `supabase/` de `--linked` lam viec.
-    _run_cli(
-        [
-            "storage", "cp", source.name, f"ss:///{args.bucket}/{storage_object}",
-            "--linked", "--experimental",
-            "--workdir", str(_REPO_ROOT),
-            "--content-type", "application/octet-stream",
-        ],
-        cwd=source.parent,
-    )
+    r2 = _r2_config(operator)
+    print(f"Tai len R2: {r2['bucket']}/{storage_object} ({size_bytes / 1048576:.1f} MiB)")
+    _r2_put(r2, storage_object, source, sha256)
 
     with _connect(operator) as connection:
         with connection.cursor() as cursor:
@@ -344,7 +401,10 @@ def main() -> None:
     parser.add_argument("--bucket", default=_DEFAULT_BUCKET)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("init-bucket", parents=[common], help="Tao bucket private")
+    sub.add_parser(
+        "check-storage", parents=[common],
+        help="Kiem thong tin dang nhap R2 va bucket",
+    )
 
     publish = sub.add_parser("publish", parents=[common], help="Phat hanh mot ban")
     publish.add_argument("--file", required=True, type=Path)
@@ -376,7 +436,7 @@ def main() -> None:
         raise SystemExit(f"Khong thay thu muc operator: {args.operator_directory}")
 
     {
-        "init-bucket": cmd_init_bucket,
+        "check-storage": cmd_check_storage,
         "publish": cmd_publish,
         "list": cmd_list,
         "deactivate": cmd_deactivate,

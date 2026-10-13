@@ -30,7 +30,8 @@ khớp cả ba endpoint với ba function tên `activate`, `lease`, `releases`.
 | Khoá ký **release** | `<operator>/keys/release-private.pem` | **Không, tuyệt đối** |
 | Manifest bản phát hành **đã ký** | bảng `license.releases` | Có — chỉ token, không phải khoá |
 | Bí mật vé tải | `<operator>/secrets/download-grant-secret` **và** secret Edge Function | Có |
-| File backend `.exe` | bucket Storage **private** `releases` | Có |
+| File backend `.exe` | bucket **Cloudflare R2** private `releases` | Không — ở R2, xem mục 8 |
+| Khoá S3 của R2 | `<operator>/secrets/r2-credentials.json` **và** secret Edge Function | Có |
 | Mật khẩu database | `<operator>/secrets/supabase-database-url` | — |
 
 ⛔ **Khoá release không bao giờ lên mây.** Chiếm được khoá lease chỉ là dùng lậu
@@ -266,11 +267,33 @@ uv run python scripts/supabase_release_admin.py list --operator-directory D:/tka
 
 ### Phát hành một bản
 
-Lần đầu, tạo bucket **private**:
+⛔ **File backend nằm trên Cloudflare R2, không phải Supabase Storage.** Đo
+ngày 13/10/2026: Free plan của Supabase **chặn upload ở 50 MB và không nâng
+được từ dashboard**, trong khi backend 0.1.12 là **50,7 MiB** — vượt đúng 0,7
+MiB. R2 cho 10 GB lưu, **không tính egress**, một PUT tới 5 GB. Đổi được chỗ
+chứa mà **không phải ký lại manifest nào** là vì `download_url` trỏ vào function
+`artifacts` chứ không trỏ thẳng vào chỗ chứa — lớp gián tiếp đặt từ đầu, giờ nó
+trả công.
+
+Lần đầu: vào Cloudflare Dashboard → **R2** → tạo bucket `releases` (**private**,
+đừng bật Public Development URL), rồi **R2 → API tokens** → tạo token quyền
+**Object Read & Write** cho đúng bucket đó. Ghi vào
+`<operator>/secrets/r2-credentials.json`:
+
+```json
+{"account_id": "<32 ký tự hex>", "bucket": "releases",
+ "access_key_id": "...", "secret_access_key": "..."}
+```
+
+Rồi kiểm:
 
 ```bash
-uv run python scripts/supabase_release_admin.py init-bucket --operator-directory D:/tkauto-operator-dev
+uv run python scripts/supabase_release_admin.py check-storage --operator-directory D:/tkauto-operator-dev
 ```
+
+Nó ký một GET cho một key chắc chắn không tồn tại — **404 là kết quả mong đợi**
+(thông tin đăng nhập đúng, bucket có thật); 403 nghĩa là sai khoá hoặc token
+thiếu quyền.
 
 Rồi mỗi lần có bản mới:
 
@@ -279,8 +302,12 @@ uv run python scripts/supabase_release_admin.py publish --operator-directory D:/
 ```
 
 Script kiểm đầu PE (`MZ`), tính sha256, **ký manifest ngay tại máy này** bằng
-`keys/release-private.pem`, tự xác thực lại bằng khoá công khai, tải file lên
-Storage, rồi ghi một dòng vào `license.releases`.
+`keys/release-private.pem`, tự xác thực lại bằng khoá công khai, tải file lên R2
+bằng một **PUT đã ký SigV4**, rồi ghi một dòng vào `license.releases`.
+
+⛔ **PUT ký sha256 thật của thân request**, không phải `UNSIGNED-PAYLOAD`. Nhờ
+vậy R2 tự từ chối một thân bị đổi trên đường đi — một phép kiểm miễn phí, trước
+khi launcher đối chiếu sha256 với manifest đã ký.
 
 ⛔ **Khoá ký release không bao giờ rời máy.** Chỉ **chuỗi token đã ký** được lưu
 lên Supabase; Edge Function phát lại chuỗi đó chứ không ký gì. Chiếm được
@@ -328,11 +355,9 @@ nguy hiểm nhất có thể dựng.
 ⛔ **`mandatory` được lưu nhưng chưa dùng tới.** Cột có, manifest ký kèm, nhưng
 chưa có đường nào buộc khách cập nhật ngay.
 
-⛔ **Egress Storage có hạn.** Free tier 5 GB/tháng — với bản 41 MB là khoảng
-120 lần tải mỗi tháng. Mỗi vòng hết-hạn-rồi-gia-hạn là một lần tải lại, nên con
-số đó chia cho số máy. Vượt thì chuyển sang Cloudflare R2 (không tính egress);
-`download_url` trỏ vào function `artifacts` chứ không trỏ thẳng vào Storage nên
-đổi chỗ chứa không cần ký lại manifest nào.
+⛔ **R2 free tier: 10 GB lưu, 1 triệu lượt ghi và 10 triệu lượt đọc mỗi
+tháng, egress không tính tiền.** Với một nhóm nhỏ thì không chạm tới. Đây là lý
+do chọn R2 thay vì Supabase Storage, ngoài chuyện trần 50 MB.
 
 ---
 
