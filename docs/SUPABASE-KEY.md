@@ -293,6 +293,43 @@ gọi mọi hàm mới, và `public` là schema PostgREST phục vụ — nếu 
 trực tiếp và **bỏ qua toàn bộ phần kiểm chữ ký thiết bị**. Đo được `false` mới
 là bằng chứng; đọc code chỉ là ý định.
 
-**Còn lại một phép phải đo bằng tay sau khi deploy function:** kích hoạt một key
-thật từ bản desktop → app phải lên tới `ready`. Đó là phép duy nhất đi qua cả
-chuỗi thật: launcher → Edge Function → Postgres → verify lease trong launcher.
+**Đã deploy và đo cả chuỗi thật**, cùng ngày, trên
+`https://ipuszafddmavvxjqvhsj.supabase.co/functions/v1` — 24 phép, gọi HTTP
+thật với bằng chứng thiết bị Ed25519 ký thật, lease xác thực bằng bộ khoá công
+khai trong `desktop-public-keys.json`:
+
+| Đo gì | Kết quả |
+|---|---|
+| `POST /activate` | 200, lease verify được bằng khoá công khai thật |
+| `features` trong lease | `app.start, accounts.manage, upload.video, group.hn01, role.owner` |
+| `group_id` / `role` đọc lại | `hn01` / `owner` |
+| `renew_after < expires_at` | đúng |
+| `Cache-Control` | `no-store` |
+| Không gửi `Authorization` vẫn vào được | đúng → `verify_jwt` đã tắt |
+| Phát lại cùng nonce | 409 |
+| Máy thứ hai, `max_devices = 1` | 403 |
+| Key sai / chữ ký giả | 401 / 401 |
+| Trường gõ sai tên | 422 |
+| Client dưới sàn phiên bản | 426 |
+| `POST /lease/renew` | 200, `jti` khác lease trước |
+| Kẻ khác ký, khai `device_id` người khác | 401 |
+| `POST /releases/check` | 200, `{"update_available": false}` |
+| `/lease/<đường lạ>` | 404 |
+
+Và 14 phép từ **góc nhìn kẻ tấn công có anon key** (tức bất kỳ ai có file
+`.exe`) — thử với cả `anon` JWT và `publishable key`:
+
+| Thử gì | Kết quả |
+|---|---|
+| `GET /rest/v1/licenses`, `devices`, `used_nonces`, `audit_events`, `overview` | **404** — không tồn tại từ góc nhìn API |
+| `POST /rest/v1/rpc/tkauto_activate` | **401** |
+| `POST /rest/v1/rpc/tkauto_renew_device` | **401** |
+
+⛔ **404 chứ không phải 403, và đó là điều muốn.** Bảng nằm ở schema `license`
+nên PostgREST không có đường nào tới nó — không phải "bị từ chối" mà là "không
+tồn tại". Một 403 còn tiết lộ là có bảng tên đó.
+
+**Còn lại một phép phải đo bằng tay:** build bản desktop với
+`TKAUTO_CONTROL_PLANE_URL` ở trên rồi kích hoạt một key → app phải lên tới
+`ready`. Phần HTTP đã đo xong ở trên; phép này đo thêm đoạn launcher ghi lease
+xuống đĩa và `check_backend_update` → `launch_backend` chạy tiếp.
