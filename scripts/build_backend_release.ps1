@@ -54,6 +54,20 @@ $arguments = @(
     # Alembic doc file revision tu dia va KHONG import chung, nen Nuitka
     # khong tu thay. Thieu dong nay thi ban .exe chay den buoc dong bo
     # schema roi bao khong tim thay thu muc script.
+    # ⛔ `--include-data-dir` BO FILE .py, va do la ly do ban 0.1.12 khong
+    # khoi dong duoc. Nuitka co y loai file Python khoi include-data-dir (de
+    # khong vo tinh ship ma nguon), nen thu muc duoc khai nhung env.py va
+    # versions/*.py bi bo lai - roi alembic bao
+    #   Can't find Python file <tmp>\migrations\env.py
+    # Loi do bi `_align_schema_version` BAT VA CHI IN RA (co y: truoc khi co
+    # alembic app van chay), nen backend di tiep roi chet o truy van dau tien
+    # voi "no such column: accounts.group_id" - mot thong bao khong he noi gi
+    # ve nguyen nhan that.
+    #
+    # Nen phai khai tung file bang `--include-data-files`. Giu luon
+    # include-data-dir o duoi cho script.py.mako va moi thu khong phai .py.
+    "--include-data-files=$repoRoot\backend\migrations\env.py=migrations\env.py"
+    "--include-data-files=$repoRoot\backend\migrations\versions\*.py=migrations\versions\"
     "--include-data-dir=$repoRoot\backend\migrations=migrations"
 )
 if ($RequireCommercial) {

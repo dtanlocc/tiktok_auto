@@ -133,6 +133,7 @@ $previous = @{
     lic = [Environment]::GetEnvironmentVariable("TKAUTO_LICENSE_PUBLIC_KEYS_JSON", "Process")
     rel = [Environment]::GetEnvironmentVariable("TKAUTO_RELEASE_PUBLIC_KEYS_JSON", "Process")
     frd = [Environment]::GetEnvironmentVariable("TKAUTO_FRIEND_BUILD", "Process")
+    upd = [Environment]::GetEnvironmentVariable("TKAUTO_DESKTOP_UPDATER", "Process")
 }
 [Environment]::SetEnvironmentVariable("TKAUTO_APP_VERSION", $Version, "Process")
 [Environment]::SetEnvironmentVariable("TKAUTO_CONTROL_PLANE_URL", $ControlPlaneUrl, "Process")
@@ -142,6 +143,10 @@ $previous = @{
 # friends truoc do trong cung shell, launcher se di duong friends - tim backend
 # canh no theo SHA-256 - va bo qua toan bo phan license ma khong bao gi.
 [Environment]::SetEnvironmentVariable("TKAUTO_FRIEND_BUILD", $null, "Process")
+# Cung ly do: mot co sot lai tu lan build desktop truoc trong cung shell se
+# lam launcher dang ky plugin updater roi PANIC, vi config cua ban nay khong
+# co `plugins.updater`.
+[Environment]::SetEnvironmentVariable("TKAUTO_DESKTOP_UPDATER", $null, "Process")
 
 Push-Location (Join-Path $repoRoot "frontend")
 try {
@@ -155,6 +160,7 @@ finally {
     [Environment]::SetEnvironmentVariable("TKAUTO_LICENSE_PUBLIC_KEYS_JSON", $previous.lic, "Process")
     [Environment]::SetEnvironmentVariable("TKAUTO_RELEASE_PUBLIC_KEYS_JSON", $previous.rel, "Process")
     [Environment]::SetEnvironmentVariable("TKAUTO_FRIEND_BUILD", $previous.frd, "Process")
+    [Environment]::SetEnvironmentVariable("TKAUTO_DESKTOP_UPDATER", $previous.upd, "Process")
     Remove-Item -LiteralPath $temporaryConfig -Force -ErrorAction SilentlyContinue
 }
 

@@ -58,6 +58,12 @@ if ($null -eq $config.plugins) {
     $config | Add-Member -NotePropertyName plugins -NotePropertyValue ([pscustomobject]@{})
 }
 $config.plugins | Add-Member -Force -NotePropertyName updater -NotePropertyValue $updater
+# ⛔ ĐẶT CỜ NGAY ĐÂY, cạnh chỗ tiêm config, để "có cờ" và "có config" không thể
+# lệch nhau. `lib.rs:desktop_updater_enabled` đọc cờ này lúc biên dịch và chỉ
+# đăng ký plugin updater khi nó bật; thiếu nó thì plugin khởi tạo với
+# `plugins.updater` null và app PANIC ngay khi mở, không hiện cửa sổ nào.
+$previousUpdaterFlag = [Environment]::GetEnvironmentVariable("TKAUTO_DESKTOP_UPDATER", "Process")
+[Environment]::SetEnvironmentVariable("TKAUTO_DESKTOP_UPDATER", "1", "Process")
 $windowsSigning = [pscustomobject]@{
     certificateThumbprint = [Environment]::GetEnvironmentVariable("TKAUTO_WINDOWS_CERTIFICATE_THUMBPRINT")
     digestAlgorithm = "sha256"
@@ -77,6 +83,10 @@ try {
 finally {
     Pop-Location
     [Environment]::SetEnvironmentVariable("TKAUTO_APP_VERSION", $previousAppVersion, "Process")
+    # ⛔ PHẢI TRẢ LẠI, không để sót: một lần build licensed hay friends sau đó
+    # trong cùng shell sẽ nhận cờ này, đăng ký plugin updater, rồi panic vì
+    # config của nó không có `plugins.updater`.
+    [Environment]::SetEnvironmentVariable("TKAUTO_DESKTOP_UPDATER", $previousUpdaterFlag, "Process")
     Remove-Item -LiteralPath $temporaryConfig -Force -ErrorAction SilentlyContinue
 }
 

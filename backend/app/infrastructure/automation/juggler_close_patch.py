@@ -21,11 +21,17 @@ The order below is the fix: closing the write end IS the exit command, so the
 read end can wait for the process to be gone. If it never goes, one leaked
 descriptor on a daemon thread is cheaper than a frozen caller.
 
-⛔ A PATCH THAT STOPS APPLYING MUST BREAK LOUDLY, not quietly. `apply()`
-refuses when the class no longer has the attributes this rewrite reads, instead
-of installing a `close` that would raise on the first teardown - and
-`tests/test_juggler_close_patch.py` fails on the next upstream bump that moves
-them. Reported upstream as well; if it is taken, this file goes.
+⛔ A PATCH THAT STOPS APPLYING MUST BREAK LOUDLY, not quietly. The patched
+`__init__` refuses when the instance no longer carries the attributes this
+rewrite reads, instead of installing a `close` that would raise on the first
+teardown - and `tests/test_juggler_close_patch.py` fails on the next upstream
+bump that moves them. Reported upstream as well; if it is taken, this file goes.
+
+⛔ AND THAT CHECK MUST NOT READ SOURCE CODE. The first version of `apply()`
+used `inspect.getsource`, which has no source to read inside a Nuitka binary:
+it raised `OSError: could not get source code` at import time, so the compiled
+backend died at startup while the uncompiled one was fine. A check that only
+works in development is not a check.
 """
 from __future__ import annotations
 
@@ -107,24 +113,32 @@ def apply() -> bool:
     if getattr(target.close, "_tkauto_patched", False):
         return False
 
-    # ⛔ Đọc từ mã nguồn `__init__`, không phải từ một instance: lớp này chỉ
-    # được tạo khi có trình duyệt thật, nên không thể dựng một cái ra để soi.
-    import inspect
-
-    source = inspect.getsource(target.__init__)
-    missing = [name for name in _REQUIRED if name not in source]
-    if missing:
-        raise RuntimeError(
-            "Khong va duoc close() cho invisible_core.juggler: "
-            f"Connection.__init__ khong con {', '.join(missing)}. "
-            "Upstream da doi hinh dang lop - doc lai juggler_close_patch.py "
-            "truoc khi go canh bao nay."
-        )
-
     original_init = target.__init__
 
     def _init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
+        # ⛔ KIỂM TRÊN INSTANCE, KHÔNG ĐỌC MÃ NGUỒN, và đây là một lỗi đã xảy
+        # ra thật chứ không phải một sở thích. Bản đầu của `apply()` dùng
+        # `inspect.getsource(target.__init__)` để soi tên thuộc tính. Trong bản
+        # Nuitka biên dịch thì KHÔNG CÓ mã nguồn: `inspect.getsource` nổ
+        # `OSError: could not get source code` ngay lúc import module, backend
+        # chết, launcher kill nó rồi báo một lỗi không nói gì về nguyên nhân -
+        # và chạy dev thì không bao giờ thấy, vì dev có source. Tức bản vá chỉ
+        # hỏng ở đúng chỗ không ai soi được: một artifact đã phát hành.
+        #
+        # Kiểm ở đây đúng hơn về bản chất: thuộc tính chỉ TỒN TẠI sau khi
+        # `__init__` chạy, nên hỏi chính instance là hỏi đúng thứ cần biết.
+        # Giá phải trả là lỗi hiện ra lúc mở trình duyệt thay vì lúc import -
+        # vẫn trước mọi lần đóng, nên `close()` không bao giờ chạy trên một lớp
+        # mà nó không hiểu.
+        missing = [name for name in _REQUIRED if not hasattr(self, name)]
+        if missing:
+            raise RuntimeError(
+                "Khong va duoc close() cho invisible_core.juggler: "
+                f"Connection khong con {', '.join(missing)}. "
+                "Upstream da doi hinh dang lop - doc lai juggler_close_patch.py "
+                "truoc khi go canh bao nay."
+            )
         # ⛔ KHOÁ ĐƯỢC TẠO Ở ĐÂY, không tạo lười trong close(): hai luồng cùng
         # vào close sẽ cùng thấy chưa có khoá và cùng tạo một cái riêng, tức
         # không khoá gì cả - mà "hai luồng cùng vào close" chính là tình huống

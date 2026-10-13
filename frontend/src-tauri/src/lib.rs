@@ -180,6 +180,29 @@ fn friends_build() -> bool {
     option_env!("TKAUTO_FRIEND_BUILD") == Some("1")
 }
 
+/// Bản build này có mang theo updater của Tauri hay không.
+///
+/// ⛔ KHÔNG CÓ CỜ NÀY THÌ APP PANIC NGAY KHI MỞ. `tauri.conf.json` gốc có
+/// `plugins: null`, và **chỉ** `build_desktop_release.ps1` tiêm
+/// `plugins.updater` vào. Trước 13/10/2026 chỗ đăng ký plugin chỉ hỏi
+/// `friends_build()`, nên **mọi** bản không-phải-friends mà không đi qua script
+/// đó đều chết với:
+///
+/// ```text
+/// PluginInitialization("updater", "Error deserializing 'plugins.updater'
+///   within your Tauri configuration: invalid type: null, expected struct Config")
+/// ```
+///
+/// Tức bản có license chưa ký (`build_licensed_unsigned_release.ps1`) và cả
+/// `npm run desktop:dev` đều không mở được — một cửa sổ không bao giờ hiện ra,
+/// và vì bản release không có console nên panic không hiện ở đâu cả.
+///
+/// Cờ được đặt ĐÚNG CHỖ tiêm config, nên "có cờ" và "có config" không thể lệch
+/// nhau.
+fn desktop_updater_enabled() -> bool {
+    option_env!("TKAUTO_DESKTOP_UPDATER") == Some("1")
+}
+
 fn friends_backend_path() -> Result<PathBuf, String> {
     let executable = std::env::current_exe()
         .map_err(|_| "Không xác định được thư mục bản Friends.".to_string())?;
@@ -1393,7 +1416,11 @@ pub fn run() {
         .build()
         .expect("local HTTP client configuration");
     let builder = tauri::Builder::default();
-    let builder = if friends_build() {
+    // ⛔ HỎI CẢ HAI. Bản friends không có updater, nhưng một bản KHÔNG phải
+    // friends cũng có thể không có — xem `desktop_updater_enabled`. Trước đây
+    // chỗ này chỉ hỏi `friends_build()` và đó là lý do bản licensed chưa ký
+    // panic ngay khi mở.
+    let builder = if friends_build() || !desktop_updater_enabled() {
         builder
     } else {
         builder.plugin(tauri_plugin_updater::Builder::new().build())
