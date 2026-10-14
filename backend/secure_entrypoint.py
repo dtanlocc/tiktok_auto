@@ -22,6 +22,20 @@ _BOOTSTRAP_ENV = {
     "omocaptcha_key": "OMOCAPTCHA_KEY",
 }
 
+#: ⛔ TRƯỜNG DUY NHẤT ĐƯỢC PHÉP RỖNG, và nó là một danh sách chứ không phải
+#: một điều kiện rải rác, để "cái gì bắt buộc" đọc được ở một chỗ.
+#:
+#: Dịch vụ giải CAPTCHA là tuỳ chọn: ai có khoá thì nhập, ai không thì vẫn
+#: chạy. Trước 14/10/2026 validator đòi mọi trường không rỗng, nên launcher
+#: truyền chuỗi rỗng xuống là backend chết ngay với "Secure launcher bootstrap
+#: value is invalid." — một thông báo không hề nói trường nào, và chỉ xảy ra
+#: trong bản đã biên dịch nên không lần chạy dev nào thấy.
+#:
+#: Mọi trường còn lại vẫn PHẢI có: thiếu `lease_path` hay
+#: `license_public_keys_json` là mất đường kiểm license, thiếu
+#: `local_session_secret` là mở cổng local cho bất kỳ tiến trình nào.
+_BOOTSTRAP_OPTIONAL = frozenset({"omocaptcha_key"})
+
 
 def _read_bootstrap() -> tuple[dict[str, str], int]:
     raw = sys.stdin.buffer.readline(_BOOTSTRAP_LIMIT + 1)
@@ -36,8 +50,10 @@ def _read_bootstrap() -> tuple[dict[str, str], int]:
     fields: dict[str, str] = {}
     for name in _BOOTSTRAP_ENV:
         item = value.get(name)
-        if not isinstance(item, str) or not item or len(item) > 32_768:
-            raise RuntimeError("Secure launcher bootstrap value is invalid.")
+        if not isinstance(item, str) or len(item) > 32_768:
+            raise RuntimeError(f"Secure launcher bootstrap value is invalid: {name}")
+        if not item and name not in _BOOTSTRAP_OPTIONAL:
+            raise RuntimeError(f"Secure launcher bootstrap value is empty: {name}")
         fields[name] = item
     port = value.get("port")
     if not isinstance(port, int) or not 1024 <= port <= 65535:
