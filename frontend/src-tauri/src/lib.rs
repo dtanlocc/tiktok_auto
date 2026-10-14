@@ -323,7 +323,9 @@ fn device_id(key: &SigningKey) -> String {
 }
 
 fn device_proof(key: &SigningKey, action: &str, app_version: &str) -> (i64, String, String) {
-    let issued_at = chrono_now();
+    // ⛔ Giờ ĐÃ BÙ chênh lệch với máy chủ, không phải giờ thô của máy này -
+    // xem `SERVER_TIME_OFFSET`.
+    let issued_at = proof_timestamp();
     let mut nonce_bytes = [0_u8; 18];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = b64url(&nonce_bytes);
@@ -333,6 +335,125 @@ fn device_proof(key: &SigningKey, action: &str, app_version: &str) -> (i64, Stri
     );
     let signature = key.sign(canonical.as_bytes());
     (issued_at, nonce, b64url(&signature.to_bytes()))
+}
+
+/// Chênh lệch giây giữa đồng hồ máy chủ và đồng hồ máy này (máy chủ − máy này).
+///
+/// ⛔ ĐỒNG HỒ SAI LÀ MỘT NGÕ CỤT, KHÔNG PHẢI MỘT PHIỀN TOÁI. Bằng chứng thiết
+/// bị mang `issued_at` lấy từ đồng hồ máy khách, và máy chủ từ chối khi lệch
+/// quá `TKAUTO_MAX_CLOCK_SKEW_SECONDS` (mặc định 300 giây). Gặp ngày
+/// 14/10/2026 trên một máy thật: kích hoạt trả
+/// "Device proof is outside the allowed time window." và **không có cách nào
+/// đi tiếp** — key đúng, khoá đúng, chỉ đồng hồ sai. Phát key mới cũng y hệt.
+///
+/// Mọi phản hồi HTTP đều mang header `Date`, và phản hồi của chính mình thì đi
+/// qua TLS nên tin được. Học chênh lệch từ đó rồi ký bằng giờ máy chủ: máy
+/// khách thôi nói sai giờ một cách vô tình, còn máy chủ vẫn kiểm cửa sổ thời
+/// gian của nó như cũ — không nới lỏng gì.
+static SERVER_TIME_OFFSET: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(0);
+
+/// `Wed, 14 Oct 2026 00:58:56 GMT` -> epoch giây.
+///
+/// ⛔ Tự đọc thay vì thêm một crate ngày tháng. Đây là IMF-fixdate của
+/// RFC 7231: độ dài cố định, luôn GMT, luôn hai chữ số — nên phần khó duy nhất
+/// là đổi ngày ra số, và thuật toán days-from-civil gói gọn trong mấy dòng.
+fn parse_http_date(value: &str) -> Option<i64> {
+    let value = value.trim();
+    let rest = value.split_once(", ")?.1;
+    let mut parts = rest.split(' ');
+    let day: i64 = parts.next()?.parse().ok()?;
+    let month = match parts.next()? {
+        "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4,
+        "May" => 5, "Jun" => 6, "Jul" => 7, "Aug" => 8,
+        "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12,
+        _ => return None,
+    };
+    let year: i64 = parts.next()?.parse().ok()?;
+    let mut clock = parts.next()?.split(':');
+    let hour: i64 = clock.next()?.parse().ok()?;
+    let minute: i64 = clock.next()?.parse().ok()?;
+    let second: i64 = clock.next()?.parse().ok()?;
+    if parts.next()? != "GMT" {
+        return None;
+    }
+    if !(1..=31).contains(&day) || !(0..=23).contains(&hour)
+        || !(0..=59).contains(&minute) || !(0..=60).contains(&second)
+    {
+        return None;
+    }
+    // days-from-civil (Howard Hinnant), đúng cho mọi năm nhuận.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
+/// Ghi lại chênh lệch đồng hồ từ một phản hồi của máy chủ mình.
+fn note_server_time(headers: &reqwest::header::HeaderMap) {
+    let Some(parsed) = headers
+        .get(reqwest::header::DATE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_http_date)
+    else {
+        return;
+    };
+    SERVER_TIME_OFFSET.store(
+        parsed - chrono_now(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// Giờ dùng để ký bằng chứng thiết bị: giờ máy này, đã bù chênh lệch đã học.
+fn proof_timestamp() -> i64 {
+    chrono_now() + SERVER_TIME_OFFSET.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Gửi một request có chữ ký; nếu bị từ chối vì lệch đồng hồ thì ký lại bằng
+/// giờ máy chủ và thử **đúng một lần nữa**.
+///
+/// ⛔ CHỈ MỘT LẦN. Thử lại vòng lặp trước một máy chủ đang từ chối là tự tạo
+/// một trận dội request; và nếu lần hai vẫn hỏng thì nguyên nhân không phải
+/// đồng hồ, nên lỗi gốc mới là thứ đáng hiện ra.
+///
+/// ⛔ VÀ CHỈ KHI CHÊNH LỆCH THỰC SỰ ĐÁNG KỂ. Một phản hồi lỗi vì lý do khác
+/// (key sai, license hết hạn) không được biến thành hai request.
+async fn send_signed_once_retrying_clock<F>(
+    client: &Client,
+    url: &str,
+    mut build: F,
+) -> Result<reqwest::Response, String>
+where
+    F: FnMut() -> Result<serde_json::Value, String>,
+{
+    let response = client
+        .post(url)
+        .json(&build()?)
+        .send()
+        .await
+        .map_err(|_| "Không kết nối được máy chủ license.".to_string())?;
+    if response.status().is_success() {
+        note_server_time(response.headers());
+        return Ok(response);
+    }
+    let before = SERVER_TIME_OFFSET.load(std::sync::atomic::Ordering::Relaxed);
+    note_server_time(response.headers());
+    let after = SERVER_TIME_OFFSET.load(std::sync::atomic::Ordering::Relaxed);
+    if (after - before).abs() < 60 {
+        return Ok(response);
+    }
+    let retried = client
+        .post(url)
+        .json(&build()?)
+        .send()
+        .await
+        .map_err(|_| "Không kết nối được máy chủ license.".to_string())?;
+    note_server_time(retried.headers());
+    Ok(retried)
 }
 
 fn chrono_now() -> i64 {
@@ -746,30 +867,30 @@ async fn activate_license(
     }
     let key = device_key()?;
     let version = app_version();
-    let (issued_at, nonce, signature) = device_proof(&key, "ACTIVATE", version);
     let public_key = key
         .verifying_key()
         .to_public_key_pem(LineEnding::LF)
         .map_err(|_| "Không xuất được device public key.".to_string())?;
-    let request = serde_json::json!({
-        "device_id": device_id(&key),
-        "issued_at": issued_at,
-        "nonce": nonce,
-        "signature": signature,
-        "app_version": version,
-        "license_key": license_key,
-        "device_public_key_pem": public_key,
-    });
-    let response = state
-        .control_http
-        .post(format!(
-            "{}/v1/activate",
-            control_plane_url()?.trim_end_matches('/')
-        ))
-        .json(&request)
-        .send()
-        .await
-        .map_err(|_| "Không kết nối được máy chủ license.".to_string())?;
+    // ⛔ Dựng lại thân request MỖI LẦN GỬI, không dựng một lần rồi gửi lại.
+    // Bằng chứng ký cả `issued_at`, nên một lần thử lại sau khi học được giờ
+    // máy chủ phải ký lại - gửi lại y nguyên thì vẫn mang đúng cái giờ sai.
+    let url = format!(
+        "{}/v1/activate",
+        control_plane_url()?.trim_end_matches('/')
+    );
+    let response = send_signed_once_retrying_clock(&state.control_http, &url, || {
+        let (issued_at, nonce, signature) = device_proof(&key, "ACTIVATE", version);
+        Ok(serde_json::json!({
+            "device_id": device_id(&key),
+            "issued_at": issued_at,
+            "nonce": nonce,
+            "signature": signature,
+            "app_version": version,
+            "license_key": license_key,
+            "device_public_key_pem": public_key,
+        }))
+    })
+    .await?;
     if !response.status().is_success() {
         return Err(format!(
             "Máy chủ từ chối kích hoạt ({}).",
@@ -802,25 +923,23 @@ async fn renew_license(
         .map_err(|_| "No previous lease exists; enter the license key once.".to_string())?;
     let current_claims = trusted_lease_claims(token.trim(), &key)?;
     let version = app_version();
-    let (issued_at, nonce, signature) = device_proof(&key, "RENEW", version);
-    let request = serde_json::json!({
-        "device_id": device_id(&key),
-        "issued_at": issued_at,
-        "nonce": nonce,
-        "signature": signature,
-        "app_version": version,
-        "license_id": current_claims.license_id,
-    });
-    let response = state
-        .control_http
-        .post(format!(
-            "{}/v1/lease/renew",
-            control_plane_url()?.trim_end_matches('/')
-        ))
-        .json(&request)
-        .send()
-        .await
-        .map_err(|_| "Could not connect to the license server for renewal.".to_string())?;
+    let url = format!(
+        "{}/v1/lease/renew",
+        control_plane_url()?.trim_end_matches('/')
+    );
+    let license_id = current_claims.license_id.clone();
+    let response = send_signed_once_retrying_clock(&state.control_http, &url, || {
+        let (issued_at, nonce, signature) = device_proof(&key, "RENEW", version);
+        Ok(serde_json::json!({
+            "device_id": device_id(&key),
+            "issued_at": issued_at,
+            "nonce": nonce,
+            "signature": signature,
+            "app_version": version,
+            "license_id": license_id,
+        }))
+    })
+    .await?;
     let response_status = response.status();
     if !response_status.is_success() {
         if is_authoritative_entitlement_denial(response_status) {
@@ -1005,28 +1124,26 @@ async fn check_backend_update(
     let target = "windows-x86_64";
     let action = format!("RELEASE:backend:{current_version}:{target}");
     let launcher_version = app_version();
-    let (issued_at, nonce, signature) = device_proof(&key, &action, launcher_version);
-    let request = serde_json::json!({
-        "device_id": device_id(&key),
-        "issued_at": issued_at,
-        "nonce": nonce,
-        "signature": signature,
-        "app_version": launcher_version,
-        "license_id": claims.license_id,
-        "component": "backend",
-        "current_version": current_version,
-        "target": target,
-    });
-    let response = state
-        .control_http
-        .post(format!(
-            "{}/v1/releases/check",
-            control_plane_url()?.trim_end_matches('/')
-        ))
-        .json(&request)
-        .send()
-        .await
-        .map_err(|_| "Không kiểm tra được bản backend mới.".to_string())?;
+    let url = format!(
+        "{}/v1/releases/check",
+        control_plane_url()?.trim_end_matches('/')
+    );
+    let license_id = claims.license_id.clone();
+    let response = send_signed_once_retrying_clock(&state.control_http, &url, || {
+        let (issued_at, nonce, signature) = device_proof(&key, &action, launcher_version);
+        Ok(serde_json::json!({
+            "device_id": device_id(&key),
+            "issued_at": issued_at,
+            "nonce": nonce,
+            "signature": signature,
+            "app_version": launcher_version,
+            "license_id": license_id,
+            "component": "backend",
+            "current_version": current_version,
+            "target": target,
+        }))
+    })
+    .await?;
     let response_status = response.status();
     if !response_status.is_success() {
         if is_authoritative_entitlement_denial(response_status) {
@@ -1628,8 +1745,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_authoritative_entitlement_denial, local_signature, validate_backend_pointer_fields,
-        BackendPointer, ReleaseManifest,
+        is_authoritative_entitlement_denial, local_signature, parse_http_date,
+        validate_backend_pointer_fields, BackendPointer, ReleaseManifest,
     };
     use reqwest::StatusCode;
 
@@ -1693,5 +1810,61 @@ mod tests {
         assert!(!is_authoritative_entitlement_denial(
             StatusCode::REQUEST_TIMEOUT
         ));
+    }
+}
+
+#[cfg(test)]
+mod http_date_tests {
+    use super::parse_http_date;
+
+    /// ⛔ Đây là hàm đứng giữa "đồng hồ máy khách sai" và "kích hoạt được".
+    /// Đọc sai một trường là ký bằng một giờ còn sai hơn giờ gốc, và lỗi chỉ
+    /// lộ ra trên máy của khách.
+    #[test]
+    fn doc_dung_dinh_dang_imf_fixdate() {
+        // Mốc kinh điển: 1970-01-01T00:00:00Z
+        assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        // Mốc quen thuộc khác, kiểm phần ngày-tháng-năm.
+        assert_eq!(
+            parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT"),
+            Some(784_111_777)
+        );
+        // Ngày nhuận - chỗ thuật toán days-from-civil dễ sai nhất.
+        assert_eq!(
+            parse_http_date("Thu, 29 Feb 2024 12:00:00 GMT"),
+            Some(1_709_208_000)
+        );
+        // Ngay sau một năm nhuận thế kỷ (2000 là nhuận, 1900 thì không).
+        assert_eq!(
+            parse_http_date("Wed, 01 Mar 2000 00:00:00 GMT"),
+            Some(951_868_800)
+        );
+    }
+
+    #[test]
+    fn tu_choi_nhung_chuoi_khong_dung_dinh_dang() {
+        for value in [
+            "",
+            "khong phai ngay",
+            // Thiếu GMT: phải từ chối chứ không đoán múi giờ.
+            "Wed, 14 Oct 2026 00:58:56",
+            // Múi giờ khác: cũng từ chối, vì phép tính ở trên giả định GMT.
+            "Wed, 14 Oct 2026 00:58:56 +0700",
+            // Tháng viết sai.
+            "Wed, 14 Xyz 2026 00:58:56 GMT",
+            // Giờ ngoài khoảng.
+            "Wed, 14 Oct 2026 25:58:56 GMT",
+            // Thiếu phần ", " sau tên thứ.
+            "Wed 14 Oct 2026 00:58:56 GMT",
+        ] {
+            assert_eq!(parse_http_date(value), None, "phai tu choi: {value:?}");
+        }
+    }
+
+    /// Giây nhuận (60) được chấp nhận - RFC cho phép, và từ chối nó sẽ làm
+    /// kích hoạt hỏng đúng một giây mỗi vài năm, một lỗi không ai tái hiện nổi.
+    #[test]
+    fn chap_nhan_giay_nhuan() {
+        assert!(parse_http_date("Sat, 31 Dec 2016 23:59:60 GMT").is_some());
     }
 }
