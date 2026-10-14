@@ -568,6 +568,38 @@ mod backend_job {
     }
 }
 
+/// Lời giải thích mà máy chủ gửi kèm, nếu có.
+///
+/// ⛔ KHÔNG CÓ HÀM NÀY THÌ BA LỖI RẤT KHÁC NHAU TRÔNG GIỐNG HỆT. Máy chủ trả
+/// 401 cho cả ba trường hợp, kèm `{"detail": "..."}` nói rõ là cái nào:
+///   - "License key is invalid."              -> gõ/dán sai key
+///   - "Device proof is invalid."             -> khoá thiết bị hỏng
+///   - "Device proof is outside the allowed time window." -> ĐỒNG HỒ MÁY SAI
+/// Trước 14/10/2026 chỗ này chỉ in mã HTTP và vứt thân phản hồi đi, nên người
+/// dùng chỉ thấy "Máy chủ từ chối kích hoạt (HTTP 401)" và không có cách nào
+/// biết nên sửa cái gì. Đã mất một vòng hỏi-đáp vì đúng chuyện này: một lần
+/// kích hoạt hỏng trên máy khác, và phải đọc log phía máy chủ mới biết là key
+/// nhập sai.
+///
+/// Thân phản hồi là dữ liệu từ máy chủ nên nó được cắt ngắn và chỉ dùng để
+/// HIỂN THỊ, không bao giờ để quyết định luồng chạy.
+async fn server_reason(response: reqwest::Response) -> String {
+    let status = response.status().as_u16();
+    let detail = response
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|body| {
+            body.get("detail")
+                .and_then(|value| value.as_str())
+                .map(|value| value.chars().take(200).collect::<String>())
+        });
+    match detail {
+        Some(text) if !text.trim().is_empty() => format!("HTTP {status} - {text}"),
+        _ => format!("HTTP {status}"),
+    }
+}
+
 async fn stop_backend_runtime(backend: &Arc<Mutex<BackendRuntime>>) {
     let (child, job) = {
         let mut runtime = backend.lock().await;
@@ -740,8 +772,8 @@ async fn activate_license(
         .map_err(|_| "Không kết nối được máy chủ license.".to_string())?;
     if !response.status().is_success() {
         return Err(format!(
-            "Máy chủ từ chối kích hoạt (HTTP {}).",
-            response.status().as_u16()
+            "Máy chủ từ chối kích hoạt ({}).",
+            server_reason(response).await
         ));
     }
     let response: LeaseResponse = response
@@ -795,8 +827,8 @@ async fn renew_license(
             invalidate_local_entitlement(&app, &state.backend).await;
         }
         return Err(format!(
-            "The server denied lease renewal (HTTP {}).",
-            response_status.as_u16()
+            "The server denied lease renewal ({}).",
+            server_reason(response).await
         ));
     }
     let renewed: LeaseResponse = response
@@ -1001,8 +1033,8 @@ async fn check_backend_update(
             invalidate_local_entitlement(&app, &state.backend).await;
         }
         return Err(format!(
-            "Máy chủ từ chối kiểm tra update (HTTP {}).",
-            response_status.as_u16()
+            "Máy chủ từ chối kiểm tra update ({}).",
+            server_reason(response).await
         ));
     }
     let response: ReleaseCheckResponse = response
@@ -1087,8 +1119,8 @@ async fn check_backend_update(
 
     if !download.status().is_success() {
         return Err(format!(
-            "Máy chủ từ chối tải backend (HTTP {}).",
-            download.status().as_u16()
+            "Máy chủ từ chối tải backend ({}).",
+            server_reason(download).await
         ));
     }
     if download

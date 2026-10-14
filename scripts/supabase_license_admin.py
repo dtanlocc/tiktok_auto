@@ -212,6 +212,104 @@ def cmd_create(args: argparse.Namespace) -> None:
     print(f"  key day du : {out}")
 
 
+def cmd_verify_key(args: argparse.Namespace) -> None:
+    """Kiem mot chuoi key co khop license nao khong, khong kich hoat gi.
+
+    ⛔ CAI NAY TON TAI VI MOT VONG HOI-DAP DA MAT. May chu tra 401 cho ca ba
+    truong hop rat khac nhau - key sai, chu ky thiet bi hong, dong ho may lech
+    - va khong co cach nao doan tu ngoai. Lenh nay tra loi dut diem cau hoi
+    "key nay co dung khong", de loai bo mot kha nang truoc khi di tim hai cai
+    kia.
+
+    ⛔ KEY DUOC GO/DAN VAO, KHONG NAM TREN DONG LENH. Doi so dong lenh di vao
+    lich su shell va vao danh sach tien trinh; `getpass` thi khong hien ra man
+    hinh va khong luu lai dau.
+    """
+    import getpass
+
+    pepper = _read_secret(args.operator_directory, _PEPPER_FILE, minimum=32)
+    # ⛔ `getpass` TREO KHI STDIN LA PIPE TREN WINDOWS. `win_getpass` doc thang
+    # tu console bang msvcrt chu khong doc stdin, nen mot lenh dang
+    # `echo key | ... verify-key` khong bao gio tra ve - no ngoi cho ai do go
+    # vao cua so console, va phai kill bang tay. Da gap dung the khi thu lenh
+    # nay. Chi dung getpass khi that su co terminal; con lai doc stdin nhu moi
+    # cong cu khac.
+    if sys.stdin is not None and sys.stdin.isatty():
+        raw = getpass.getpass("Dan key vao day (khong hien ra man hinh): ")
+    else:
+        raw = sys.stdin.readline()
+    key = raw.strip()
+    if not key:
+        raise SystemExit("Khong nhan duoc key nao.")
+
+    # ⛔ Bao TRUOC nhung loi hinh dang, vi chung la nguyen nhan thuong gap nhat
+    # va digest khong phan biet duoc chung voi "key la".
+    issues = []
+    if any(ord(c) > 127 for c in key):
+        issues.append("co ky tu khong phai ASCII (thuong do copy tu Word/chat)")
+    for bad in "0189":
+        if bad in key:
+            issues.append(
+                f"co chu so {bad!r} - key dung bang chu base32 (A-Z va 2-7) "
+                f"nen khong bao gio chua 0, 1, 8 hay 9; thuong la go nham "
+                f"O/I/B/g"
+            )
+            break
+    if not key.upper().startswith("TKAUTO-"):
+        issues.append("khong bat dau bang 'TKAUTO-'")
+    if len(key) != 46:
+        issues.append(f"dai {len(key)} ky tu, key that dai 46")
+
+    digest = digest_license_key(key, pepper)
+    with _connect(args.operator_directory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select id, customer_reference, revoked_at, expires_at, max_devices,
+                       (select count(*) from license.devices d
+                         where d.license_id = l.id and d.revoked_at is null)
+                  from license.licenses l where key_digest = %s
+                """,
+                (digest,),
+            )
+            row = cursor.fetchone()
+
+    if row is None:
+        print()
+        print("KHONG KHOP license nao.")
+        if issues:
+            print("Nhung cho dang ngo trong chuoi vua nhap:")
+            for issue in issues:
+                print(f"  - {issue}")
+        else:
+            print("  Chuoi dung hinh dang nhung khong co trong database.")
+            print("  Thuong la: key cua mot license da bi xoa, hoac pepper o day")
+            print("  khac pepper ma Edge Function dang dung.")
+        raise SystemExit(1)
+
+    import time
+
+    now = int(time.time())
+    print()
+    print("KHOP license:")
+    print(f"  license_id : {row[0]}")
+    print(f"  khach      : {row[1] or '(khong ghi)'}")
+    if row[2]:
+        print("  trang thai : DA THU HOI -> may chu se tra 403, khong phai 401")
+    elif row[3] <= now:
+        print("  trang thai : HET HAN -> may chu se tra 403, khong phai 401")
+    else:
+        print(f"  trang thai : dang dung, con {(row[3] - now) // 86400} ngay")
+        print(f"  may        : {row[5]}/{row[4]}")
+        if row[5] >= row[4]:
+            print("               DA DAY -> may moi se bi tu choi 403 device_limit")
+        print()
+        print("  Key nay DUNG. Mot loi 401 luc kich hoat luc nay chi con hai")
+        print("  nguyen nhan, va ca hai deu o phia may khach:")
+        print("    - dong ho may do lech qua 5 phut so voi gio thuc;")
+        print("    - khoa thiet bi trong Windows Credential Manager bi hong.")
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     with _connect(args.operator_directory) as connection:
         with connection.cursor() as cursor:
@@ -346,6 +444,11 @@ def main() -> None:
                         choices=("internal", "beta", "stable"))
     create.add_argument("--expires-days", type=int, default=30)
 
+    sub.add_parser(
+        "verify-key", parents=[common],
+        help="Kiem mot chuoi key co khop license nao khong",
+    )
+
     listing = sub.add_parser("list", parents=[common], help="Xem license dang co")
     listing.add_argument("--limit", type=int, default=50)
 
@@ -375,6 +478,7 @@ def main() -> None:
     {
         "apply-schema": cmd_apply_schema,
         "create": cmd_create,
+        "verify-key": cmd_verify_key,
         "list": cmd_list,
         "revoke": cmd_revoke,
         "revoke-device": cmd_revoke_device,
