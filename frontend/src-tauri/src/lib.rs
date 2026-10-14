@@ -1367,9 +1367,17 @@ fn local_signature(
 
 #[tauri::command]
 async fn launch_backend(app: AppHandle, state: State<'_, SecurityState>) -> Result<(), String> {
-    let captcha_key = captcha_api_key()?.ok_or_else(|| {
-        "Hãy cấu hình khóa CAPTCHA của khách hàng trước khi chạy backend.".to_string()
-    })?;
+    // ⛔ KHOÁ CAPTCHA LÀ TUỲ CHỌN, KHÔNG PHẢI ĐIỀU KIỆN ĐỂ CHẠY. Trước đây
+    // thiếu nó là backend không khởi động được, nên mọi người dùng đều buộc
+    // phải có tài khoản OmoCaptcha dù không cần tới - và bản đóng gói phải
+    // mang theo một khoá của ai đó.
+    //
+    // Chuỗi rỗng được truyền xuống backend, và backend hiểu điều đó: nó KHÔNG
+    // nạp add-on OmoCaptcha vào profile (xem `configured_extensions.py`), nên
+    // "không có khoá" là một trạng thái thật chứ không phải một extension nằm
+    // đó mà vô dụng. Ai có khoá thì nhập trong app bất cứ lúc nào qua
+    // `CaptchaSettingsModal`, và lần mở trình duyệt sau sẽ có add-on.
+    let captcha_key = captcha_api_key()?.unwrap_or_default();
     let (executable, licensed_context) = if friends_build() {
         (trusted_friends_backend().await?, None)
     } else {

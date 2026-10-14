@@ -19,6 +19,32 @@ type Phase = 'loading' | 'activation' | 'provider' | 'ready' | 'error';
 
 const FRIENDS_BUILD = import.meta.env.VITE_TKAUTO_FRIEND_BUILD === '1';
 
+/**
+ * Người dùng đã trả lời câu hỏi "có dùng OmoCaptcha không" chưa.
+ *
+ * ⛔ Đây là một lựa chọn giao diện, nên nó nằm ở localStorage chứ không phải
+ * trong Credential Manager cùng chỗ với khoá thật: mất nó thì cùng lắm bị hỏi
+ * lại một lần, không mất gì khác. Và đọc/ghi đều bọc try/catch vì webview có
+ * thể từ chối storage, và một màn hình khởi động không được chết vì chuyện đó.
+ */
+const CAPTCHA_CHOICE_KEY = 'tkauto.captcha.choice.v1';
+
+const captchaChoiceMade = (): boolean => {
+  try {
+    return window.localStorage.getItem(CAPTCHA_CHOICE_KEY) !== null;
+  } catch {
+    return false;
+  }
+};
+
+const rememberCaptchaChoice = (value: 'set' | 'skipped'): void => {
+  try {
+    window.localStorage.setItem(CAPTCHA_CHOICE_KEY, value);
+  } catch {
+    // Không nhớ được thì lần sau hỏi lại — chấp nhận được.
+  }
+};
+
 const checkDesktopUpdate = async (): Promise<void> => {
   if (FRIENDS_BUILD) return;
   try {
@@ -55,7 +81,12 @@ export function SecureBootstrap({ children }: { children: ReactNode }) {
       setPhase('activation');
       return;
     }
-    if (!current.captchaConfigured) {
+    // ⛔ KHOÁ CAPTCHA LÀ TUỲ CHỌN, KHÔNG PHẢI CỔNG CHẶN. Trước đây thiếu nó là
+    // app đứng ở màn hình này và không vào được, nên mọi người dùng đều buộc
+    // phải có tài khoản OmoCaptcha dù không cần. Giờ chỉ hỏi MỘT LẦN, và lựa
+    // chọn "không dùng" được nhớ lại — ai đổi ý thì vào Cài đặt trong app
+    // (`CaptchaSettingsModal`) nhập bất cứ lúc nào.
+    if (!current.captchaConfigured && !captchaChoiceMade()) {
       setPhase('provider');
       return;
     }
@@ -63,6 +94,16 @@ export function SecureBootstrap({ children }: { children: ReactNode }) {
     await invoke('launch_backend');
     setPhase('ready');
   }, []);
+
+  const skipCaptcha = useCallback(() => {
+    rememberCaptchaChoice('skipped');
+    setError('');
+    setPhase('loading');
+    void startLicensedRuntime().catch((reason: unknown) => {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setPhase('error');
+    });
+  }, [startLicensedRuntime]);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -109,6 +150,7 @@ export function SecureBootstrap({ children }: { children: ReactNode }) {
     setPhase('loading');
     try {
       await invoke('set_captcha_api_key', { apiKey: captchaKey.trim() });
+      rememberCaptchaChoice('set');
       setCaptchaKey('');
       await startLicensedRuntime();
     } catch (reason) {
@@ -176,6 +218,17 @@ export function SecureBootstrap({ children }: { children: ReactNode }) {
             >
               Lưu an toàn và khởi chạy
             </button>
+            <button
+              className="w-full rounded-lg border border-slate-600 px-4 py-3 text-slate-300 hover:border-slate-400"
+              onClick={skipCaptcha}
+              type="button"
+            >
+              Không dùng OmoCaptcha, chạy luôn
+            </button>
+            <p className="text-xs text-slate-500">
+              Không có key thì app vẫn chạy, chỉ là gặp CAPTCHA sẽ phải tự giải.
+              Thêm key sau trong Cài đặt bất cứ lúc nào.
+            </p>
           </form>
         )}
         {phase === 'error' && (

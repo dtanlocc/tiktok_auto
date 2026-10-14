@@ -54,6 +54,22 @@ def configured_extension_builder() -> tuple[ExtensionProfileBuilder, set[str]]:
     if not is_nordvpn_extension_enabled():
         excluded_addon_ids.add(NORDVPN_ADDON_ID)
 
+    # ⛔ KHÔNG CÓ KHOÁ THÌ KHÔNG NẠP OMOCAPTCHA. Trước đây extension vẫn được
+    # cài vào profile với `api_key: ""`, tức một add-on nằm trong mọi phiên
+    # trình duyệt mà không làm được gì: thêm một thứ để Firefox kích hoạt, thêm
+    # một chữ ký để kiểm, thêm một dấu vết nhận diện trên mọi trang khách mở.
+    #
+    # Dịch vụ giải captcha là **tuỳ chọn**: ai có khoá thì nhập vào trong app,
+    # ai không thì vẫn chạy. Gắn việc nạp add-on vào việc có khoá hay không làm
+    # hai trạng thái đó khác nhau một cách thật sự, thay vì chỉ khác ở một
+    # chuỗi rỗng.
+    #
+    # ⛔ VÀ LOẠI HẾT ADD-ON KHÔNG LÀM `fail_if_empty` NỔ: phép kiểm đó đọc
+    # NGUỒN trên đĩa (`discover_sources`) trước khi áp danh sách loại trừ, nên
+    # một profile không có add-on nào vẫn hợp lệ.
+    if not str(getattr(settings, "OMOCAPTCHA_KEY", "") or "").strip():
+        excluded_addon_ids.add(OMOCAPTCHA_ADDON_ID)
+
     builder = ExtensionProfileBuilder(
         source_paths,
         json_resource_overrides=json_overrides,
