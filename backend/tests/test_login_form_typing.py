@@ -847,13 +847,33 @@ def _account(username="", email=""):
     return TikTokAccount(id="acc-1", username=username, email=email)
 
 
-def test_the_username_is_what_gets_typed():
-    """The email is the weaker name and must not win when both are present."""
+def test_the_mailbox_is_what_gets_typed():
+    """⛔ DOI CHIEU 31/10/2026: hop thu di truoc, username la duong lui.
+
+    Ca hai ten deu tung sai that:
+      - 18/09/2026 treft21664: email bi tu choi, @username vao duoc;
+      - 31/10/2026 chu so huu: username trong danh sach nhap vao hay sai
+        (go nham, doi nick), con hop thu thi gan voi tai khoan va khong doi.
+
+    `_login_fallback_identifier` bam lai bang ten con lai ngay khi TikTok noi
+    "Account doesn't exist", nen thu tu chi quyet dinh ten nao ton luot DAU.
+    """
     account = _account(username="stor1285", email="garrikbilliob@hotmail.com")
+    assert login_strategies._login_identifier(account) == "garrikbilliob@hotmail.com"
+
+
+def test_an_account_with_no_mailbox_still_logs_in_by_username():
+    account = _account(username="stor1285", email="")
     assert login_strategies._login_identifier(account) == "stor1285"
 
 
-def test_an_account_with_no_username_still_logs_in_by_email():
+def test_a_field_without_an_at_sign_is_not_a_mailbox():
+    """⛔ Truong `email` co luc la ghi chu. Go no vao la vut di mot lan bam."""
+    account = _account(username="stor1285", email="chua co mail")
+    assert login_strategies._login_identifier(account) == "stor1285"
+
+
+def test_a_mailbox_with_no_username_is_still_typed():
     account = _account(username="", email="garrikbilliob@hotmail.com")
     assert login_strategies._login_identifier(account) == "garrikbilliob@hotmail.com"
 
@@ -861,7 +881,7 @@ def test_an_account_with_no_username_still_logs_in_by_email():
 def test_surrounding_spaces_are_not_typed_into_the_form():
     """An imported list carries them; TikTok would refuse the padded string."""
     account = _account(username="  stor1285 ", email=" a@b.com ")
-    assert login_strategies._login_identifier(account) == "stor1285"
+    assert login_strategies._login_identifier(account) == "a@b.com"
 
 
 def test_an_account_with_neither_name_has_nothing_to_type():
@@ -881,3 +901,11 @@ def test_one_name_means_no_second_press():
     """Pressing Log in again with the same string only burns an attempt."""
     account = _account(username="stor1285")
     assert login_strategies._login_fallback_identifier(account, "stor1285") == ""
+
+
+def test_the_username_is_the_second_press_now():
+    """Doi chieu o `_login_identifier` phai keo theo duong lui tuong ung."""
+    account = _account(username="stor1285", email="garrikbilliob@hotmail.com")
+    dau = login_strategies._login_identifier(account)
+    assert dau == "garrikbilliob@hotmail.com"
+    assert login_strategies._login_fallback_identifier(account, dau) == "stor1285"

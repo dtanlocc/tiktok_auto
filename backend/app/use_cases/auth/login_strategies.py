@@ -300,16 +300,32 @@ async def _fill_login_form(
 def _login_identifier(account) -> str:
     """What goes in TikTok's "Email or username" box.
 
-    ⛔ USERNAME FIRST, the email only when there is no username. The box takes
-    either, but they are not equally good: the email is imported with the
-    account and is often not a login for it at all - treft21664 (2026-09-18)
-    was refused with "Account doesn't exist" for its email and logged in fine
-    with @username on the very next press - while the username is the name
-    TikTok itself gives the session back.
+    ⛔ EMAIL FIRST tu 31/10/2026, username chi khi khong co email dung dang.
+
+    O day CA HAI ten deu tung sai, va ca hai lan deu la quan sat that - nen
+    thu tu nay khong phai mot chan li, no la mot CUOC DANH CUOC co can cu:
+
+      - 18/09/2026, treft21664: email bi tu choi "Account doesn't exist", vao
+        duoc ngay bang @username. Day la ly do truoc kia username di truoc.
+      - 31/10/2026, chu so huu: username trong danh sach nhap vao hay SAI
+        (go nham, doi nick, nick cu), con hop thu hotmail thi gan voi tai
+        khoan va khong doi.
+
+    Cai gia cua viec chon sai KHONG doi xung mot cach ro rang: ca hai deu ton
+    dung mot lan bam, va `_login_fallback_identifier` bam lai bang ten con lai
+    ngay khi TikTok noi "Account doesn't exist". Nen thu tu chi quyet dinh ten
+    nao ton luot DAU TIEN, khong quyet dinh dang nhap duoc hay khong - tru khi
+    het so lan thu.
+
+    ⛔ VA CHI COI LA EMAIL KHI NO CO DANG EMAIL. Truong `email` trong danh sach
+    nhap vao co luc la ghi chu, co luc bo trong; dua mot chuoi khong co "@" vao
+    o dang nhap la vut di mot lan bam ma khong hoc duoc gi.
     """
-    return (getattr(account, "username", "") or "").strip() or (
-        (getattr(account, "email", "") or "").strip()
-    )
+    email = (getattr(account, "email", "") or "").strip()
+    username = (getattr(account, "username", "") or "").strip()
+    if "@" in email:
+        return email
+    return username or email
 
 
 def _login_fallback_identifier(account, used: str) -> str:
@@ -1060,11 +1076,13 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 page, step_logger, "trang dang nhap", timeout_seconds=90.0
             )
 
-            # Buoc 5: Dien USERNAME tu tu tung phim mot (delay 120ms).
-            # Dung account.username de dang nhap; chi roi ve email khi account
-            # khong co username (xem _login_identifier).
+            # Buoc 5: Dien TEN DANG NHAP tu tu tung phim mot (delay 120ms).
+            # Uu tien account.email (hop thu hotmail); chi roi ve username khi
+            # khong co email dung dang (xem _login_identifier).
             if step_logger:
-                await step_logger(f"Dang tu dong go Username dang nhap: {login_identifier}...")
+                await step_logger(
+                    f"Dang tu dong go ten dang nhap: {login_identifier}..."
+                )
             await email_input.first.wait_for(state="visible", timeout=10000)
 
             # Buoc 6: Dien Password tu tu tung phim mot
