@@ -40,7 +40,12 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab,
           {hover && (
             <div className="min-w-0 flex-1 overflow-hidden">
               <h1 className="text-[13px] font-bold tracking-tight text-fg leading-tight truncate">TikTok Automation</h1>
-              <p className="text-[10px] text-fg-subtle leading-tight">Multi-thread</p>
+              {/* "May dang chay ban nao" la cau hoi dau tien moi lan ho tro ai
+                  do, nen so phien ban nam ngay canh ten app. `select-all` de
+                  mot cu bam la boi den duoc ca so, khong phai go lai. */}
+              <p className="text-[10px] text-fg-subtle leading-tight truncate">
+                Multi-thread · <span className="select-all">v{__APP_VERSION__}</span>
+              </p>
             </div>
           )}
         </div>
