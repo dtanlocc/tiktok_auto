@@ -33,6 +33,20 @@ $arguments = @(
     "--include-package=invisible_playwright",
     "--include-package-data=invisible_playwright",
     "--include-package-data=invisible_core",
+    # Nuitka tu nhan ra `tzdata.zoneinfo` (604 file du lieu vung) nhung BO SOT
+    # `tzdata/zones` - file danh sach TEN vung, thuoc goi `tzdata` chu khong
+    # thuoc `tzdata.zoneinfo`. Ma `zoneinfo.available_timezones()` doc dung
+    # file do (xem `zoneinfo._tzpath`), va tren Windows khong co tzdb he thong
+    # nen khong con nguon nao khac.
+    #
+    # Hau qua khi thieu: tu invisible-core 51.48.0, engine tu giai mui gio va
+    # `_apply_timezone` tu choi moi vung khong co trong danh sach:
+    #
+    #     ValueError: the session's timezone 'Asia/Jakarta' is not an IANA zone
+    #
+    # tuc KHONG MO DUOC TRINH DUYET - va chi trong ban da bien dich; chay tu
+    # source thi doc thang tu site-packages nen khong bao gio thay.
+    "--include-package-data=tzdata",
     "--nofollow-import-to=*.tests",
     "--noinclude-pytest-mode=nofollow",
     "--noinclude-unittest-mode=nofollow",

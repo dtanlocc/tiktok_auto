@@ -29,19 +29,19 @@ from invisible_playwright.async_api import InvisiblePlaywright
 from app.infrastructure.automation.media_integrity import merge_faithful_canvas_readback
 from app.infrastructure.automation.native_upload import set_input_files_native
 from app.infrastructure.automation.firefox_extensions import sync_engine_extensions
-from app.infrastructure.automation import juggler_close_patch
-
-# ⛔ VA NGAY KHI MODULE NAY DUOC IMPORT, truoc bat ky lan launch nao.
-# invisible_core.juggler giu lai ban close() dong CA HAI descriptor trong mot
-# vong lap, va dong dau doc khi reader dang ket trong os.read tung treo ca
-# backend 14 phut (23/09/2026).
+# ⛔ BAN VA `juggler_close_patch` DA DUOC GO, 24/10/2026 - thuong nguon nhan
+# ban sua. Tu invisible-core 51.48.0, `Connection.close()` noi thang trong
+# docstring cua no: "The read end is not closed here at all: the reader
+# releases it when the browser, told by this close, ends the pipe."
 #
-# ⛔ DE NO RAISE, khong bat im lang. Neu upstream doi hinh dang lop thi app
-# khong khoi dong va thong bao noi ro ly do - tot hon nhieu so voi mot lan
-# treo khong dau vet vai tuan sau, vi dung kieu that bai do da xay ra roi va
-# phai mat 14 phut moi co nguoi nhan ra. test_juggler_close_patch.py bat
-# chuyen nay truoc khi no kip toi may nao.
-juggler_close_patch.apply()
+# Do la dung dieu ban va nay sinh ra de lam, va thuong nguon lam GON HON: ban
+# va cua ta van dong `_from_browser` (chi an toan nho join reader truoc), con
+# thuong nguon khong dong dau doc chut nao. Giu ban va lai nghia la de ban KEM
+# HON de len ban sua tot hon - nen no di.
+#
+# Lich su, de khong ai dung lai: close() cu dong CA HAI descriptor trong mot
+# vong lap, va dong dau doc khi reader dang ket trong `os.read` da treo ca
+# backend 14 phut (23/09/2026).
 from app.domain.ports.browser import IBrowserService
 from app.core.config import settings
 from app.infrastructure.automation.configured_extensions import (
@@ -3423,6 +3423,74 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             await asyncio.sleep(0.4)
         return actions
 
+    #: ⛔ BANNER COOKIE CUA TIKTOK NAM TRONG SHADOW DOM, nen moi cach dep popup
+    #: san co deu khong thay no. `_dismiss_upload_popups` doc `body.innerText`,
+    #: ma innerText KHONG di vao shadow root - banner tang hinh voi no.
+    #:
+    #: Hau qua da gap that (17/10/2026): video tai len 100%, caption xong, roi
+    #: hong o dung buoc cuoi:
+    #:
+    #:     click: 'button:visible >> ... (Post|Publish|Dang) ...' not actionable
+    #:     in 30s after 300 attempts. Last reason: the event would have landed
+    #:     elsewhere (<tiktok-cookie-banner ...>)
+    #:
+    #: 300 lan thu, 30 giay, deu truot - vi Playwright nhin thay nut Dang nhung
+    #: cu click la banner don mat. Mot video da tai xong 100% bi vut di.
+    #: Popup xin phep cookie cua TikTok. No la custom element co shadow DOM,
+    #: nen `body.innerText` khong thay chu ben trong va vong dep popup thuong
+    #: mu truoc no - trong khi no chan DUNG nut Dang:
+    #:
+    #:     not actionable in 30s after 300 attempts. Last reason: the event
+    #:     would have landed elsewhere (<tiktok-cookie-banner ...>)
+    #:
+    #: ⛔ DANH DAU NGAY, TRUOC MOI NHANH. TikTok KHONG go phan tu di, no chi an.
+    #: Khong co dau thi lan goi sau lai thay phan tu, lai bao "co chen ngang",
+    #: va vong dang bai thu lai mai ma khong di tiep - da quan sat that 24/10/2026.
+    _COOKIE_BANNER_JS = """
+    () => {
+      const host = document.querySelector('tiktok-cookie-banner');
+      if (!host || host.dataset.tkautoXong) return false;
+      host.dataset.tkautoXong = '1';
+      const nhan = (b) => (b.textContent || '').trim().toLowerCase();
+      const nut = [...(host.shadowRoot ? host.shadowRoot.querySelectorAll('button') : [])];
+      // Tu choi truoc; chap nhan chi khi popup khong co duong tu choi.
+      const chon = nut.find((b) => /decline|reject|từ chối/.test(nhan(b)))
+                || nut.find((b) => /allow|accept|chấp nhận|cho phép/.test(nhan(b)));
+      if (chon) { chon.click(); return true; }
+      host.style.display = 'none';
+      return true;
+    }
+    """
+
+    #: Het gio thi coi nhu khong co popup. Hang so de bai test ha xuong duoc.
+    _BANNER_TIMEOUT = 5.0
+
+    async def _dismiss_cookie_banner(self) -> bool:
+        """Dep popup cookie neu CO. Khong co thi di tiep.
+
+        ⛔ KHONG BAO GIO DUOC CHAN DUONG DANG BAI. Popup nay thinh thoang moi
+        hien; khong tim thay no la chuyen binh thuong, khong phai loi. Moi tro
+        ngai o day - trang dang dieu huong, evaluate het gio - deu tra ve
+        "khong co gi de lam". Mot video da tai len 100% khong duoc chet vi mot
+        popup khong ton tai.
+        """
+        page = self._page
+        if page is None:
+            return False
+        try:
+            da_dep = await asyncio.wait_for(
+                page.evaluate(self._COOKIE_BANNER_JS),
+                timeout=self._BANNER_TIMEOUT,
+            )
+        except Exception as exc:
+            logger.debug("[UPLOAD] Bo qua popup cookie: %s", exc)
+            return False
+        if not da_dep:
+            return False
+        logger.info("[UPLOAD] Da dep popup cookie.")
+        await asyncio.sleep(random.uniform(0.3, 0.6))
+        return True
+
     async def _handle_upload_interruptions(
         self,
         step_logger=None,
@@ -3439,7 +3507,13 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             if step_logger:
                 await step_logger(message)
 
+        # ⛔ BANNER COOKIE TRUOC MOI THU KHAC. No khong phai mot popup cua
+        # Studio: no nam trong shadow DOM nen vong dep popup o duoi mu
+        # truoc no, va no chan DUNG nut Dang.
+        banner = await self._dismiss_cookie_banner()
         interruptions = await self._dismiss_upload_popups()
+        if banner:
+            interruptions = max(1, interruptions)
         visible_text = await self._read_visible_page_text()
         captcha_pattern = re.compile(
             r"drag the slider|kéo thanh trượt|ghép hình|verify to continue|"
@@ -6094,26 +6168,53 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     self._browser = None
                     self._page = None
 
-            if self._temp_profile_path and os.path.exists(self._temp_profile_path):
-                if self._extension_profile_builder is not None:
+            # ⛔ GIANH LAY MOI THU TRUOC LAN `await` DAU TIEN. `close()` co
+            # the chay HAI LUOT SONG SONG (nut Dong goi mot luot, bo theo doi
+            # cua so goi luot nua), va moi `await` duoi day la mot cho nhuong
+            # event loop.
+            #
+            # Truoc 14/10/2026 ca hai luot deu qua duoc `if self._temp_profile_path`
+            # - luot A nhuong loop o `persist_external_storage`, luot B vao
+            # theo - roi luot ve sau goi `shutil.rmtree(None)`:
+            #
+            #     lstat: path should be string, bytes or os.PathLike, not NoneType
+            #
+            # `ignore_errors=True` KHONG do duoc, vi no chi bat `OSError` con
+            # day la `TypeError`. Nen moi lan dong trinh duyet THANH CONG van in
+            # ra mot dong bao loi:
+            #
+            #     [-] Loi phat sinh khi dong trinh duyet va don dep: lstat: ...
+            #
+            # Mot dong ERROR gia tren duong di binh thuong lam che mat loi that,
+            # va day la thu nguoi dung nhin thay. Them nua, hai luot cung goi
+            # `persist_external_storage` tren CUNG MOT ho so, trong hai thread.
+            #
+            # Giu cho minh trong cung mot buoc cua event loop (khong co `await`
+            # nao o giua) lam `close()` thanh idempotent: luot ve sau nhan None
+            # va khong lam gi.
+            profile_path = self._temp_profile_path
+            self._temp_profile_path = None
+            profile_builder = self._extension_profile_builder
+            self._extension_profile_builder = None
+            staging_dirs = [path for path in self._native_upload_staging_dirs if path]
+            self._native_upload_staging_dirs.clear()
+
+            if profile_path and os.path.exists(profile_path):
+                if profile_builder is not None:
                     persisted = await asyncio.to_thread(
-                        self._extension_profile_builder.persist_external_storage,
-                        self._temp_profile_path,
+                        profile_builder.persist_external_storage,
+                        profile_path,
                     )
                     if persisted:
                         logger.info(
                             "[+] Da luu trang thai extension moi nhat: %s",
                             ", ".join(persisted),
                         )
-                logger.info(f"[*] Dang don dep ho so tam thoi: {self._temp_profile_path}")
+                logger.info(f"[*] Dang don dep ho so tam thoi: {profile_path}")
                 # Xoa trong THREAD -> khong dong bang event loop luc dong browser.
-                _p = self._temp_profile_path
-                self._temp_profile_path = None
-                await asyncio.to_thread(shutil.rmtree, _p, ignore_errors=True)
-            self._extension_profile_builder = None
+                await asyncio.to_thread(shutil.rmtree, profile_path, ignore_errors=True)
 
-            for staging_dir in list(self._native_upload_staging_dirs):
+            for staging_dir in staging_dirs:
                 await asyncio.to_thread(shutil.rmtree, staging_dir, ignore_errors=True)
-            self._native_upload_staging_dirs.clear()
         except Exception as e:
             logger.error(f"[-] Loi phat sinh khi dong trinh duyet va don dep: {str(e)}")
