@@ -336,6 +336,39 @@ def _build_app(operator: Path, token: str) -> FastAPI:
             connection.commit()
         return {"ok": True, "note": "O may do duoc tra lai cho license."}
 
+    @app.post("/api/devices/{device_id}/restore")
+    def restore_device(
+        device_id: str,
+        body: ReasonBody,
+        request: Request,
+        x_tkauto_token: str = Header(default=""),
+    ):
+        """Go thu hoi - doi xung voi nut Thu hoi.
+
+        Moi phep kiem nam trong `cli.restore_device` de CLI va trang nay khong
+        the lech nhau; o day chi dich loi sang ma HTTP.
+        """
+        _guard(request, x_tkauto_token)
+        with cli._connect(operator) as connection:
+            with connection.cursor() as cursor:
+                try:
+                    ket_qua = cli.restore_device(
+                        cursor, device_id, body.reason, "key-manager"
+                    )
+                except LookupError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc)) from exc
+                except cli.RestoreRefused as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+            connection.commit()
+        return {
+            "ok": True,
+            "note": (
+                f"May do dung lai duoc key cua "
+                f"'{ket_qua['customer_reference'] or 'khong ten'}' "
+                f"({ket_qua['dang_dung']}/{ket_qua['max_devices']} may)."
+            ),
+        }
+
     @app.post("/api/releases/{artifact_id}/deactivate")
     def deactivate(
         artifact_id: str, request: Request, x_tkauto_token: str = Header(default="")

@@ -233,7 +233,13 @@ async function loadDevices() {
       <td class="muted">${esc(row.first_at)}</td>
       <td class="muted">${esc(row.last_at)}</td>
       <td>${row.revoked_at ? '<span class="bad">đã thu hồi</span>' : '<span class="ok">đang dùng</span>'}</td>
-      <td>${row.revoked_at ? "" : `<button class="small danger" onclick="revokeDevice('${esc(row.id)}')">Thu hồi</button>`}</td>
+      <!-- ⛔ THIET BI DA THU HOI PHAI CON MOT NUT. Truoc 31/10/2026 o nay de
+           TRONG, va do la ngo cut: may do khong kich hoat lai duoc bang key cu
+           (cung license thi thu hoi van chan) lan key moi (409, vi license cu
+           con han) - duong duy nhat la thu hoi ca mot key con han. -->
+      <td>${row.revoked_at
+        ? `<button class="small" onclick="restoreDevice('${esc(row.id)}')">Gỡ thu hồi</button>`
+        : `<button class="small danger" onclick="revokeDevice('${esc(row.id)}')">Thu hồi</button>`}</td>
     </tr>`).join("") || `<tr><td colspan="6" class="muted">Chưa có thiết bị nào kích hoạt.</td></tr>`;
 }
 
@@ -306,6 +312,17 @@ async function revokeLicense(id) {
     const result = await api(`/api/licenses/${encodeURIComponent(id)}/revoke`,
       { method: "POST", body: JSON.stringify({ reason }) });
     toast(result.note || "Đã thu hồi.");
+    loadAll();
+  } catch (error) { toast(error.message, true); }
+}
+
+async function restoreDevice(id) {
+  const reason = prompt("Lý do gỡ thu hồi thiết bị này?");
+  if (reason === null) return;
+  try {
+    const result = await api(`/api/devices/${encodeURIComponent(id)}/restore`,
+      { method: "POST", body: JSON.stringify({ reason }) });
+    toast(result.note || "Đã gỡ thu hồi.");
     loadAll();
   } catch (error) { toast(error.message, true); }
 }

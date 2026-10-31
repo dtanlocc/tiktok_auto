@@ -406,6 +406,109 @@ def cmd_revoke_device(args: argparse.Namespace) -> None:
     print(f"Da thu hoi thiet bi {args.device_id}; o cho may do nay duoc tra lai cho license.")
 
 
+class RestoreRefused(ValueError):
+    """Khong go thu hoi duoc, kem ly do doc duoc cho nguoi van hanh."""
+
+
+def restore_device(cursor, device_id: str, reason: str, actor: str) -> dict:
+    """Go thu hoi mot thiet bi - doi xung voi revoke.
+
+    ⛔ HAM NAY TON TAI VI MOT MAY DA BI KET THAT (31/10/2026). Thu hoi thiet
+    bi roi thi may do khong con duong nao quay lai:
+
+      - kich hoat lai bang CHINH key cu -> `device_revoked`: cung license thi
+        thu hoi van chan;
+      - kich hoat bang key MOI          -> HTTP 409 `device_conflict`: chuyen
+        thiet bi sang license khac doi license CU phai da chet, ma no con 13 ngay.
+
+    Duong duy nhat con lai la thu hoi ca license - giet mot key con han chi de
+    cuu mot cai may. Mot hanh dong thu hoi do chinh operator lam khong nen la
+    mot ban an vinh vien.
+
+    ⛔ VA NO KHONG DUOC LACH `max_devices`. Go thu hoi la THEM LAI mot may dang
+    hoat dong; license da day thi phai tu choi, khong thi day la duong vong de
+    vuot gioi han so may ma khong ai thay.
+
+    ⛔ DUNG CHUNG CHO CA CLI VA GIAO DIEN. Hai ban kiem tra o hai noi thi som
+    muon cung lech, va cai lech se nam o phia nao it duoc chay hon.
+    """
+    cursor.execute(
+        """
+        select d.license_id, d.revoked_at,
+               l.revoked_at, l.expires_at, l.max_devices, l.customer_reference
+          from license.devices d
+          join license.licenses l on l.id = d.license_id
+         where d.id = %s
+           for update of d, l
+        """,
+        (device_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise LookupError(f"Khong thay thiet bi {device_id}.")
+    license_id, device_revoked, lic_revoked, expires_at, max_devices, khach = row
+    if device_revoked is None:
+        raise RestoreRefused(
+            f"Thiet bi {device_id} dang hieu luc, khong can go thu hoi."
+        )
+    now = int(time.time())
+    if lic_revoked is not None or expires_at <= now:
+        raise RestoreRefused(
+            f"License {license_id} ({khach or 'khong ten'}) da thu hoi hoac het "
+            "han; go thu hoi thiet bi khong giup gi. Phat key moi va kich hoat "
+            "lai - thiet bi se tu chuyen sang key do."
+        )
+    cursor.execute(
+        "select count(*) from license.devices "
+        " where license_id = %s and revoked_at is null",
+        (license_id,),
+    )
+    dang_dung = cursor.fetchone()[0]
+    if dang_dung >= max_devices:
+        raise RestoreRefused(
+            f"License {license_id} ({khach or 'khong ten'}) da dung "
+            f"{dang_dung}/{max_devices} may. Thu hoi mot may khac truoc, hoac "
+            "phat key co nhieu may hon."
+        )
+    cursor.execute(
+        "update license.devices set revoked_at = null, last_seen_at = %s "
+        " where id = %s and revoked_at is not null",
+        (now, device_id),
+    )
+    if cursor.rowcount == 0:
+        raise RestoreRefused(f"Khong go duoc thu hoi cho {device_id}.")
+    cursor.execute(
+        """
+        insert into license.audit_events (event_type, actor_id, subject_id, metadata)
+        values ('device.restored', %s, %s, %s::jsonb)
+        """,
+        (actor, device_id, json.dumps({"reason": reason, "license_id": license_id})),
+    )
+    return {
+        "license_id": license_id,
+        "customer_reference": khach,
+        "dang_dung": dang_dung + 1,
+        "max_devices": max_devices,
+    }
+
+
+def cmd_restore_device(args: argparse.Namespace) -> None:
+    with _connect(args.operator_directory) as connection:
+        with connection.cursor() as cursor:
+            try:
+                ket_qua = restore_device(
+                    cursor, args.device_id, args.reason, "operator"
+                )
+            except (LookupError, RestoreRefused) as exc:
+                raise SystemExit(str(exc)) from exc
+        connection.commit()
+    print(
+        f"Da go thu hoi thiet bi {args.device_id}; may do dung lai duoc key cua "
+        f"'{ket_qua['customer_reference'] or 'khong ten'}' "
+        f"({ket_qua['dang_dung']}/{ket_qua['max_devices']} may)."
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     # ⛔ CO NHAN CA HAI THU TU, va do la mot loi da xay ra thay vi mot su tu te.
@@ -460,6 +563,12 @@ def main() -> None:
     revoke_device.add_argument("--device-id", required=True)
     revoke_device.add_argument("--reason", default="")
 
+    restore_device = sub.add_parser(
+        "restore-device", parents=[common], help="Go thu hoi mot thiet bi"
+    )
+    restore_device.add_argument("--device-id", required=True)
+    restore_device.add_argument("--reason", default="")
+
     args = parser.parse_args()
     if args.operator_directory is None:
         raise SystemExit(
@@ -482,6 +591,7 @@ def main() -> None:
         "list": cmd_list,
         "revoke": cmd_revoke,
         "revoke-device": cmd_revoke_device,
+        "restore-device": cmd_restore_device,
     }[args.command](args)
 
 
