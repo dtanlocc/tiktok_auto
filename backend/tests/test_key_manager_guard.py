@@ -46,7 +46,7 @@ class _FakeCursor:
         ("channel", "stable"),
         ("group_feature", "group.hn01"),
         ("role_feature", "role.member"),
-        ("features", ["accounts.manage", "group.hn01"]),
+        ("features", ["accounts.login", "group.hn01"]),
         ("max_accounts", 200),
         ("max_tabs", 4),
         ("max_devices", 2),
@@ -190,7 +190,7 @@ def test_creating_a_key_stores_only_the_digest_and_reveals_the_key_once(client):
             "plan": "nhom",
             "group": "hn01",
             "role": "member",
-            "features": ["accounts.manage"],
+            "features": ["accounts.login"],
             "max_accounts": 200,
             "max_tabs": 4,
             "max_devices": 2,
@@ -203,7 +203,7 @@ def test_creating_a_key_stores_only_the_digest_and_reveals_the_key_once(client):
 
     # Nhóm và quyền phải thành feature `group.` / `role.`, và loại trùng.
     assert body["features"] == [
-        "accounts.manage",
+        "accounts.login",
         "group.hn01",
         "role.member",
     ]

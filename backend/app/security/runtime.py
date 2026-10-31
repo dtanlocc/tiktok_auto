@@ -39,12 +39,67 @@ class DevelopmentEntitlementGate:
         return {"mode": self.mode, "licensed": True}
 
 
+@dataclass
+class _LeaseOnDisk:
+    """Lease hien hanh, DOC LAI khi tep tren dia doi.
+
+    ⛔ MOT BAN CHUP LUC KHOI DONG LA MOT QUA BOM HEN GIO. `build_entitlement_gate`
+    chi chay MOT LAN (`main.py`), nen truoc 16/10/2026 backend giu nguyen claims
+    doc duoc luc do - vinh vien. Lease song 1 GIO. Launcher van gia han dung
+    han va ghi lease moi ra dia, nhung backend khong he doc lai, nen:
+
+        ai de app mo qua mot tieng la MOI chuc nang chet voi
+        "Lease has expired.", cho toi khi khoi dong lai app.
+
+    Mot nguoi dung binh thuong de app chay ca buoi - tuc loi nay cham vao tat
+    ca moi nguoi, va no khong lo ra trong bat ky phep thu ngan nao.
+
+    Doc lai theo `st_mtime_ns`: khong doi thi khong cham vao dia. Khi launcher
+    gia han, no ghi tep moi -> mtime doi -> claims moi duoc nap, ke ca quyen
+    vua duoc cap them.
+    """
+
+    path: Path
+    verifier: LeaseVerifier
+    claims: LeaseClaims
+    mtime_ns: int
+
+    def current(self) -> LeaseClaims:
+        try:
+            mtime_ns = self.path.stat().st_mtime_ns
+        except OSError:
+            # ⛔ GIU BAN CU, KHONG TU CHOI NGAY. Tren Windows mot lan doc co the
+            # va phai sharing violation nhat thoi. Van fail-closed: ban cu co
+            # han cua no, va `assert_runtime_valid` se tu choi khi het han.
+            return self.claims
+        if mtime_ns == self.mtime_ns:
+            return self.claims
+        try:
+            claims = self.verifier.verify(
+                self.path.read_text(encoding="utf-8").strip()
+            ).claims
+        except Exception:
+            # Lease moi hong hoac sai chu ky -> khong nhan. Ban cu van het han
+            # dung han cua no, nen khong co duong nao keo dai quyen bang mot tep
+            # rac.
+            return self.claims
+        self.claims = claims
+        self.mtime_ns = mtime_ns
+        return claims
+
+
 @dataclass(frozen=True)
 class SignedLeaseEntitlementGate:
-    claims: LeaseClaims
+    #: Claims co dinh (test, lease bat bien) hoac mot `_LeaseOnDisk` tu doc lai.
+    lease: LeaseClaims | _LeaseOnDisk
     device_id: str
     app_version: str
     clock_skew_seconds: int = 30
+
+    def _current(self) -> LeaseClaims:
+        if isinstance(self.lease, LeaseClaims):
+            return self.lease
+        return self.lease.current()
 
     def require(
         self,
@@ -53,26 +108,28 @@ class SignedLeaseEntitlementGate:
         account_count: int | None = None,
         tab_count: int | None = None,
     ) -> None:
-        self.claims.assert_runtime_valid(
+        claims = self._current()
+        claims.assert_runtime_valid(
             device_id=self.device_id,
             app_version=self.app_version,
             component="backend",
             clock_skew_seconds=self.clock_skew_seconds,
         )
-        self.claims.require(feature, account_count=account_count, tab_count=tab_count)
+        claims.require(feature, account_count=account_count, tab_count=tab_count)
 
     def status(self) -> dict[str, object]:
+        claims = self._current()
         return {
             "mode": "production",
             "licensed": True,
-            "license_id": self.claims.license_id,
-            "plan": self.claims.plan,
-            "channel": self.claims.channel,
-            "expires_at": self.claims.expires_at,
-            "minimum_version": self.claims.minimum_version,
-            "minimum_backend_version": self.claims.minimum_backend_version,
-            "max_accounts": self.claims.max_accounts,
-            "max_tabs": self.claims.max_tabs,
+            "license_id": claims.license_id,
+            "plan": claims.plan,
+            "channel": claims.channel,
+            "expires_at": claims.expires_at,
+            "minimum_version": claims.minimum_version,
+            "minimum_backend_version": claims.minimum_backend_version,
+            "max_accounts": claims.max_accounts,
+            "max_tabs": claims.max_tabs,
         }
 
 
@@ -84,6 +141,30 @@ _TASK_FEATURES = {
     "UPLOAD_MEDIA": "upload.video",
     "UPLOAD_MEDIA_BATCH": "upload.video",
 }
+
+
+#: ⛔ DANH SACH QUYEN DUY NHAT, va cong cu phat key PHAI doc tu day.
+#:
+#: Truoc 16/10/2026 giao dien phat key tu go san mot danh sach trong HTML:
+#: `accounts.manage,upload.video`. `accounts.manage` KHONG TON TAI - khong co
+#: cho nao trong backend kiem tra no - va bon quyen that thi thieu. Hau qua:
+#: **moi key tung phat deu chi dang duoc video**, con dang nhap, doi profile,
+#: tuong tac, dong bo so lieu thi bao
+#:
+#:     Feature is not licensed: accounts.login
+#:
+#: ngay tren may khach. Loi khong lo ra luc phat key, cung khong lo ra luc mo
+#: app (may chu tu them `app.start`), ma doi den luc nguoi dung bam nut.
+#:
+#: Hai danh sach go tay o hai noi thi som muon cung lech. Suy ra tu bang tren
+#: thi khong lech duoc: them mot loai tac vu la quyen cua no co mat o day.
+#:
+#: `app.start` khong nam trong day vi may chu LUON tu them no khi phat lease
+#: (`effectiveFeatures` trong supabase/functions/_shared/service.ts).
+GRANTABLE_FEATURES: tuple[str, ...] = (
+    "accounts.login",
+    *sorted(set(_TASK_FEATURES.values())),
+)
 
 
 def feature_for_task(task_type: str) -> str:
@@ -132,9 +213,14 @@ def build_entitlement_gate(settings) -> EntitlementGate:
             "LICENSE_PUBLIC_KEYS_JSON must map key IDs to PEM public keys."
         )
 
-    claims = LeaseVerifier.from_pem_mapping(public_keys).verify(token).claims
+    verifier = LeaseVerifier.from_pem_mapping(public_keys)
     gate = SignedLeaseEntitlementGate(
-        claims=claims,
+        lease=_LeaseOnDisk(
+            path=lease_path,
+            verifier=verifier,
+            claims=verifier.verify(token).claims,
+            mtime_ns=lease_path.stat().st_mtime_ns,
+        ),
         device_id=device_id,
         app_version=app_version,
         clock_skew_seconds=max(

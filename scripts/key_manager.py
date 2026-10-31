@@ -53,6 +53,7 @@ from fastapi.responses import HTMLResponse, JSONResponse  # noqa: E402
 from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
 
 from app.security.license import group_feature, role_feature  # noqa: E402
+from app.security.runtime import GRANTABLE_FEATURES  # noqa: E402
 from control_plane.app.models import new_id  # noqa: E402
 from control_plane.app.security import (  # noqa: E402
     digest_license_key,
@@ -172,6 +173,19 @@ def _build_app(operator: Path, token: str) -> FastAPI:
         pepper = cli._read_secret(operator, cli._PEPPER_FILE, minimum=32)
 
         features = [item.strip() for item in body.features if item.strip()]
+        # ⛔ TEN QUYEN LA THI DUNG LAI, KHONG PHAT. Mot ten go sai khong he bao
+        # loi luc phat: no vao thang database, vao lease, va chi lo ra o may
+        # khach khi nguoi dung bam nut - `accounts.manage` da song nhu the qua
+        # muoi mot key. Danh sach hop le suy ra tu dung bang ma backend chan.
+        la = [item for item in features if item not in GRANTABLE_FEATURES]
+        if la:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Ten quyen khong co that: " + ", ".join(la)
+                    + ". Quyen phat duoc: " + ", ".join(GRANTABLE_FEATURES)
+                ),
+            )
         if body.group.strip():
             features.append(group_feature(body.group.strip()))
         if body.role.strip():
