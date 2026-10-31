@@ -178,6 +178,45 @@ function toast(message, bad) {
   toast._timer = setTimeout(() => { node.style.display = "none"; }, 5200);
 }
 
+// ⛔ `detail` CUA FastAPI CO THE LA MOT MANG. Khi du lieu khong hop le, no tra
+// ve mot danh sach object, va `new Error(mang)` cho ra dung cai nay tren man
+// hinh nguoi van hanh:
+//
+//     [object Object],[object Object]
+//
+// Hai object = hai o bi sai, ma khong noi o nao - nguoi dung phai doan. Da gap
+// that 31/10/2026 luc phat key.
+const TEN_O = {
+  customer_reference: "Khách (ghi chú)", plan: "Gói", group: "Nhóm (group)",
+  role: "Quyền (role)", features: "Tính năng", max_accounts: "Số account",
+  max_tabs: "Số tab", max_devices: "Số máy", channel: "Kênh",
+  expires_days: "Số ngày", reason: "Lý do",
+};
+
+function moTaMotLoi(item) {
+  const o = (item.loc || []).filter((x) => x !== "body").pop();
+  const ten = TEN_O[o] || o || "Dữ liệu";
+  const c = item.ctx || {};
+  switch (item.type) {
+    case "greater_than_equal": return `${ten}: phải từ ${c.ge} trở lên`;
+    case "less_than_equal":    return `${ten}: không được quá ${c.le}`;
+    case "string_too_long":    return `${ten}: dài quá ${c.max_length} ký tự`;
+    case "string_too_short":   return `${ten}: cần ít nhất ${c.min_length} ký tự`;
+    case "string_pattern_mismatch": return `${ten}: giá trị không hợp lệ`;
+    case "missing":            return `${ten}: còn trống`;
+    case "int_parsing":
+    case "int_type":           return `${ten}: phải là một con số`;
+    default:                   return `${ten}: ${item.msg || "không hợp lệ"}`;
+  }
+}
+
+function moTaLoi(data, status) {
+  const d = data && data.detail;
+  if (Array.isArray(d)) return d.map(moTaMotLoi).join(" · ");
+  if (typeof d === "string" && d) return d;
+  return `HTTP ${status}`;
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
@@ -191,7 +230,7 @@ async function api(path, options = {}) {
   let data = text;
   try { data = JSON.parse(text); } catch {}
   if (!response.ok) {
-    throw new Error((data && data.detail) || `HTTP ${response.status}`);
+    throw new Error(moTaLoi(data, response.status));
   }
   return data;
 }
@@ -273,12 +312,15 @@ async function createKey() {
     group: data.group.trim(),
     role: data.role.trim(),
     features: data.features.split(",").map((s) => s.trim()).filter(Boolean),
-    max_accounts: Number(data.max_accounts),
-    max_tabs: Number(data.max_tabs),
-    max_devices: Number(data.max_devices),
     channel: data.channel,
-    expires_days: Number(data.expires_days),
   };
+  // ⛔ `Number("")` LA 0, KHONG PHAI NaN. Nen de trong mot o so la gui 0 len,
+  // ma may chu doi toi thieu 1 -> bi tu choi. De trong phai co nghia la "dung
+  // mac dinh", nen bo han khoa do khoi body va de may chu dien mac dinh cua no.
+  for (const o of ["max_accounts", "max_tabs", "max_devices", "expires_days"]) {
+    const so = Number(String(data[o]).trim());
+    if (String(data[o]).trim() !== "" && Number.isFinite(so)) body[o] = so;
+  }
   try {
     const result = await api("/api/licenses", { method: "POST", body: JSON.stringify(body) });
     const when = new Date(result.expires_at * 1000).toLocaleString("vi-VN");
