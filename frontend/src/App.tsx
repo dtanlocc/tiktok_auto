@@ -61,6 +61,10 @@ export default function App() {
   const [isAllocateModalOpen, setIsAllocateModalOpen] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false); // <-- POPUP XUẤT ACC
   const [proxyMode, setProxyMode] = useState<boolean>(true); // true = dùng proxy (auto-map); false = mạng thật
+  // Gõ hộp thư hay username vào ô "Email or username" của TikTok. Cả hai tên
+  // đều từng sai thật, nên đây là lựa chọn của người vận hành chứ không phải
+  // hằng số: ai biết rõ account của mình nhập từ đâu thì chọn đúng hơn.
+  const [loginIdentifier, setLoginIdentifier] = useState<'email' | 'username'>('email');
 
   const [loading, setLoading] = useState<boolean>(false);
   const [taskCompletionNotices, setTaskCompletionNotices] = useState<TaskCompletionNotice[]>([]);
@@ -118,6 +122,13 @@ export default function App() {
     fetch('http://127.0.0.1:9000/api/v1/tasks/proxy-mode')
       .then((res) => res.json())
       .then((data) => { if (typeof data?.use_proxy === 'boolean') setProxyMode(data.use_proxy); })
+      .catch(() => {});
+
+    fetch('http://127.0.0.1:9000/api/v1/tasks/login-identifier')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.mode === 'email' || data?.mode === 'username') setLoginIdentifier(data.mode);
+      })
       .catch(() => {});
   }, [setAccounts, refreshProxies]);
 
@@ -550,6 +561,28 @@ export default function App() {
     } catch {
       alert('Không kết nối được backend để copy.');
     }
+  };
+
+  // Chọn tên đăng nhập rồi CHẠY luôn Form + OTP, vì đó là lúc người dùng quyết
+  // định: họ bấm "Đăng nhập Form + OTP" rồi chọn gõ gì. Lựa chọn được lưu lại
+  // nên lần sau mở menu vẫn thấy đúng dấu tích.
+  const handleLoginWithIdentifier = async (mode: 'email' | 'username') => {
+    try {
+      const res = await fetch('http://127.0.0.1:9000/api/v1/tasks/login-identifier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.detail || 'Lỗi đổi kiểu đăng nhập.'); return; }
+      setLoginIdentifier(data.mode);
+    } catch {
+      alert('Không kết nối được backend.');
+      return;
+    }
+    // ⛔ CHỈ CHẠY SAU KHI MÁY CHỦ ĐÃ NHẬN. Gọi song song thì phiên đầu tiên có
+    // thể mở trước khi cài đặt kịp ghi, và nó sẽ gõ tên của lần trước.
+    handleBulkLogin('CREDENTIAL');
   };
 
   // Đổi chế độ proxy (runtime): true = auto-map proxy như cũ; false = mạng thật (VPN)
@@ -1045,6 +1078,8 @@ export default function App() {
           onQuickHealthCheck={handleQuickHealthCheck}
           proxyMode={proxyMode}
           onSetProxyMode={handleSetProxyMode}
+          loginIdentifier={loginIdentifier}
+          onLoginWithIdentifier={handleLoginWithIdentifier}
         />
       )}
 
