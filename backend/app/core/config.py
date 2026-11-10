@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # cu. (Du lieu proxy trong DB van GIU nguyen, chi khong dung.)
     USE_PROXY: bool = True
 
+    # Go gi vao o "Email or username" cua TikTok: "email" hay "username".
+    # Day chi la MAC DINH; lua chon that nam trong tai lieu cai dat luc chay
+    # (xem `app/core/login_settings.py`) nen doi duoc ma khong restart.
+    LOGIN_IDENTIFIER: str = "email"
+
     # GIAN CACH (stagger) giua cac lan mo browser lien tiep - tranh mo 4 browser
     # cung luc (thrash dia/CPU + de bi TikTok phat hien nhieu nick 1 IP cung luc).
     # Giam de ramp-up da luong NHANH hon (rui ro phat hien cao hon); tang de an toan.

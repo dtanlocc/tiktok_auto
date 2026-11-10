@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from app.domain.ports.browser import IBrowserService
+from app.core.login_settings import IDENTIFIER_ORDER, load_login_identifier
 from app.domain.ports.email import IEmailService
 from app.domain.entities.account import TikTokAccount
 from app.core.config import settings
@@ -297,35 +298,44 @@ async def _fill_login_form(
     )
 
 
-def _login_identifier(account) -> str:
-    """What goes in TikTok's "Email or username" box.
+def _identifier_values(account) -> dict[str, str]:
+    """Cac ten dang nhap account nay co, da cat khoang trang.
 
-    ⛔ EMAIL FIRST tu 31/10/2026, username chi khi khong co email dung dang.
-
-    O day CA HAI ten deu tung sai, va ca hai lan deu la quan sat that - nen
-    thu tu nay khong phai mot chan li, no la mot CUOC DANH CUOC co can cu:
-
-      - 18/09/2026, treft21664: email bi tu choi "Account doesn't exist", vao
-        duoc ngay bang @username. Day la ly do truoc kia username di truoc.
-      - 31/10/2026, chu so huu: username trong danh sach nhap vao hay SAI
-        (go nham, doi nick, nick cu), con hop thu hotmail thi gan voi tai
-        khoan va khong doi.
-
-    Cai gia cua viec chon sai KHONG doi xung mot cach ro rang: ca hai deu ton
-    dung mot lan bam, va `_login_fallback_identifier` bam lai bang ten con lai
-    ngay khi TikTok noi "Account doesn't exist". Nen thu tu chi quyet dinh ten
-    nao ton luot DAU TIEN, khong quyet dinh dang nhap duoc hay khong - tru khi
-    het so lan thu.
-
-    ⛔ VA CHI COI LA EMAIL KHI NO CO DANG EMAIL. Truong `email` trong danh sach
+    ⛔ CHI COI LA EMAIL KHI NO CO DANG EMAIL. Truong `email` trong danh sach
     nhap vao co luc la ghi chu, co luc bo trong; dua mot chuoi khong co "@" vao
     o dang nhap la vut di mot lan bam ma khong hoc duoc gi.
     """
     email = (getattr(account, "email", "") or "").strip()
-    username = (getattr(account, "username", "") or "").strip()
-    if "@" in email:
-        return email
-    return username or email
+    return {
+        "email": email if "@" in email else "",
+        "username": (getattr(account, "username", "") or "").strip(),
+    }
+
+
+def _login_identifier(account) -> str:
+    """What goes in TikTok's "Email or username" box.
+
+    ⛔ THU TU LA MOT LUA CHON CUA NGUOI VAN HANH, khong phai mot hang so trong
+    code. Ca hai ten deu tung sai that:
+
+      - 18/09/2026, treft21664: email bi tu choi "Account doesn't exist", vao
+        duoc ngay bang @username;
+      - 31/10/2026, chu so huu: username trong danh sach nhap vao hay sai (go
+        nham, doi nick, nick cu), con hop thu thi gan voi tai khoan.
+
+    Ai biet lo account cua minh duoc nhap tu dau thi nguoi do chon dung hon,
+    nen lua chon nam o `app/core/login_settings.py` va doi duoc ma khong phai
+    restart backend.
+
+    Du chon kieu nao, `_login_fallback_identifier` van bam lai bang ten con lai
+    khi TikTok noi "Account doesn't exist" - nen thu tu chi quyet dinh ten nao
+    ton luot DAU TIEN, khong quyet dinh dang nhap duoc hay khong.
+    """
+    values = _identifier_values(account)
+    for field in IDENTIFIER_ORDER[load_login_identifier()]:
+        if values[field]:
+            return values[field]
+    return ""
 
 
 def _login_fallback_identifier(account, used: str) -> str:

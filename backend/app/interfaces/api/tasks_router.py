@@ -28,6 +28,11 @@ from app.core.extension_settings import (
     set_nordvpn_extension_enabled,
     set_proxy_mode as persist_proxy_mode,
 )
+from app.core.login_settings import (
+    IDENTIFIER_ORDER,
+    load_login_identifier,
+    set_login_identifier as persist_login_identifier,
+)
 from app.use_cases.upload.media_selection import select_preferred_media
 from app.use_cases.upload.video_library import scan_video_paths
 from app.domain.account_rules import is_sold_account
@@ -44,6 +49,11 @@ router = APIRouter(
 
 class ProxyModeRequest(BaseModel):
     use_proxy: bool  # True = auto-map proxy (nhu cu); False = mang that (khong proxy)
+
+
+class LoginIdentifierRequest(BaseModel):
+    # "email" hay "username" - danh sach that nam o login_settings.IDENTIFIER_ORDER
+    mode: str
 
 
 class NordVpnExtensionRequest(BaseModel):
@@ -101,6 +111,34 @@ async def set_proxy_mode(payload: ProxyModeRequest):
             "Đã bật auto-map proxy (dùng proxy như cũ)."
             if payload.use_proxy
             else "Đã chuyển sang MẠNG THẬT (không proxy) — dùng VPN toàn máy."
+        ),
+    }
+
+
+@router.get("/login-identifier")
+async def get_login_identifier():
+    """Ten dang nhap dang duoc go vao o "Email or username" cua TikTok."""
+    return {
+        "mode": load_login_identifier(),
+        "choices": sorted(IDENTIFIER_ORDER),
+    }
+
+
+@router.post("/login-identifier")
+async def set_login_identifier_mode(payload: LoginIdentifierRequest):
+    """Doi NGAY (khong can restart backend). Lua chon duoc luu lai nen restart
+    van giu dung kieu. Co hieu luc cho cac phien dang nhap MO SAU do."""
+    try:
+        mode = persist_login_identifier(payload.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "SUCCESS",
+        "mode": mode,
+        "message": (
+            "Đăng nhập sẽ gõ HỘP THƯ trước; username là đường lui."
+            if mode == "email"
+            else "Đăng nhập sẽ gõ USERNAME trước; hộp thư là đường lui."
         ),
     }
 
