@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from app.core import login_settings
 from app.use_cases.auth import login_strategies
 from app.use_cases.auth.login_strategies import _type_login_field, _wait_submit_enabled
 from app.domain.entities.account import TikTokAccount
@@ -845,6 +846,30 @@ def test_without_a_refill_the_old_message_is_kept(monkeypatch):
 
 def _account(username="", email=""):
     return TikTokAccount(id="acc-1", username=username, email=email)
+
+
+@pytest.fixture(autouse=True)
+def _ghim_kieu_dang_nhap(tmp_path, monkeypatch):
+    """⛔ CAC BAI TEST DUOI DAY KHONG DUOC DOC TEP CAI DAT CUA MAY NAY.
+
+    Tu 10/11/2026 thu tu go ten dang nhap la mot LUA CHON luu tren dia
+    (`app/core/login_settings.py`), nen khong ghim thi nhung bai test nay do
+    hay truot tuy vao lan cuoi NGUOI VAN HANH bam gi trong menu chuot phai.
+    Da xay ra dung the: ca ba bai duoi do ngay sau khi mot phep thu tay ghi
+    "username" vao `.runtime/browser-extension-settings.json`.
+
+    Mot bai test chay theo trang thai cua may thi khong canh duoc gi, va con
+    te hon the: no bao dong gia o mot cho khong co loi nao.
+    """
+    monkeypatch.setattr(
+        login_settings.settings,
+        "BROWSER_EXTENSION_SETTINGS_PATH",
+        str(tmp_path / "settings.json"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        login_settings.settings, "LOGIN_IDENTIFIER", "email", raising=False
+    )
 
 
 def test_the_mailbox_is_what_gets_typed():
