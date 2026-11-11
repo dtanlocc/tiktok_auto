@@ -7,6 +7,10 @@ interface NavSidebarProps {
   activeTab: AppTab;
   setActiveTab: (t: AppTab) => void;
   isGloballyPaused: boolean;
+  versions?: {
+    app_version?: string;
+    engine?: { label?: string; version?: string; engine_tag?: string; firefox?: string };
+  } | null;
 }
 
 const NAV: { id: AppTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -17,7 +21,16 @@ const NAV: { id: AppTab; label: string; icon: React.ComponentType<{ className?: 
   { id: 'proxies', label: 'Proxies', icon: Globe },
 ];
 
-export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab, isGloballyPaused }) => {
+export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab, isGloballyPaused, versions }) => {
+  // Dòng chi tiết cho tooltip: gộp mọi thứ người hỗ trợ cần hỏi vào một chỗ.
+  const e = versions?.engine;
+  const chiTiet = [
+    `Giao diện v${__APP_VERSION__}`,
+    versions?.app_version ? `Backend ${versions.app_version}` : null,
+    e?.version ? `${e.label ?? 'engine'} ${e.version}` : null,
+    e?.firefox ? `Firefox ${e.firefox} (${e.engine_tag ?? '?'})` : null,
+  ].filter(Boolean).join('\n');
+
   // LUÔN là rail biểu tượng; rê chuột vào -> TỰ ĐỘNG bung ra (overlay, không đẩy
   // nội dung). Rời chuột -> thu lại về rail. Không có chế độ ghim mở.
   const [hover, setHover] = useState(false);
@@ -42,9 +55,16 @@ export const NavSidebar: React.FC<NavSidebarProps> = ({ activeTab, setActiveTab,
               <h1 className="text-[13px] font-bold tracking-tight text-fg leading-tight truncate">TikTok Automation</h1>
               {/* "May dang chay ban nao" la cau hoi dau tien moi lan ho tro ai
                   do, nen so phien ban nam ngay canh ten app. `select-all` de
-                  mot cu bam la boi den duoc ca so, khong phai go lai. */}
-              <p className="text-[10px] text-fg-subtle leading-tight truncate">
+                  mot cu bam la boi den duoc ca so, khong phai go lai.
+                  Rê chuột vào để xem đủ: backend, thư viện, đời Firefox. */}
+              <p
+                className="text-[10px] text-fg-subtle leading-tight truncate"
+                title={chiTiet}
+              >
                 Multi-thread · <span className="select-all">v{__APP_VERSION__}</span>
+                {versions?.app_version && versions.app_version !== __APP_VERSION__ && (
+                  <span className="select-all"> · be {versions.app_version}</span>
+                )}
               </p>
             </div>
           )}

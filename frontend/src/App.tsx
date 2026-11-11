@@ -65,6 +65,12 @@ export default function App() {
   // đều từng sai thật, nên đây là lựa chọn của người vận hành chứ không phải
   // hằng số: ai biết rõ account của mình nhập từ đâu thì chọn đúng hơn.
   const [loginIdentifier, setLoginIdentifier] = useState<'email' | 'username'>('email');
+  // "Máy đang chạy bản nào" — backend trả cả bản thư viện và đời engine
+  // Firefox, vì hỏi ba lần để biết một chuyện là ba lần quá nhiều.
+  const [versions, setVersions] = useState<{
+    app_version?: string;
+    engine?: { label?: string; version?: string; engine_tag?: string; firefox?: string };
+  } | null>(null);
 
   const [loading, setLoading] = useState<boolean>(false);
   const [taskCompletionNotices, setTaskCompletionNotices] = useState<TaskCompletionNotice[]>([]);
@@ -122,6 +128,11 @@ export default function App() {
     fetch('http://127.0.0.1:9000/api/v1/tasks/proxy-mode')
       .then((res) => res.json())
       .then((data) => { if (typeof data?.use_proxy === 'boolean') setProxyMode(data.use_proxy); })
+      .catch(() => {});
+
+    fetch('http://127.0.0.1:9000/api/v1/tasks/versions')
+      .then((res) => res.json())
+      .then((data) => { if (data?.app_version) setVersions(data); })
       .catch(() => {});
 
     fetch('http://127.0.0.1:9000/api/v1/tasks/login-identifier')
@@ -865,7 +876,7 @@ export default function App() {
     <div className="min-h-screen bg-canvas text-fg flex">
 
       {/* SIDEBAR TRÁI CỐ ĐỊNH: điều hướng + trạng thái hệ thống */}
-      <NavSidebar activeTab={activeTab} setActiveTab={setActiveTab} isGloballyPaused={isGloballyPaused} />
+      <NavSidebar activeTab={activeTab} setActiveTab={setActiveTab} isGloballyPaused={isGloballyPaused} versions={versions} />
 
       {/* KHU LÀM VIỆC CHÍNH (cuộn độc lập với sidebar) */}
       <main className="flex-1 min-w-0 h-screen overflow-y-auto flex flex-col gap-3 px-4 py-4 md:px-5">

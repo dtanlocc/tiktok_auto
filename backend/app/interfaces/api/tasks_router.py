@@ -28,6 +28,10 @@ from app.core.extension_settings import (
     set_nordvpn_extension_enabled,
     set_proxy_mode as persist_proxy_mode,
 )
+from app.core.browser_engine import (
+    runtime_versions,
+    set_browser_engine as persist_browser_engine,
+)
 from app.core.login_settings import (
     IDENTIFIER_ORDER,
     load_login_identifier,
@@ -49,6 +53,10 @@ router = APIRouter(
 
 class ProxyModeRequest(BaseModel):
     use_proxy: bool  # True = auto-map proxy (nhu cu); False = mang that (khong proxy)
+
+
+class BrowserEngineRequest(BaseModel):
+    key: str
 
 
 class LoginIdentifierRequest(BaseModel):
@@ -113,6 +121,26 @@ async def set_proxy_mode(payload: ProxyModeRequest):
             else "Đã chuyển sang MẠNG THẬT (không proxy) — dùng VPN toàn máy."
         ),
     }
+
+
+@router.get("/versions")
+async def get_versions():
+    """"May dang chay ban nao" - cau hoi dau tien moi lan ho tro ai do.
+
+    Gom ca ban backend, ban thu vien trinh duyet va doi engine Firefox, de
+    nguoi dung doc duoc mot cho thay vi phai hoi ba lan.
+    """
+    return runtime_versions()
+
+
+@router.post("/browser-engine")
+async def set_browser_engine_mode(payload: BrowserEngineRequest):
+    """Doi nhan trinh duyet. Chi doi duoc sang nhan DA BIEN DICH vao ban nay."""
+    try:
+        key = persist_browser_engine(payload.key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "SUCCESS", "browser_engine": key}
 
 
 @router.get("/login-identifier")

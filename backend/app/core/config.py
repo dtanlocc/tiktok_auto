@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     # (xem `app/core/login_settings.py`) nen doi duoc ma khong restart.
     LOGIN_IDENTIFIER: str = "email"
 
+    # Nhan trinh duyet dang dung. Chi doi duoc SANG MOT NHAN DA DUOC BIEN DICH
+    # vao ban backend (xem `app/core/browser_engine.py`).
+    BROWSER_ENGINE: str = "invisible_playwright"
+
     # GIAN CACH (stagger) giua cac lan mo browser lien tiep - tranh mo 4 browser
     # cung luc (thrash dia/CPU + de bi TikTok phat hien nhieu nick 1 IP cung luc).
     # Giam de ramp-up da luong NHANH hon (rui ro phat hien cao hon); tang de an toan.
