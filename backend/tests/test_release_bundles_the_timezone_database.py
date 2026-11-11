@@ -54,3 +54,30 @@ def test_the_zone_list_is_what_resolves_a_zone_name():
     assert "Asia/Jakarta" in ten, "dung vung da lam ban 0.1.17 dau tien that bai"
     assert "Asia/Ho_Chi_Minh" in ten
     assert ten <= zoneinfo.available_timezones()
+
+
+# ---------------------------------------------------------------------------
+# Ban ghi cai dat cua thu vien trinh duyet
+# ---------------------------------------------------------------------------
+def test_the_build_bundles_the_browser_library_install_record():
+    """⛔ THIEU NO LA MAN HINH PHIEN BAN NOI SAI TREN MAY KHACH.
+
+    `invisible_playwright` suy `__version__` tu `importlib.metadata`, va ban
+    Nuitka khong co dist-info -> no tra ve "0.0.0+unknown". Chay tu source thi
+    luon dung, nen khong lan thu dev nao thay. Da gap that o ban 0.1.20 dau.
+
+    ⛔ VA TEN PHAI LA TEN PHAN PHOI THAT, gach duoi chu khong phai gach ngang.
+    Nuitka chi CANH BAO roi bo qua cai sai, nen ban build van ra va van hong -
+    lan dau da di dung vao bay do.
+    """
+    script = _script()
+    assert '"--include-distribution-metadata=invisible_playwright"' in script
+    assert "--include-distribution-metadata=invisible-playwright" not in script
+
+
+def test_the_distribution_name_is_spelled_the_way_the_installer_wrote_it():
+    """Rang buoc that, kiem tren chinh may dang chay."""
+    import importlib.metadata as metadata
+
+    ten = {d.metadata["Name"] for d in metadata.distributions() if d.metadata["Name"]}
+    assert "invisible_playwright" in ten

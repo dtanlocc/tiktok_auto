@@ -17,6 +17,8 @@ Them mot nhan la them mot dong vao `ENGINES`.
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
+import re
 from dataclasses import dataclass
 
 from app.core.config import settings
@@ -55,11 +57,42 @@ ENGINES: dict[str, BrowserEngine] = {
 DEFAULT_ENGINE = "invisible_playwright"
 
 
+#: Mot so phien ban that, de phan biet voi "khong biet".
+_SO_THAT = re.compile(r"\d+\.\d+\.\d+")
+
+
 def _module_version(name: str) -> str:
-    try:
-        return str(getattr(importlib.import_module(name), "__version__", "")) or "?"
-    except Exception:
-        return "?"
+    """So phien ban cua mot goi, doc duoc ca tu source lan trong ban Nuitka.
+
+    ⛔ TRA METADATA TRUOC, `__version__` LA DUONG LUI - va thu tu nay la ket
+    qua cua mot phep do chu khong phai mot so thich.
+
+    `invisible_playwright` suy `__version__` cua no tu `importlib.metadata`,
+    nhung tra bang ten CO GACH NGANG ("invisible-playwright"). Metadata ma
+    Nuitka dong goi thi khop ten THEO DUNG CHU, khong chuan hoa - do trong mot
+    binary thu, 11/11/2026:
+
+        invisible-playwright  -> PackageNotFoundError
+        invisible_playwright  -> 0.49.1
+
+    Nen trong ban nen, `__version__` cua no roi ve "0.0.0+unknown", va man hinh
+    "dang chay ban nao" noi sai o dung noi can no nhat: tren may khach. Doc
+    thang bang ten gach duoi thi dung ca hai noi.
+
+    (`invisible_core` khong dinh chuyen nay: no suy tu seal.json ma no mang
+    theo, va Nuitka co dong goi tep do.)
+    """
+    for doc in (
+        lambda: importlib.metadata.version(name),
+        lambda: getattr(importlib.import_module(name), "__version__", ""),
+    ):
+        try:
+            gia_tri = str(doc() or "")
+        except Exception:
+            continue
+        if _SO_THAT.fullmatch(gia_tri):
+            return gia_tri
+    return "?"
 
 
 def is_available(key: str) -> bool:

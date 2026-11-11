@@ -41,11 +41,23 @@ def test_the_engine_in_this_build_is_reported_with_its_versions():
     assert info["firefox"] != "?"
 
 
-def test_the_version_comes_from_the_module_not_from_dist_info():
-    """⛔ Trong Nuitka khong co dist-info; `__version__` thi van con."""
-    import invisible_playwright
+def test_the_version_looks_like_a_real_version():
+    """⛔ BAI TEST NAY TUNG LA MOT BAI TEST RONG, va no da de lot mot loi that.
 
-    assert be.describe("invisible_playwright")["version"] == invisible_playwright.__version__
+    Ban dau no so `describe()[...]` voi `invisible_playwright.__version__` -
+    tuc so mot gia tri voi chinh no. No xanh du ca hai cung SAI, va dung the
+    da xay ra: trong ban Nuitka 0.1.20 dau tien, man hinh phien ban hien
+    "0.0.0+unknown" vi goi do suy `__version__` tu `importlib.metadata`, ma
+    ban nen khong co dist-info. Bai test khong he keu.
+
+    Gio no kiem HINH DANG cua con so, nen mot gia tri "khong biet" bi bat du
+    no den tu dau.
+    """
+    import re
+
+    for key in ("version", "core_version"):
+        gia_tri = str(be.describe("invisible_playwright")[key])
+        assert re.fullmatch(r"\d+\.\d+\.\d+", gia_tri), f"{key} = {gia_tri!r}"
 
 
 def test_an_unknown_engine_is_refused():

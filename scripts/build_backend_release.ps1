@@ -47,6 +47,12 @@ $arguments = @(
     # tuc KHONG MO DUOC TRINH DUYET - va chi trong ban da bien dich; chay tu
     # source thi doc thang tu site-packages nen khong bao gio thay.
     "--include-package-data=tzdata",
+    # ⛔ MANG THEO BAN GHI CAI DAT CUA invisible-playwright. Goi do suy
+    # `__version__` tu `importlib.metadata`, va trong ban Nuitka khong co
+    # dist-info nen no tra ve "0.0.0+unknown" - tuc man hinh "dang chay ban
+    # nao" noi SAI o dung noi can no nhat: tren may khach. (invisible-core thi
+    # khong can, no suy tu seal da duoc dong goi.)
+    "--include-distribution-metadata=invisible_playwright",
     "--nofollow-import-to=*.tests",
     "--noinclude-pytest-mode=nofollow",
     "--noinclude-unittest-mode=nofollow",
