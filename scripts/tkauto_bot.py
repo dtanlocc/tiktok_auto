@@ -23,6 +23,7 @@ os.environ.setdefault("SECURITY_MODE", "development")
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from app.use_cases.control import commands  # noqa: F401  (dang ky lenh)
+from app.use_cases.control.backend_client import BackendUnavailable  # noqa: E402
 from app.use_cases.control.registry import (  # noqa: E402
     ConfirmationRequired,
     UnknownCommand,
@@ -76,6 +77,15 @@ def main() -> int:
     except TypeError as exc:
         print(f"Tham số không đúng: {exc}")
         return 2
+    except BackendUnavailable as exc:
+        # ⛔ KHONG DO TRACEBACK VA KHONG THOAT 0. Mot mat truoc cho bot ma bao
+        # "thanh cong" khi backend tat thi con bot se im lang nuot that bai.
+        print(exc)
+        print("Lệnh này cần backend đang chạy. Lệnh đọc thì không cần.")
+        return 4
+    except RuntimeError as exc:
+        print(str(exc))
+        return 5
     print(json.dumps(ket_qua, ensure_ascii=False, indent=2, default=str))
     return 0
 
