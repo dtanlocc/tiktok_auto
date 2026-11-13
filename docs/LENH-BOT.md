@@ -39,6 +39,46 @@ Bot đọc mã thoát để biết nên báo gì, thay vì đoán từ chữ.
 
 ---
 
+## Đích: lệnh chạy trên những nick nào
+
+Mọi lệnh hành động đều nhận cùng một cặp `kieu` + `gia_tri`:
+
+| `kieu` | `gia_tri` | Ví dụ |
+|---|---|---|
+| `tat_ca` | (không cần) | toàn bộ kho |
+| `lo` | tên lô | `gia_tri="us sdt 9/11"` |
+| `nuoc` | mã nước | `gia_tri=DE` |
+| `nick` | username/email, phẩy ngăn cách | `gia_tri=nick1,nick2` |
+| `loc` | `never` · `chua_co_so_lieu` · `failed` | `gia_tri=never` |
+
+```bash
+... tkauto_bot.py dong_bo kieu=lo gia_tri="us sdt 9/11" --xac-nhan
+... tkauto_bot.py dong_bo kieu=loc gia_tri=never --xac-nhan
+... tkauto_bot.py check_nhanh kieu=nuoc gia_tri=DE --xac-nhan
+```
+
+> **Đích rỗng là một lỗi, không phải "không làm gì".** Gõ nhầm tên lô thì lệnh
+> từ chối kèm lý do, thay vì lặng lẽ chạy trên 0 nick để bạn tưởng đã xong.
+
+Thêm một kiểu đích = thêm một dòng trong `targets.py`, không lệnh nào phải sửa.
+
+---
+
+## Lệnh nào chạy được từ xa
+
+Mỗi lệnh có cờ `remote`. **Mặc định là không** — danh sách cho phép, không phải
+danh sách cấm. Một lệnh mới thêm vào sẽ *không* tự nhiên chạy được trên máy
+người khác; quên khai báo thì hậu quả là "không chạy được", chứ không phải
+"chạy được trên máy khách mà không ai định".
+
+Hiện **22/23 lệnh** cho phép từ xa. Riêng `gom_tren_nguong` giữ **tại chỗ** vì
+nó đảo lô hàng loạt.
+
+Hai phép kiểm **độc lập nhau**: cho phép từ xa *không* có nghĩa là đã xác nhận.
+Một lệnh sửa dữ liệu chạy từ xa vẫn cần xác nhận.
+
+---
+
 # LỆNH ĐỌC
 
 ## `trang_thai`
@@ -251,19 +291,15 @@ Chạy đồng bộ số liệu.
 
 | Tham số | Mặc định | Nghĩa |
 |---|---|---|
-| `chon` | `never` | `never` · `chua_co_so_lieu` · `failed` |
+| `kieu` | `loc` | Kiểu đích (xem phần Đích) |
+| `gia_tri` | `never` | Giá trị của đích |
 | `luong` | 4 | Số luồng |
 
 ```bash
-... tkauto_bot.py dong_bo chon=never luong=4 --xac-nhan
-... tkauto_bot.py dong_bo chon=failed --xac-nhan
+... tkauto_bot.py dong_bo kieu=loc gia_tri=never --xac-nhan
+... tkauto_bot.py dong_bo kieu=lo gia_tri="us sdt 9/11" --xac-nhan
+... tkauto_bot.py dong_bo kieu=nuoc gia_tri=DE luong=6 --xac-nhan
 ```
-
-| `chon` | Chọn ai |
-|---|---|
-| `never` | Chưa từng đồng bộ |
-| `chua_co_so_lieu` | Chưa có `follower_count` |
-| `failed` | Lần trước hỏng |
 
 ⏱ ~10 giây/nick với 4 luồng.
 
@@ -275,13 +311,14 @@ Chạy đồng bộ số liệu.
 
 | Tham số | Mặc định | Nghĩa |
 |---|---|---|
-| `lo` | (bắt buộc) | Tên lô |
+| `kieu` | `lo` | Kiểu đích |
+| `gia_tri` | (bắt buộc) | Giá trị của đích |
 | `cach` | `COOKIE` | `COOKIE` hoặc `CREDENTIAL` |
 | `luong` | 8 | Số phiên đồng thời |
 
 ```bash
-... tkauto_bot.py dang_nhap lo="us sdt 9/11" cach=COOKIE --xac-nhan
-... tkauto_bot.py dang_nhap lo="test 3/11" cach=CREDENTIAL luong=4 --xac-nhan
+... tkauto_bot.py dang_nhap kieu=lo gia_tri="us sdt 9/11" --xac-nhan
+... tkauto_bot.py dang_nhap kieu=nick gia_tri=nick1,nick2 cach=CREDENTIAL --xac-nhan
 ```
 
 `CREDENTIAL` là đăng nhập form + OTP — tốn OTP, chậm hơn, nhưng vào được khi
@@ -295,11 +332,13 @@ Kiểm tra sống/chết cho một lô.
 
 | Tham số | Mặc định |
 |---|---|
-| `lo` | (bắt buộc) |
+| `kieu` | `lo` |
+| `gia_tri` | (bắt buộc) |
 | `luong` | 5 |
 
 ```bash
-... tkauto_bot.py check_nhanh lo="die-prx" --xac-nhan
+... tkauto_bot.py check_nhanh kieu=lo gia_tri="die-prx" --xac-nhan
+... tkauto_bot.py check_nhanh kieu=nuoc gia_tri=US --xac-nhan
 ```
 
 ---

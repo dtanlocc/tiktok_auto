@@ -32,6 +32,11 @@ class Command:
     handler: Handler
     #: True = lenh THAY DOI du lieu. Mat truoc phai hoi lai truoc khi chay.
     mutates: bool = False
+    #: ⛔ MAC DINH LA KHONG CHO CHAY TU XA. Danh sach cho phep, khong phai danh
+    #: sach cam: mot lenh moi them vao se KHONG tu nhien chay duoc tren may
+    #: nguoi khac. Quen khai bao thi hau qua la "khong chay duoc", chu khong
+    #: phai "chay duoc tren may khach ma khong ai dinh".
+    remote: bool = False
     #: Ten tham so -> mo ta, de mat truoc tu dung duoc huong dan.
     params: Dict[str, str] = field(default_factory=dict)
 
@@ -44,6 +49,7 @@ def register(
     summary: str,
     *,
     mutates: bool = False,
+    remote: bool = False,
     params: Optional[Dict[str, str]] = None,
 ) -> Callable[[Handler], Handler]:
     """Dang ky mot lenh. Them lenh moi = them mot ham co decorator nay."""
@@ -56,6 +62,7 @@ def register(
             summary=summary,
             handler=handler,
             mutates=mutates,
+            remote=remote,
             params=dict(params or {}),
         )
         return handler
@@ -71,7 +78,17 @@ class ConfirmationRequired(PermissionError):
     """Lenh nay thay doi du lieu va chua duoc xac nhan."""
 
 
-def run(name: str, params: Optional[Dict[str, Any]] = None, *, confirm: bool = False) -> Any:
+class RemoteNotAllowed(PermissionError):
+    """Lenh nay khong nam trong danh sach duoc chay tu xa."""
+
+
+def run(
+    name: str,
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    confirm: bool = False,
+    remote: bool = False,
+) -> Any:
     """Chay mot lenh.
 
     ⛔ LENH SUA DOI HOI `confirm=True`. Mat truoc tu xa (Telegram) phai hoi
@@ -81,6 +98,13 @@ def run(name: str, params: Optional[Dict[str, Any]] = None, *, confirm: bool = F
     if lenh is None:
         raise UnknownCommand(
             f"Khong co lenh {name!r}. Co: " + ", ".join(sorted(REGISTRY))
+        )
+    if remote and not lenh.remote:
+        # ⛔ CHAN O TANG NAY, khong phai o tang nhan tin. Mat truoc Telegram
+        # viet sau nay khong the "quen" phep kiem nay.
+        raise RemoteNotAllowed(
+            f"Lenh {name!r} khong duoc phep chay tu xa. "
+            "Chay tren chinh may do."
         )
     if lenh.mutates and not confirm:
         raise ConfirmationRequired(
@@ -97,6 +121,7 @@ def describe() -> list[dict[str, Any]]:
             "name": c.name,
             "summary": c.summary,
             "mutates": c.mutates,
+            "remote": c.remote,
             "params": c.params,
         }
         for c in sorted(REGISTRY.values(), key=lambda x: (x.mutates, x.name))

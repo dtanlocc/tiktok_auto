@@ -145,3 +145,43 @@ def test_every_real_command_declares_whether_it_mutates():
     for lenh in registry.REGISTRY.values():
         assert isinstance(lenh.mutates, bool)
         assert lenh.summary.strip(), f"{lenh.name} thieu mo ta"
+
+
+# ---------------------------------------------------------------------------
+# Danh sach cho phep chay tu xa
+# ---------------------------------------------------------------------------
+def test_a_command_is_not_remote_unless_it_says_so(so_sach):
+    """⛔ DANH SACH CHO PHEP, KHONG PHAI DANH SACH CAM.
+
+    Mot lenh moi them vao KHONG duoc tu nhien chay duoc tren may nguoi khac.
+    Quen khai bao thi hau qua la "khong chay duoc" - chu khong phai "chay duoc
+    tren may khach ma khong ai dinh".
+    """
+    so_sach.register("lenh_moi", "vua them")(lambda: "xong")
+    assert so_sach.run("lenh_moi") == "xong"          # tai cho: duoc
+    with pytest.raises(so_sach.RemoteNotAllowed, match="khong duoc phep chay tu xa"):
+        so_sach.run("lenh_moi", remote=True)
+
+
+def test_a_remote_command_runs_from_both_places(so_sach):
+    so_sach.register("doc_duoc", "x", remote=True)(lambda: 1)
+    assert so_sach.run("doc_duoc") == 1
+    assert so_sach.run("doc_duoc", remote=True) == 1
+
+
+def test_remote_does_not_bypass_confirmation(so_sach):
+    """⛔ Hai phep kiem DOC LAP. Cho phep tu xa khong phai la da xac nhan."""
+    goi = []
+    so_sach.register("sua_tu_xa", "x", mutates=True, remote=True)(lambda: goi.append(1))
+    with pytest.raises(so_sach.ConfirmationRequired):
+        so_sach.run("sua_tu_xa", remote=True)
+    assert goi == []
+    so_sach.run("sua_tu_xa", remote=True, confirm=True)
+    assert goi == [1]
+
+
+def test_the_batch_moving_command_stays_local():
+    """Lenh dao lo hang loat khong duoc chay tu xa - quyet dinh 13/11/2026."""
+    from app.use_cases.control import commands  # noqa: F401
+
+    assert registry.REGISTRY["gom_tren_nguong"].remote is False

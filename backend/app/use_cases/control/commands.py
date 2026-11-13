@@ -19,6 +19,7 @@ from app.infrastructure.database.connection import engine
 from app.infrastructure.database.schemas import AccountDbTable
 from app.use_cases.control.backend_client import call as _backend
 from app.use_cases.control.registry import register
+from app.use_cases.control.targets import TargetError, phan_giai, tu_tham_so
 
 
 def _rows(statement) -> list[AccountDbTable]:
@@ -40,7 +41,7 @@ def _tom_tat(row: AccountDbTable) -> dict[str, Any]:
     }
 
 
-@register("trang_thai", "Tong quan: bao nhieu nick, da dong bo bao nhieu, hong bao nhieu")
+@register("trang_thai", "Tong quan: bao nhieu nick, da dong bo bao nhieu, hong bao nhieu", remote=True)
 def trang_thai() -> dict[str, Any]:
     with Session(engine) as session:
         tat_ca = list(session.exec(select(AccountDbTable)).all())
@@ -71,6 +72,7 @@ def trang_thai() -> dict[str, Any]:
 @register(
     "tren_nguong",
     "Nick dat tu N follow tro len, tach theo nuoc",
+    remote=True,
     params={"nguong": "So follow toi thieu (mac dinh 1000)",
             "nuoc": "Chi mot nuoc, vi du US (de trong = moi nuoc)"},
 )
@@ -93,6 +95,7 @@ def tren_nguong(nguong: int = 1000, nuoc: str = "") -> dict[str, Any]:
 @register(
     "nick",
     "Thong tin mot nick cu the",
+    remote=True,
     params={"ten": "username hoac email cua nick"},
 )
 def nick(ten: str) -> dict[str, Any]:
@@ -124,6 +127,7 @@ def nick(ten: str) -> dict[str, Any]:
 @register(
     "lo_hong",
     "Nhung lo dang co nick dong bo that bai, ke ca ly do",
+    remote=True,
     params={"gioi_han": "So lo hien ra (mac dinh 10)"},
 )
 def lo_hong(gioi_han: int = 10) -> dict[str, Any]:
@@ -142,6 +146,7 @@ def lo_hong(gioi_han: int = 10) -> dict[str, Any]:
 @register(
     "su_kien",
     "Nhung su kien gan nhat trong nhat ky",
+    remote=True,
     params={"gioi_han": "So dong (mac dinh 20)", "loai": "Loc theo loai su kien"},
 )
 def su_kien(gioi_han: int = 20, loai: str = "") -> dict[str, Any]:
@@ -190,7 +195,7 @@ def gom_tren_nguong(nguong: int = 1000) -> dict[str, Any]:
 # =============================================================================
 # LENH DOC THEM - truy van thang database
 # =============================================================================
-@register("danh_sach_lo", "Cac lo (batch) va so nick moi lo",
+@register("danh_sach_lo", "Cac lo (batch) va so nick moi lo", remote=True,
           params={"gioi_han": "So lo hien ra (mac dinh 30)"})
 def danh_sach_lo(gioi_han: int = 30) -> dict[str, Any]:
     with Session(engine) as session:
@@ -208,7 +213,7 @@ def danh_sach_lo(gioi_han: int = 30) -> dict[str, Any]:
     return {"tong_lo": len(xep), "lo": xep[: max(1, gioi_han)]}
 
 
-@register("nick_trong_lo", "Danh sach nick trong mot lo",
+@register("nick_trong_lo", "Danh sach nick trong mot lo", remote=True,
           params={"lo": "Ten lo", "gioi_han": "So nick hien ra (mac dinh 50)"})
 def nick_trong_lo(lo: str, gioi_han: int = 50) -> dict[str, Any]:
     rows = _rows(select(AccountDbTable).where(AccountDbTable.batch_tag == lo))
@@ -216,7 +221,7 @@ def nick_trong_lo(lo: str, gioi_han: int = 50) -> dict[str, Any]:
             "nick": [_tom_tat(r) for r in rows[: max(1, gioi_han)]]}
 
 
-@register("nick_hong", "Nick dong bo that bai, kem ly do",
+@register("nick_hong", "Nick dong bo that bai, kem ly do", remote=True,
           params={"gioi_han": "So nick hien ra (mac dinh 30)"})
 def nick_hong(gioi_han: int = 30) -> dict[str, Any]:
     rows = _rows(select(AccountDbTable).where(AccountDbTable.analytics_sync_status == "FAILED"))
@@ -229,7 +234,7 @@ def nick_hong(gioi_han: int = 30) -> dict[str, Any]:
     }
 
 
-@register("proxy", "Danh sach proxy va tinh trang")
+@register("proxy", "Danh sach proxy va tinh trang", remote=True)
 def proxy() -> dict[str, Any]:
     from app.infrastructure.database.schemas import ProxyDbTable
 
@@ -250,75 +255,86 @@ def proxy() -> dict[str, Any]:
 # =============================================================================
 # LENH HANH DONG - goi backend dang chay
 # =============================================================================
-@register("tinh_trang_chay", "Hang doi dang chay the nao (hoi backend)")
+@register("tinh_trang_chay", "Hang doi dang chay the nao (hoi backend)", remote=True)
 def tinh_trang_chay() -> Any:
     return _backend("GET", "/api/v1/tasks/status")
 
 
-@register("phien_ban", "Ban backend, thu vien trinh duyet, doi Firefox")
+@register("phien_ban", "Ban backend, thu vien trinh duyet, doi Firefox", remote=True)
 def phien_ban() -> Any:
     return _backend("GET", "/api/v1/tasks/versions")
 
 
-@register("dong_bo", "Chay dong bo so lieu", mutates=True,
-          params={"chon": "never | chua_co_so_lieu | failed", "luong": "So luong (mac dinh 4)"})
-def dong_bo(chon: str = "never", luong: int = 4) -> Any:
+@register("dong_bo", "Chay dong bo so lieu", mutates=True, remote=True,
+          params={"kieu": "tat_ca | lo | nuoc | nick | loc",
+                  "gia_tri": "Gia tri cua dich (vi du ten lo)",
+                  "luong": "So luong (mac dinh 4)"})
+def dong_bo(kieu: str = "loc", gia_tri: Any = "never", luong: int = 4) -> Any:
+    dich = tu_tham_so(kieu, gia_tri)
+    rows = phan_giai(dich)
     ket_qua = _backend("POST", "/api/v1/tasks/sync-analytics",
-                       {"select": chon, "concurrency_limit": luong})
-    event_log.record("sync.started", f"Bắt đầu đồng bộ ({chon}).", chon=chon, luong=luong)
-    return ket_qua
+                       {"account_ids": [r.email for r in rows],
+                        "concurrency_limit": luong})
+    event_log.record("sync.started",
+                     f"Bắt đầu đồng bộ {len(rows)} nick ({dich.mo_ta()}).",
+                     dich=dich.kieu, gia_tri=dich.gia_tri, so_nick=len(rows))
+    return {"dich": dich.mo_ta(), "so_nick": len(rows), "backend": ket_qua}
 
 
-@register("dang_nhap", "Dang nhap hang loat cho mot lo", mutates=True,
-          params={"lo": "Ten lo", "cach": "COOKIE hoac CREDENTIAL", "luong": "So luong"})
-def dang_nhap(lo: str, cach: str = "COOKIE", luong: int = 8) -> Any:
-    rows = _rows(select(AccountDbTable).where(AccountDbTable.batch_tag == lo))
-    if not rows:
-        return {"loi": f"Lô {lo!r} không có nick nào."}
+@register("dang_nhap", "Dang nhap hang loat", mutates=True, remote=True,
+          params={"kieu": "tat_ca | lo | nuoc | nick | loc", "gia_tri": "Gia tri cua dich",
+                  "cach": "COOKIE hoac CREDENTIAL", "luong": "So luong"})
+def dang_nhap(kieu: str = "lo", gia_tri: Any = None, cach: str = "COOKIE",
+              luong: int = 8) -> Any:
+    dich = tu_tham_so(kieu, gia_tri)
+    rows = phan_giai(dich)
     ket_qua = _backend("POST", "/api/v1/tasks/bulk-login", {
         "account_ids": [r.email for r in rows],
         "login_method": cach.upper(),
         "proxy_concurrency": luong,
     })
-    event_log.record("login.started", f"Đăng nhập {len(rows)} nick lô {lo}.", lo=lo, cach=cach)
-    return ket_qua
+    event_log.record("login.started",
+                     f"Đăng nhập {len(rows)} nick ({dich.mo_ta()}).",
+                     dich=dich.kieu, gia_tri=dich.gia_tri, cach=cach, so_nick=len(rows))
+    return {"dich": dich.mo_ta(), "so_nick": len(rows), "backend": ket_qua}
 
 
-@register("check_nhanh", "Kiem tra song/chet cho mot lo", mutates=True,
-          params={"lo": "Ten lo", "luong": "So luong (mac dinh 5)"})
-def check_nhanh(lo: str, luong: int = 5) -> Any:
-    rows = _rows(select(AccountDbTable).where(AccountDbTable.batch_tag == lo))
-    if not rows:
-        return {"loi": f"Lô {lo!r} không có nick nào."}
-    return _backend("POST", "/api/v1/tasks/quick-health-check",
-                    {"account_ids": [r.email for r in rows], "concurrency_limit": luong})
+@register("check_nhanh", "Kiem tra song/chet", mutates=True, remote=True,
+          params={"kieu": "tat_ca | lo | nuoc | nick | loc", "gia_tri": "Gia tri cua dich",
+                  "luong": "So luong (mac dinh 5)"})
+def check_nhanh(kieu: str = "lo", gia_tri: Any = None, luong: int = 5) -> Any:
+    dich = tu_tham_so(kieu, gia_tri)
+    rows = phan_giai(dich)
+    ket_qua = _backend("POST", "/api/v1/tasks/quick-health-check",
+                       {"account_ids": [r.email for r in rows], "concurrency_limit": luong})
+    return {"dich": dich.mo_ta(), "so_nick": len(rows), "backend": ket_qua}
 
 
-@register("bat_dau", "Khoi dong hang doi", mutates=True)
+@register("bat_dau", "Khoi dong hang doi", mutates=True, remote=True)
 def bat_dau() -> Any:
     event_log.record("queue.start", "Khởi động hàng đợi.")
     return _backend("POST", "/api/v1/tasks/start-global")
 
 
-@register("tam_dung", "Tam dung hang doi", mutates=True)
+@register("tam_dung", "Tam dung hang doi", mutates=True, remote=True)
 def tam_dung() -> Any:
     event_log.record("queue.pause", "Tạm dừng hàng đợi.")
     return _backend("POST", "/api/v1/tasks/pause-global")
 
 
-@register("tiep_tuc", "Tiep tuc hang doi", mutates=True)
+@register("tiep_tuc", "Tiep tuc hang doi", mutates=True, remote=True)
 def tiep_tuc() -> Any:
     event_log.record("queue.resume", "Tiếp tục hàng đợi.")
     return _backend("POST", "/api/v1/tasks/resume-global")
 
 
-@register("dung_khan", "DUNG KHAN CAP: huy moi tac vu dang chay", mutates=True)
+@register("dung_khan", "DUNG KHAN CAP: huy moi tac vu dang chay", mutates=True, remote=True)
 def dung_khan() -> Any:
     event_log.record("queue.stop", "DỪNG KHẨN CẤP.")
     return _backend("POST", "/api/v1/tasks/stop-global")
 
 
-@register("mang", "Doi che do mang", mutates=True,
+@register("mang", "Doi che do mang", mutates=True, remote=True,
           params={"dung_proxy": "true = dung proxy; false = mang that"})
 def mang(dung_proxy: bool = True) -> Any:
     event_log.record("network.mode", f"Chế độ mạng: {'proxy' if dung_proxy else 'mạng thật'}.")
@@ -326,18 +342,19 @@ def mang(dung_proxy: bool = True) -> Any:
 
 
 @register("ten_dang_nhap", "Go hop thu hay username vao o dang nhap", mutates=True,
+          remote=True,
           params={"kieu": "email hoac username"})
 def ten_dang_nhap(kieu: str = "email") -> Any:
     return _backend("POST", "/api/v1/tasks/login-identifier", {"mode": kieu})
 
 
-@register("phan_bo_proxy", "Tu phan bo proxy cho account", mutates=True)
+@register("phan_bo_proxy", "Tu phan bo proxy cho account", mutates=True, remote=True)
 def phan_bo_proxy() -> Any:
     event_log.record("proxy.allocated", "Tự phân bổ proxy.")
     return _backend("POST", "/api/v1/accounts/auto-allocate-proxies")
 
 
-@register("gom_1k_xem_truoc", "XEM TRUOC viec gom nick dat nguong follow",
+@register("gom_1k_xem_truoc", "XEM TRUOC viec gom nick dat nguong follow", remote=True,
           params={"nguong": "So follow toi thieu (mac dinh 1000)"})
 def gom_1k_xem_truoc(nguong: int = 1000) -> Any:
     return _backend("POST", "/api/v1/accounts/promote-by-followers",
