@@ -75,3 +75,4 @@ tools/invisible-playwright-mcp/
 # cua no la 60+ MB binary tai ve theo may, khong theo repo.
 tools/supabase-cli/node_modules/
 tools/supabase-cli/package-lock.json
+event-log/

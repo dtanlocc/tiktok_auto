@@ -948,6 +948,104 @@ async def move_accounts_to_group(
     }
 
 
+#: Ten lo cho nick da dat nguong follow. Co ca NUOC va NGAY, vi hai cau hoi
+#: hay duoc hoi cung nhau: "nick 1k cua Duc dau?" va "no len 1k hoi nao?".
+PROMOTED_BATCH_PATTERN = "{nguong}-{nuoc}-{ngay}"
+
+
+def _promoted_batch(nguong: int, nuoc: str, ngay: str) -> str:
+    nhan = f"{nguong // 1000}K" if nguong >= 1000 and nguong % 1000 == 0 else str(nguong)
+    return PROMOTED_BATCH_PATTERN.format(nguong=nhan, nuoc=(nuoc or "??").upper(), ngay=ngay)
+
+
+def _already_promoted(batch_tag: str, nguong: int) -> bool:
+    """⛔ CHAY LAN HAI KHONG DUOC DONG DAU NGAY MOI LEN NICK CU.
+
+    Ngay trong ten lo la ngay nick DAT NGUONG. Neu moi lan chay deu chuyen lai
+    thi ngay do bi ghi de thanh "hom nay", va thong tin ban muon giu - nick nay
+    len 1k tu bao gio - mat sach sau lan chay thu hai.
+    """
+    nhan = f"{nguong // 1000}K" if nguong >= 1000 and nguong % 1000 == 0 else str(nguong)
+    return (batch_tag or "").upper().startswith(f"{nhan}-")
+
+
+@router.post("/promote-by-followers", status_code=status.HTTP_200_OK)
+async def promote_accounts_by_followers(
+    threshold: int = Body(1000, embed=True),
+    dry_run: bool = Body(True, embed=True),
+    account_repo: IAccountRepository = Depends(get_account_repository),
+):
+    """Gom nick da dat nguong follow sang lo rieng, tach theo NUOC va NGAY.
+
+    ⛔ MAC DINH LA XEM TRUOC (`dry_run=True`). Chuyen lo lam dao lon cach ban
+    dang to chuc cong viec, va mot lenh chay nham tren 2000 account thi khong
+    co nut hoan lai. Xem truoc roi hay chay that.
+
+    Nick chua co so lieu follower khong duoc tinh la "chua dat" - chung chi la
+    CHUA BIET, va gop chung vao nhom nao cung la noi sai.
+    """
+    if threshold < 1:
+        raise HTTPException(status_code=400, detail="Ngưỡng follow phải từ 1 trở lên.")
+    ngay = datetime.now().strftime("%Y-%m-%d")
+
+    dat: dict[str, list] = {}
+    chua_biet = 0
+    da_o_lo_roi = 0
+    for account in account_repo.get_all():
+        if is_sold_account(account):
+            continue
+        so = getattr(account, "follower_count", None)
+        if so is None:
+            chua_biet += 1
+            continue
+        if so < threshold:
+            continue
+        if _already_promoted(getattr(account, "batch_tag", ""), threshold):
+            da_o_lo_roi += 1
+            continue
+        dat.setdefault((account.country or "??").upper(), []).append(account)
+
+    ket_qua = []
+    da_chuyen = 0
+    for nuoc in sorted(dat):
+        ds = dat[nuoc]
+        lo = _promoted_batch(threshold, nuoc, ngay)
+        ket_qua.append({
+            "nuoc": nuoc,
+            "lo": lo,
+            "so_account": len(ds),
+            "usernames": [a.username for a in ds[:20]],
+        })
+        if dry_run:
+            continue
+        for account in ds:
+            account.batch_tag = lo
+            account_repo.save(account)
+            da_chuyen += 1
+            await ws_manager.broadcast({
+                "event": "ACCOUNT_UPDATED",
+                "data": {"id": account.id, "batch_tag": lo,
+                         "is_sold": is_sold_account(account)},
+            })
+
+    return {
+        "status": "SUCCESS",
+        "dry_run": dry_run,
+        "threshold": threshold,
+        "ngay": ngay,
+        "se_chuyen" if dry_run else "da_chuyen": sum(r["so_account"] for r in ket_qua) if dry_run else da_chuyen,
+        "theo_nuoc": ket_qua,
+        "chua_co_so_lieu": chua_biet,
+        "da_o_lo_roi": da_o_lo_roi,
+        "message": (
+            f"Xem trước: {sum(r['so_account'] for r in ket_qua)} nick đạt {threshold} follow "
+            f"({len(ket_qua)} nước). Chưa có số liệu: {chua_biet}."
+            if dry_run else
+            f"Đã chuyển {da_chuyen} nick sang {len(ket_qua)} lô theo nước."
+        ),
+    }
+
+
 @router.post("/clear-cookies", status_code=status.HTTP_200_OK)
 async def clear_cookies(
     account_ids: List[str] = Body(..., embed=True),

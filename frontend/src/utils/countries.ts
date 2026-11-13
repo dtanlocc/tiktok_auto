@@ -15,9 +15,24 @@ export const SUPPORTED_COUNTRIES: CountryConfig[] = [
   { code: 'GB', flagCode: 'gb', name: 'Anh (United Kingdom)' },
   { code: 'KR', flagCode: 'kr', name: 'Hàn Quốc (South Korea)' },
   { code: 'VN', flagCode: 'vn', name: 'Việt Nam' },
-  // Bạn muốn thêm nước nào trong tương lai? Chỉ cần bỏ ghi chú hoặc thêm dòng mới tại đây:
-  // { code: 'CA', flagCode: 'ca', name: 'Canada' },
-  // { code: 'FR', flagCode: 'fr', name: 'Pháp (France)' },
+  { code: 'CA', flagCode: 'ca', name: 'Canada' },
+  { code: 'FR', flagCode: 'fr', name: 'Pháp (France)' },
+  { code: 'AU', flagCode: 'au', name: 'Úc (Australia)' },
+  { code: 'IT', flagCode: 'it', name: 'Ý (Italy)' },
+  { code: 'ES', flagCode: 'es', name: 'Tây Ban Nha (Spain)' },
+  { code: 'NL', flagCode: 'nl', name: 'Hà Lan (Netherlands)' },
+  { code: 'PL', flagCode: 'pl', name: 'Ba Lan (Poland)' },
+  { code: 'SE', flagCode: 'se', name: 'Thụy Điển (Sweden)' },
+  { code: 'JP', flagCode: 'jp', name: 'Nhật Bản (Japan)' },
+  { code: 'TW', flagCode: 'tw', name: 'Đài Loan (Taiwan)' },
+  { code: 'TH', flagCode: 'th', name: 'Thái Lan (Thailand)' },
+  { code: 'ID', flagCode: 'id', name: 'Indonesia' },
+  { code: 'PH', flagCode: 'ph', name: 'Philippines' },
+  { code: 'MY', flagCode: 'my', name: 'Malaysia' },
+  { code: 'SG', flagCode: 'sg', name: 'Singapore' },
+  { code: 'BR', flagCode: 'br', name: 'Brazil' },
+  { code: 'MX', flagCode: 'mx', name: 'Mexico' },
+  // Thêm nước mới: một dòng ở đây là đủ, không phải sửa chỗ nào khác.
 ];
 
 // =============================================================================
