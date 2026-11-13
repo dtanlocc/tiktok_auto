@@ -35,6 +35,7 @@ from app.infrastructure.database.schemas import TikTokVideoMetricDbTable
 from app.use_cases.analytics.tiktok_public_video_client import TikTokPublicVideoClient
 from app.use_cases.health_check.quick_check_use_case import (
     QuickCheckResult,
+    exception_detail,
     _HTTP_HEADERS,
     _classify_profile_response,
 )
@@ -430,6 +431,7 @@ class TikTokFastAnalyticsSyncService:
                 None,
                 f"profile_network_{type(exc).__name__}",
                 retryable=True,
+                detail=exception_detail(exc),
             )
         except Exception as exc:
             logger.warning("Fast profile request failed: %s", type(exc).__name__)
@@ -760,8 +762,9 @@ class TikTokFastAnalyticsSyncService:
                     self.updated += 1
                 else:
                     account.analytics_sync_status = "FAILED"
+                    # `described()` = ma phan loai + thong bao that cua ngoai le.
                     account.analytics_sync_error = (
-                        "Đồng bộ nhanh chưa lấy được dữ liệu: " + result.reason
+                        "Đồng bộ nhanh chưa lấy được dữ liệu: " + result.described()
                     )[:500]
                     self.failed += 1
                 if videos:

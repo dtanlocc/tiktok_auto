@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 import asyncio
 import json
 import logging
@@ -216,9 +216,24 @@ class QuickHealthCheckRequest(BaseModel):
 
 
 class AnalyticsSyncRequest(BaseModel):
-    account_ids: List[str]
+    account_ids: List[str] = []
     concurrency_limit: int = 4
     force: bool = False
+    #: ⛔ CHON THEO TRANG THAI, khong phai liet ke tung id. 13/11/2026 co 1652
+    #: account chua tung dong bo (69%), va cach duy nhat de chay cho chung la
+    #: tich tay 1652 dong trong bang - nen chung cu nam do.
+    #:
+    #: "ids" (mac dinh) giu nguyen hanh vi cu. Them mot cach chon la them mot
+    #: dong vao `ANALYTICS_SELECTORS`.
+    select: str = "ids"
+
+
+#: Cach chon account de dong bo -> ham loc. Them mot cach la them MOT DONG.
+ANALYTICS_SELECTORS: dict[str, Callable[[Any], bool]] = {
+    "never": lambda a: (getattr(a, "analytics_sync_status", "") or "NEVER") == "NEVER",
+    "failed": lambda a: getattr(a, "analytics_sync_status", "") == "FAILED",
+    "chua_co_so_lieu": lambda a: getattr(a, "follower_count", None) is None,
+}
 
 
 def _operational_accounts(account_repo: IAccountRepository, account_ids: List[str]):
@@ -831,7 +846,22 @@ async def start_analytics_sync(
     payload: AnalyticsSyncRequest,
     account_repo: IAccountRepository = Depends(get_account_repository),
 ):
-    operational, sold = _operational_accounts(account_repo, payload.account_ids)
+    if payload.select == "ids":
+        operational, sold = _operational_accounts(account_repo, payload.account_ids)
+    else:
+        loc = ANALYTICS_SELECTORS.get(payload.select)
+        if loc is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cách chọn không hợp lệ: {payload.select!r}. "
+                    "Chọn một trong: ids, " + ", ".join(sorted(ANALYTICS_SELECTORS))
+                ),
+            )
+        tat_ca = account_repo.get_all()
+        operational, sold = _operational_accounts(
+            account_repo, [a.id for a in tat_ca if loc(a)]
+        )
     if not operational:
         raise HTTPException(
             status_code=400,

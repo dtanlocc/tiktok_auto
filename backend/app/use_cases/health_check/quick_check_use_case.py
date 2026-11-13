@@ -73,6 +73,27 @@ class QuickCheckResult:
     profile_metrics: Optional[Dict[str, int]] = None
     profile_identity: Optional[Dict[str, str]] = None
     profile_data: Optional[Dict[str, Any]] = None
+    #: ⛔ CHI TIET TACH KHOI `reason`, VA DO LA CO Y. `reason` la MA phan loai,
+    #: duoc dem trong `reason_counts`; nhet thong bao that vao do thi moi ngoai
+    #: le thanh mot muc rieng va bang dem tro nen vo dung. Con vut thong bao di
+    #: thi nguoi van hanh chi thay "RuntimeError" trong - da xay ra that: 29 ca
+    #: hong ngay 12-13/11/2026 chi de lai chu do, phai chay lai bang tay moi
+    #: biet chuyen gi.
+    detail: str = ""
+
+    def described(self) -> str:
+        """Ma phan loai kem thong bao that, de ghi vao nhat ky cua account."""
+        return f"{self.reason}: {self.detail}" if self.detail else self.reason
+
+
+def exception_detail(exc: BaseException, limit: int = 180) -> str:
+    """Thong bao cua mot ngoai le, cat ngan va bo xuong dong.
+
+    Duong dan tep va dau dong lam dong nhat ky vo ra nhieu dong trong giao
+    dien, nen chung bi lam phang o day chu khong phai o cho hien thi.
+    """
+    text = " ".join(str(exc).split())
+    return text[:limit]
 
 
 def _extract_public_profile_data(user: Dict[str, Any], stats: Dict[str, Any]) -> Dict[str, Any]:
@@ -467,7 +488,10 @@ class QuickHealthCheckService:
                 detail[:100],
             )
             return None, QuickCheckResult(
-                None, f"{source}_network_{type(exc).__name__}", retryable=True
+                None,
+                f"{source}_network_{type(exc).__name__}",
+                retryable=True,
+                detail=exception_detail(exc),
             )
         except Exception as exc:
             logger.warning(

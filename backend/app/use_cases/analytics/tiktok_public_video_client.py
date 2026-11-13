@@ -38,6 +38,7 @@ from app.infrastructure.automation.extension_profile_builder import (
     firefox_prefs_for_extensions,
 )
 from app.use_cases.health_check.quick_check_use_case import (
+    exception_detail,
     QuickCheckResult,
     _HTTP_HEADERS,
     _TikTokJsonScriptParser,
@@ -1152,6 +1153,7 @@ class TikTokPublicVideoClient:
                     None,
                     f"browser_profile_launch_{type(exc).__name__}",
                     retryable=True,
+                    detail=exception_detail(exc),
                 )
             await self._apply_cookie_header(page, cookie_header)
             profile_url = ensure_tiktok_english_url(
@@ -1170,10 +1172,16 @@ class TikTokPublicVideoClient:
                         page, profile_url, _PAGE_DATA_READY_JS
                     )
                 except Exception as exc:
+                    # ⛔ GIU LAI THONG BAO. Truoc 13/11/2026 chi giu ten loai
+                    # ngoai le, nen 29 ca hong ngay 12-13/11 chi de lai chu
+                    # "RuntimeError" trong rong va phai chay lai bang tay moi
+                    # biet chuyen gi. Ma phan loai van la `reason` de con dem
+                    # duoc; thong bao di rieng trong `detail`.
                     last = QuickCheckResult(
                         None,
                         f"browser_profile_network_{type(exc).__name__}",
                         retryable=True,
+                        detail=exception_detail(exc),
                     )
                 else:
                     result = _classify_profile_response(html, username, 200)
