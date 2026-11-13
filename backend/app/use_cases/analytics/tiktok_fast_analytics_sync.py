@@ -232,6 +232,9 @@ class TikTokFastAnalyticsSyncService:
         self.skipped_sold = 0
         self.browser_profile_fallbacks = 0
         self.reason_counts: Dict[str, int] = {}
+        self._ly_do_theo_nick: Dict[str, str] = {}
+        self.quet_lai = 0
+        self.cuu_duoc_khi_quet_lai = 0
         self._task: Optional[asyncio.Task] = None
         browser_concurrency = max(
             1,
@@ -312,6 +315,8 @@ class TikTokFastAnalyticsSyncService:
             "skipped_sold": self.skipped_sold,
             "browser_profile_fallbacks": self.browser_profile_fallbacks,
             "reason_counts": dict(self.reason_counts),
+            "quet_lai": self.quet_lai,
+            "cuu_duoc_khi_quet_lai": self.cuu_duoc_khi_quet_lai,
             **self._video_client_stats(),
         }
 
@@ -665,6 +670,8 @@ class TikTokFastAnalyticsSyncService:
                     ):
                         break
             self.reason_counts[result.reason] = self.reason_counts.get(result.reason, 0) + 1
+            # Ly do THEO TUNG NICK, de luot quet lai biet goi lai ai.
+            self._ly_do_theo_nick[account_id] = result.reason
             metrics = result.profile_metrics or {}
             status, error = profile_metric_sync_result(metrics)
             videos: list[Dict[str, Any]] = []
@@ -900,6 +907,56 @@ class TikTokFastAnalyticsSyncService:
         finally:
             self.completed += 1
 
+    #: Nhung ly do co the het khi thu lai luc vang. Khong gom "khong co tai
+    #: khoan" hay "bi ban" - thu lai nhung cai do chi ton thoi gian.
+    LY_DO_QUET_LAI = (
+        "browser_tiktok_state_missing",
+        "tiktok_state_missing",
+        "tiktok_rate_limited",
+        "tiktok_empty_response",
+        "browser_tiktok_challenge",
+        "tiktok_challenge",
+    )
+
+    #: Nghi truoc khi quet lai, de dot vua roi di qua.
+    NGHI_TRUOC_KHI_QUET_LAI = 20.0
+
+    async def _quet_lai_nick_bi_chan(
+        self, clients, global_gate, proxy_gates, cache_ttl_seconds
+    ) -> None:
+        """Chay lai mot luot cho nhung nick hong vi bi chan mem."""
+        can_quet = [
+            account_id
+            for account_id, ly_do in self._ly_do_theo_nick.items()
+            if ly_do in self.LY_DO_QUET_LAI
+        ]
+        if not can_quet:
+            return
+        logger.info(
+            "[FastSync] Quet lai %d nick co the bi chan mem sau %.0fs.",
+            len(can_quet), self.NGHI_TRUOC_KHI_QUET_LAI,
+        )
+        await asyncio.sleep(self.NGHI_TRUOC_KHI_QUET_LAI)
+        truoc = self.updated
+        # ⛔ MOT LUOT, KHONG PHAI VONG LAP. Mot nick hong hai lan thi lan thu
+        # ba cung se hong, va mot vong lap o day bien mot dot 5 phut thanh mot
+        # dot khong biet bao gio xong.
+        await asyncio.gather(
+            *(
+                self._process_one(
+                    account_id, clients, global_gate, proxy_gates,
+                    cache_ttl_seconds, True,
+                )
+                for account_id in can_quet
+            ),
+            return_exceptions=True,
+        )
+        cuu_duoc = self.updated - truoc
+        self.failed = max(0, self.failed - cuu_duoc)
+        self.quet_lai = len(can_quet)
+        self.cuu_duoc_khi_quet_lai = cuu_duoc
+        logger.info("[FastSync] Quet lai: cuu duoc %d/%d nick.", cuu_duoc, len(can_quet))
+
     async def run_batch(
         self,
         account_ids: Iterable[str],
@@ -916,6 +973,9 @@ class TikTokFastAnalyticsSyncService:
         self.skipped_sold = 0
         self.browser_profile_fallbacks = 0
         self.reason_counts = {}
+        self._ly_do_theo_nick = {}
+        self.quet_lai = 0
+        self.cuu_duoc_khi_quet_lai = 0
         for client in self._video_clients:
             client.reset_stats()
         clients: Dict[Optional[str], httpx.AsyncClient] = {}
@@ -941,6 +1001,24 @@ class TikTokFastAnalyticsSyncService:
                 if isinstance(result, BaseException):
                     self.failed += 1
                     logger.error("Fast analytics worker failed: %s", result)
+
+            # ⛔ MOT LUOT QUET LAI CHO NHUNG NICK HONG VI BI CHAN MEM.
+            #
+            # Do duoc 13/11/2026 tren lo 23 nick: 9 nick hong voi
+            # `browser_tiktok_state_missing` - TikTok tra HTTP 200, khong co
+            # dau hieu challenge, nhung trang KHONG kem du lieu. Do la chan
+            # mem khi nhieu luot doc profile don tu mot IP trong vai phut.
+            #
+            # DUNG NHUNG NICK DO chay lai luc vang thi thanh cong: 4/4. Va
+            # chung deu da co `sec_uid` + so lieu tu lan truoc, nen khong phai
+            # username sai.
+            #
+            # `fetch_profile` von da thu 2 lan, nhung cach nhau DUNG 1 GIAY -
+            # qua ngan cho kieu chan nay, nen ca hai lan deu dap vao cung mot
+            # buc tuong. Quet lai o CUOI DOT thi con dot da di qua.
+            await self._quet_lai_nick_bi_chan(
+                clients, global_gate, proxy_gates, cache_ttl_seconds
+            )
         finally:
             for client in clients.values():
                 try:
