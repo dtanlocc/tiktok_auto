@@ -533,7 +533,7 @@ wheels = [
 
 [[package]]
 name = "invisible-core"
-version = "61.62.0"
+version = "63.67.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "maxminddb" },
@@ -542,14 +542,14 @@ dependencies = [
     { name = "requests", extra = ["socks"] },
     { name = "tzdata" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/24/f5/1ef8b34dce3fe0aa29e1e5705283524abe5654d35ba8d3bc73e7c4750c91/invisible_core-61.62.0.tar.gz", hash = "sha256:01831e2b6bb16645fd6ba92b2a4fccf51ee530241bde6122e3c62d3f14373208", size = 1610123, upload-time = "2026-11-10T18:01:12.772Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/7e/ffb875cb1af6a377bd92dc3a3eb5f5fa2426f4be4ddc8ecf9cad73dfc465/invisible_core-63.67.0.tar.gz", hash = "sha256:fc35ccc595d0fa134a7380e468c50b365788fc16ee7fb11203acdfe9a9d1a6ac", size = 1664166, upload-time = "2026-11-12T16:43:00.087Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/bd/4a58c258ef5984d70bca0a613ae920ee5b90b505f2b946697e5466467c8f/invisible_core-61.62.0-py3-none-any.whl", hash = "sha256:28b4969f160ff2a7071667bb603a657324a35f5598101fad50f20548a9c14b44", size = 1157800, upload-time = "2026-11-10T18:01:11.211Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/31/89a2f272e0bd8cf5fdb49ecb28fd675d1ef7bb337dd59263042a63419412/invisible_core-63.67.0-py3-none-any.whl", hash = "sha256:35c669870f3754745539a405672540803da67dd75d25eb3854b1841b1e917f51", size = 1174516, upload-time = "2026-11-12T16:42:58.072Z" },
 ]
 
 [[package]]
 name = "invisible-playwright"
-version = "0.49.1"
+version = "0.51.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "greenlet" },
@@ -557,9 +557,9 @@ dependencies = [
     { name = "psutil" },
     { name = "pyee" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/12/1e/3ae30b0e60fae12ac62a184640884e338647f7d631d54e27c1bdca4c11f6/invisible_playwright-0.49.1.tar.gz", hash = "sha256:3119ebe4c6828fc1a85c7bd5f722f6192db0bb8690550e910fe620773614124c", size = 4393754, upload-time = "2026-11-10T19:02:17.445Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/57/4740d166d5ceb67a0274bbf5bc27fd0428ddeb1859960fdd95cdc90d4883/invisible_playwright-0.51.0.tar.gz", hash = "sha256:16607b1087fb45d3c90f5a23375d94fdfc6b26331e53759239023d35c4f56ee4", size = 4652510, upload-time = "2026-11-12T20:52:29.48Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/57/185813cf98978a2d72e0ba6577dee8e538b650d69a919411eb71fc8d0c58/invisible_playwright-0.49.1-py3-none-any.whl", hash = "sha256:fa2a37b6da7d66e8714544e5583470b05a2a8492a8c8bd62f1ce80439f86e4f0", size = 628145, upload-time = "2026-11-10T19:02:15.11Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/38/2b813826d8bd2567ca510584a249d10f862ee1d1857fd36a4f17041850f3/invisible_playwright-0.51.0-py3-none-any.whl", hash = "sha256:22b7efbec47d0909f3e772ed13f958ff6282f139316d1009e9de5aae9b8a9486", size = 640349, upload-time = "2026-11-12T20:52:27.576Z" },
 ]
 
 [[package]]
@@ -1502,7 +1502,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "fastapi", specifier = ">=0.110.0" },
     { name = "httpx", extras = ["socks"], specifier = ">=0.28.1" },
-    { name = "invisible-playwright", specifier = "==0.49.1" },
+    { name = "invisible-playwright", specifier = "==0.51.0" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.6.0" },
