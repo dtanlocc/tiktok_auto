@@ -4808,7 +4808,7 @@ class InvisiblePlaywrightAdapter(IBrowserService):
     #: nhip tinh den milimet. Do la mot dau vet may moc, khong phai mot con
     #: nguoi. Rut tham MOT LAN cho ca lan dang: trong mot bai nhip van deu,
     #: con giua cac bai thi khong bai nao giong bai nao.
-    NGHI_SAU_CAPTION = (14.0, 32.0)
+    NGHI_SAU_CAPTION = (30.0, 45.0)
 
     #: Noi them vao cua so xac nhan on dinh, cung rut tham moi lan dang.
     NOI_THEM_ON_DINH_GIAY = (0.0, 6.0)
