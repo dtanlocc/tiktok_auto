@@ -23,6 +23,19 @@ class _ScriptedPage:
         return self.samples[index]
 
 
+def _toi_thieu_lan_doc(timeout_seconds):
+    """So lan doc it nhat ham phai doc, suy ra tu chinh cac hang so.
+
+    ⛔ KHONG VIET SO CUNG O DAY. Khoang dung sau caption duoc RUT THAM moi
+    lan dang (`NGHI_SAU_CAPTION`) va bi chan tren o mot nua thoi han, nen cai
+    duy nhat chac chan la can duoi. Viet so cung thi doi mot hang so la
+    phai sua lai bon bai test - va lan truoc dung la nhu vay.
+    """
+    A = InvisiblePlaywrightAdapter
+    thap = min(A.NGHI_SAU_CAPTION[0], max(1.0, float(timeout_seconds)) * 0.5)
+    return A._so_lan_can(thap)
+
+
 def _adapter(monkeypatch, samples):
     adapter = InvisiblePlaywrightAdapter()
     page = _ScriptedPage(samples)
@@ -66,22 +79,28 @@ def test_wait_holds_while_the_file_is_still_going_up(monkeypatch):
     result = asyncio.run(adapter._wait_publish_checks(timeout_seconds=30.0))
     assert result["settled"] is True
     assert "No issues found." in result["checks"][0]
-    # Two busy samples, then two stable ones: it never settled early.
-    assert page.evaluations == 4
+    # Two busy samples, then the stability window, then the long post-caption
+    # sit: it never settled early.
+    assert page.evaluations >= _toi_thieu_lan_doc(30.0)
 
 
 def test_wait_holds_while_the_music_check_runs(monkeypatch):
     adapter, page = _adapter(monkeypatch, [_CHECKING, _CHECKING, _CHECKING, _CLEAR, _CLEAR])
     result = asyncio.run(adapter._wait_publish_checks(timeout_seconds=30.0))
     assert result["settled"] is True
-    assert page.evaluations == 5
+    assert page.evaluations >= _toi_thieu_lan_doc(30.0)
 
 
-def test_a_settled_screen_needs_two_agreeing_samples(monkeypatch):
+def test_a_settled_screen_still_waits_out_the_post_caption_sit(monkeypatch):
+    """⛔ SACH NGAY TU DAU KHONG PHAI LA DUOC BAM NGAY.
+
+    Truoc 17/11/2026 bai test nay cho dung 2 lan doc, tuc 1.2 giay. TikTok
+    con doi chieu nhac va dong goi lai video sau khi hai cai tich sang.
+    """
     adapter, page = _adapter(monkeypatch, [_CLEAR])
     result = asyncio.run(adapter._wait_publish_checks(timeout_seconds=30.0))
     assert result["settled"] is True
-    assert page.evaluations == 2
+    assert page.evaluations >= _toi_thieu_lan_doc(30.0)
 
 
 def test_a_check_that_never_settles_reports_instead_of_raising(monkeypatch):
@@ -103,7 +122,9 @@ def test_a_screen_without_check_rows_does_not_stall(monkeypatch):
     adapter, page = _adapter(monkeypatch, [{"status": [], "checks": []}])
     result = asyncio.run(adapter._wait_publish_checks(timeout_seconds=30.0))
     assert result["settled"] is True
-    assert page.evaluations == 2
+    # Khong co dong kiem tra nao thi khong cho `CHO_KIEM_TRA_HIEN_GIAY`,
+    # nhung khoang dung sau caption thi van giu.
+    assert page.evaluations >= _toi_thieu_lan_doc(30.0)
 
 
 def test_a_read_failure_is_survivable(monkeypatch):

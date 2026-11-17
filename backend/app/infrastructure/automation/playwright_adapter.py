@@ -4,6 +4,7 @@ import random
 import time
 import re
 import shutil
+import math
 import os
 import uuid
 import tempfile
@@ -4779,6 +4780,56 @@ class InvisiblePlaywrightAdapter(IBrowserService):
     )
     _UPLOAD_DONE_RE = re.compile(r"(uploaded|đã tải lên)", re.I)
 
+    #: Nhip doc man hinh. Tach ra thanh hang so vi so lan xac nhan duoc SUY
+    #: RA tu no, de "cho bao nhieu giay" doc duoc truc tiep trong code.
+    NHIP_DOC_GIAY = 1.2
+
+    #: ⛔ XAC NHAN LAU HON HAN BAN CU. Truoc 17/11/2026 chi can 2 lan doc
+    #: sach cach nhau 1.2s - tuc xac nhan vo ven 1.2 giay. Hai muc kiem tra
+    #: co the trong "sach" trong mot nhip ngan giua luc chu "Checking" bien
+    #: mat va luc ket qua hien ra.
+    XAC_NHAN_ON_DINH_GIAY = 5.0
+
+    #: ⛔ VA "CHUA HIEN RA" KHONG PHAI "DA QUA" - nhung CHI tren man hinh da
+    #: tai xong. Bai dang anh va layout cu khong he co dong kiem tra nao.
+    CHO_KIEM_TRA_HIEN_GIAY = 25.0
+
+    #: Nghi truoc khi bam Dang - tay nguoi khong roi caption roi bam ngay.
+    NGHI_TRUOC_KHI_BAM = (2.5, 4.5)
+
+    #: ⛔ KHOANG DUNG DAI SAU CAPTION. Sau khi bam vao tung hashtag va chon
+    #: goi y, TikTok VAN DANG LAM VIEC: doi chieu nhac, quet noi dung, dong
+    #: goi lai video. Hai cai tich sang len chi la mot moc trong do, khong
+    #: phai moc cuoi. Nguoi that sua caption xong thi de yen mot luc DAI roi
+    #: moi bam Dang - va do la khoang nay.
+    #:
+    #: ⛔ VA PHAI LA MOT KHOANG, KHONG PHAI MOT SO. Ban cu dung dung 5.0 giay
+    #: xac nhan roi dung 1.2 giay moi nhip doc, nen 2000 bai dang co CUNG MOT
+    #: nhip tinh den milimet. Do la mot dau vet may moc, khong phai mot con
+    #: nguoi. Rut tham MOT LAN cho ca lan dang: trong mot bai nhip van deu,
+    #: con giua cac bai thi khong bai nao giong bai nao.
+    NGHI_SAU_CAPTION = (14.0, 32.0)
+
+    #: Noi them vao cua so xac nhan on dinh, cung rut tham moi lan dang.
+    NOI_THEM_ON_DINH_GIAY = (0.0, 6.0)
+
+    #: Nhip doc lech di mot chut moi lan, de vong doc khong thanh cai dong ho.
+    NHIP_DOC_LECH = (0.85, 1.25)
+
+    @classmethod
+    def _so_lan_can(cls, giay: float) -> int:
+        """So lan doc tuong ung voi mot khoang thoi gian.
+
+        ⛔ DEM THEO SO LAN DOC, KHONG THEO DONG HO. Dem theo dong ho bien
+        vong lap thanh vong quay NONG khi `asyncio.sleep` bi vo hieu - va do
+        la dung cach bo test lam cho chay nhanh. Do that: 689.143 vong.
+        """
+        return max(1, math.ceil(float(giay) / max(0.05, cls.NHIP_DOC_GIAY)))
+
+    def _nhip_doc(self) -> float:
+        """Mot nhip doc man hinh, lech di mot chut so voi nhip truoc."""
+        return float(self.NHIP_DOC_GIAY) * random.uniform(*self.NHIP_DOC_LECH)
+
     async def _wait_publish_checks(
         self,
         *,
@@ -4792,8 +4843,20 @@ class InvisiblePlaywrightAdapter(IBrowserService):
         seconds left" and while the music check still says "Checking in
         progress". A person never posts there - they type the caption, watch
         "Uploaded（…）" and "No issues found." settle, then click Post. This
-        waits for those same two lines, requires them stable twice, then
-        pauses a beat like a hand moving to the button.
+        waits for those same two lines, requires them to stay clear for
+        `XAC_NHAN_ON_DINH_GIAY` seconds together, then pauses a beat like a
+        hand moving to the button.
+
+        ⛔ AND A CHECK THAT HAS NOT RENDERED IS NOT A CHECK THAT PASSED.
+        Until 17/11/2026 an empty check list read as "not busy", so the
+        wait could settle before Studio had drawn the two ticks at all.
+
+        ⛔ AND TWO LIT TICKS ARE NOT THE END OF THE WORK EITHER. Studio keeps
+        matching music, scanning content and repackaging the file after the
+        ticks go clear, so the wait also holds a long `NGHI_SAU_CAPTION`
+        stretch - drawn once per post, so no two posts sit for the same
+        length. Both that stretch and the stability window are counted in
+        page reads, never on the clock.
 
         Never raises: a check that stays busy is reported and the caller keeps
         its own decision about posting.
@@ -4808,13 +4871,44 @@ class InvisiblePlaywrightAdapter(IBrowserService):
 
         started = time.monotonic()
         deadline = started + max(1.0, float(timeout_seconds))
-        stable = 0
+
+        # ⛔ RUT THAM MOT LAN, O DAY, CHO CA LAN DANG. Xem `NGHI_SAU_CAPTION`:
+        # khoang dung sau caption phai dai, va phai khac nhau giua cac bai.
+        #
+        # ⛔ VA DEM THEO SO LAN DOC, KHONG THEO DONG HO - cung ly do nhu
+        # `_so_lan_can`: dem theo dong ho thi mot `asyncio.sleep` bi vo hieu
+        # bien vong lap thanh vong quay nong.
+        #
+        # Chan tren la mot nua thoi han, de mot lan rut tham dai khong bien
+        # mot man hinh sach thanh "khong on dinh".
+        dung_sau_caption = min(
+            random.uniform(*self.NGHI_SAU_CAPTION),
+            max(1.0, float(timeout_seconds)) * 0.5,
+        )
+        can_doc_toi_thieu = self._so_lan_can(dung_sau_caption)
+        can_doc_on_dinh = self._so_lan_can(
+            float(self.XAC_NHAN_ON_DINH_GIAY)
+            + random.uniform(*self.NOI_THEM_ON_DINH_GIAY)
+        )
+        logger.info(
+            "[Upload] Nghi sau caption %.1fs (%d lan doc); xac nhan on dinh "
+            "%d lan doc.",
+            dung_sau_caption,
+            can_doc_toi_thieu,
+            can_doc_on_dinh,
+        )
+
+        page_reads = 0
+        sach_lien_tuc = 0       # so lan doc sach lien tiep
+        da_thay_kiem_tra = False
         announced = False
+        da_noi_nghi = False
         state: Dict[str, Any] = {"status": [], "checks": []}
         while time.monotonic() < deadline:
             await self._wait_automation_gate()
             if await self._handle_upload_interruptions(step_logger=step_logger):
-                stable = 0
+                sach_lien_tuc = 0
+            page_reads += 1
             try:
                 state = await asyncio.wait_for(
                     page.evaluate(self._PUBLISH_CHECK_JS), timeout=8.0
@@ -4834,25 +4928,53 @@ class InvisiblePlaywrightAdapter(IBrowserService):
             checks_busy = any(
                 self._CHECK_PENDING_RE.search(text) for text in check_texts
             )
-            if upload_busy or checks_busy:
+            if check_texts:
+                da_thay_kiem_tra = True
+            # ⛔ KHOI KIEM TRA CHUA HIEN RA THI CHUA PHAI LA DA QUA.
+            # ⛔ CHI CHO KHI DAY LA MAN HINH DA TAI XONG. Bai dang ANH va
+            # layout cu KHONG he co dong kiem tra nao; bat chung cho 25 giay
+            # moi bai la vo ich - va da co bai test giu dieu do tu truoc.
+            # Dau hieu phan biet la dong trang thai: man hinh video da tai
+            # xong thi no ghi "Uploaded (...)", con man hinh kia thi rong.
+            chua_hien = (
+                not da_thay_kiem_tra
+                and bool(status_text)
+                and page_reads < self._so_lan_can(self.CHO_KIEM_TRA_HIEN_GIAY)
+            )
+            if upload_busy or checks_busy or chua_hien:
                 if not announced:
                     announced = True
                     await log(
                         "Đợi TikTok chạy xong phần kiểm tra nội dung/bản quyền "
                         "trước khi đăng..."
                     )
-                stable = 0
-                await asyncio.sleep(1.2)
+                sach_lien_tuc = 0
+                await asyncio.sleep(self._nhip_doc())
                 continue
 
-            stable += 1
-            if stable >= 2:
+            sach_lien_tuc += 1
+            if sach_lien_tuc >= can_doc_on_dinh and page_reads < can_doc_toi_thieu:
+                # ⛔ HAI CAI TICH SANG KHONG PHAI LA LUC BAM. Con lai khoang
+                # dung dai sau caption; van doc tiep, nen neu TikTok quay lai
+                # trang thai dang chay thi `sach_lien_tuc` reset nhu thuong.
+                if not da_noi_nghi:
+                    da_noi_nghi = True
+                    await log(
+                        "TikTok kiểm tra xong; để yên khoảng "
+                        f"{dung_sau_caption:.0f} giây cho nó tự xử rồi mới "
+                        "bấm Đăng..."
+                    )
+                await asyncio.sleep(self._nhip_doc())
+                continue
+            if sach_lien_tuc >= can_doc_on_dinh:
                 cleared = [
                     text for text in check_texts if self._CHECK_CLEAR_RE.search(text)
                 ]
                 waited = time.monotonic() - started
                 logger.info(
-                    "[Upload] Hai muc kiem tra da dung yen sau %.1fs | status=%s | checks=%s",
+                    "[Upload] Hai muc kiem tra dung yen %d lan doc, tong %.1fs "
+                    "| status=%s | checks=%s",
+                    sach_lien_tuc,
                     waited,
                     status_text[:80],
                     " | ".join(text[:80] for text in check_texts),
@@ -4863,14 +4985,15 @@ class InvisiblePlaywrightAdapter(IBrowserService):
                     await log(f"TikTok kiểm tra xong: {check_texts[0][:120]}")
                 # A person's hand does not leave the caption and hit Post in
                 # the same instant; give the page the same short beat.
-                await asyncio.sleep(random.uniform(1.2, 2.6))
+                await asyncio.sleep(random.uniform(*self.NGHI_TRUOC_KHI_BAM))
                 return {
                     "settled": True,
                     "status": status_text,
                     "checks": check_texts,
                     "waited": waited,
+                    "nghi_sau_caption": dung_sau_caption,
                 }
-            await asyncio.sleep(1.2)
+            await asyncio.sleep(self._nhip_doc())
 
         status_text = " ".join(state.get("status") or [])
         check_texts = list(state.get("checks") or [])
