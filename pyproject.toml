@@ -16,7 +16,7 @@ dependencies = [
     # backend/app/, va ban va close() duoc ap tu ngoai qua
     # juggler_close_patch. Fork truoc day gay mot xung dot merge moi lan
     # upstream ra ban moi, va 0.30.0 xoa han file chua ban va do.
-    "invisible-playwright==0.51.0",
+    "invisible-playwright==0.53.1",
     "python-multipart>=0.0.32",
     "httpx[socks]>=0.28.1",
     "pillow>=12.3.0",
