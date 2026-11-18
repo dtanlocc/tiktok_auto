@@ -21,10 +21,24 @@ export const ProxyImportModal: React.FC<ProxyImportModalProps> = ({ isOpen, onCl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  // ⛔ RESET CHI KHI MODAL MO RA, va effect nay KHONG DUOC PHU THUOC
+  // `onClose`. Cha truyen `onClose={() => setImportOpen(false)}` - mot ham
+  // MOI moi lan render - con App render lai MOI 4 GIAY
+  // (`setInterval(refreshManualSessions, 4000)`). Gop reset vao chung voi
+  // listener ban phim nghia la cu 4 giay xoa sach o nhap mot lan: nguoi dung
+  // nap tep .txt, thay noi dung hien ra, roi mat, va go tay cung khong kip.
+  // Ba modal proxy con lai da tach dung tu dau (`[isOpen, proxy]`,
+  // `[isOpen]`, `[proxy?.id]`); chi modal nay gop.
   useEffect(() => {
     if (!isOpen) return;
     setText('');
     setError('');
+  }, [isOpen]);
+
+  // Listener thi NGUOC LAI: phai doi theo `onClose` moi nhat, khong thi Esc
+  // goi mot closure cu.
+  useEffect(() => {
+    if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
