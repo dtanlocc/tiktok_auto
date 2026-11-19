@@ -65,6 +65,7 @@ export default function App() {
   // đều từng sai thật, nên đây là lựa chọn của người vận hành chứ không phải
   // hằng số: ai biết rõ account của mình nhập từ đâu thì chọn đúng hơn.
   const [loginIdentifier, setLoginIdentifier] = useState<'email' | 'username'>('email');
+  const [verifyMethod, setVerifyMethod] = useState<'2fa' | 'otp'>('2fa');
   // "Máy đang chạy bản nào" — backend trả cả bản thư viện và đời engine
   // Firefox, vì hỏi ba lần để biết một chuyện là ba lần quá nhiều.
   const [versions, setVersions] = useState<{
@@ -139,6 +140,13 @@ export default function App() {
       .then((res) => res.json())
       .then((data) => {
         if (data?.mode === 'email' || data?.mode === 'username') setLoginIdentifier(data.mode);
+      })
+      .catch(() => {});
+
+    fetch('http://127.0.0.1:9000/api/v1/tasks/verify-method')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.mode === '2fa' || data?.mode === 'otp') setVerifyMethod(data.mode);
       })
       .catch(() => {});
   }, [setAccounts, refreshProxies]);
@@ -594,6 +602,24 @@ export default function App() {
     // ⛔ CHỈ CHẠY SAU KHI MÁY CHỦ ĐÃ NHẬN. Gọi song song thì phiên đầu tiên có
     // thể mở trước khi cài đặt kịp ghi, và nó sẽ gõ tên của lần trước.
     handleBulkLogin('CREDENTIAL');
+  };
+
+  // Chọn cách vượt màn xác minh (2FA authenticator hay OTP email). Đây là một
+  // TUỲ CHỌN được lưu, KHÔNG tự chạy login - khác với chọn tên đăng nhập ở
+  // trên. Mặc định "2fa": nick có khoá thì dùng authenticator, không thì OTP.
+  const handleSetVerifyMethod = async (mode: '2fa' | 'otp') => {
+    try {
+      const res = await fetch('http://127.0.0.1:9000/api/v1/tasks/verify-method', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.detail || 'Lỗi đổi chế độ xác minh.'); return; }
+      setVerifyMethod(data.mode);
+    } catch {
+      alert('Không kết nối được backend.');
+    }
   };
 
   // Đổi chế độ proxy (runtime): true = auto-map proxy như cũ; false = mạng thật (VPN)
@@ -1091,6 +1117,8 @@ export default function App() {
           onSetProxyMode={handleSetProxyMode}
           loginIdentifier={loginIdentifier}
           onLoginWithIdentifier={handleLoginWithIdentifier}
+          verifyMethod={verifyMethod}
+          onSetVerifyMethod={handleSetVerifyMethod}
         />
       )}
 

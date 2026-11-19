@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogIn, KeyRound, Image, Globe, ScanSearch, Trash2, Wifi, ChevronRight, Check, Shuffle, Mail, AtSign } from 'lucide-react';
+import { LogIn, KeyRound, Image, Globe, ScanSearch, Trash2, Wifi, ChevronRight, Check, Shuffle, Mail, AtSign, ShieldCheck, MailQuestion } from 'lucide-react';
 
 interface ContextMenuProps {
   x: number;
@@ -14,6 +14,8 @@ interface ContextMenuProps {
   onSetProxyMode: (useProxy: boolean) => void; // đổi chế độ runtime
   loginIdentifier: 'email' | 'username';       // gõ gì vào ô "Email or username"
   onLoginWithIdentifier: (mode: 'email' | 'username') => void;
+  verifyMethod: '2fa' | 'otp';                 // vượt màn xác minh bằng 2FA hay OTP email
+  onSetVerifyMethod: (mode: '2fa' | 'otp') => void;
 }
 
 const rowCls =
@@ -25,6 +27,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onBulkLogin, onBulkUpdateProfile, onAutoAllocateProxies, onBulkDelete, onQuickHealthCheck,
   proxyMode, onSetProxyMode,
   loginIdentifier, onLoginWithIdentifier,
+  verifyMethod, onSetVerifyMethod,
 }) => {
   const [showProxySub, setShowProxySub] = useState(false);
   const [showLoginSub, setShowLoginSub] = useState(false);
@@ -77,6 +80,28 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               </button>
               <div className="px-2.5 pt-1 pb-0.5 text-[10px] text-fg-subtle leading-snug">
                 Chọn rồi chạy luôn. Nếu TikTok báo không có tài khoản, app tự thử lại bằng tên còn lại.
+              </div>
+
+              {/* ==== Sub nhỏ: vượt màn xác minh bằng 2FA hay OTP email ====
+                   Đây là TUỲ CHỌN được lưu, KHÔNG tự chạy login (khác hai dòng
+                   trên). Mặc định "2FA": nick có khoá thì dùng authenticator,
+                   không có khoá thì tự lui về OTP email. */}
+              <div className="my-1 border-t border-line-soft" />
+              <div className="px-2.5 pt-0.5 pb-1 text-[10px] font-semibold text-fg-subtle uppercase tracking-wide">
+                Mã xác minh
+              </div>
+              <button className={rowCls} onClick={() => onSetVerifyMethod('2fa')}>
+                <ShieldCheck className="w-4 h-4 shrink-0 text-fg-subtle" />
+                <span className="truncate flex-1">Ưu tiên 2FA (nếu có khoá)</span>
+                {verifyMethod === '2fa' && <Check className="w-4 h-4 shrink-0 text-brand" />}
+              </button>
+              <button className={rowCls} onClick={() => onSetVerifyMethod('otp')}>
+                <MailQuestion className="w-4 h-4 shrink-0 text-fg-subtle" />
+                <span className="truncate flex-1">Chỉ OTP email</span>
+                {verifyMethod === 'otp' && <Check className="w-4 h-4 shrink-0 text-brand" />}
+              </button>
+              <div className="px-2.5 pt-1 pb-0.5 text-[10px] text-fg-subtle leading-snug">
+                2FA: nick có khoá đăng nhập bằng authenticator, không có thì lui về OTP. OTP: luôn đọc mã từ hộp thư.
               </div>
             </div>
           </div>

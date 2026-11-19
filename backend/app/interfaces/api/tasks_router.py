@@ -37,6 +37,11 @@ from app.core.login_settings import (
     load_login_identifier,
     set_login_identifier as persist_login_identifier,
 )
+from app.core.verify_settings import (
+    VERIFY_METHODS,
+    load_verify_method,
+    set_verify_method as persist_verify_method,
+)
 from app.use_cases.upload.media_selection import select_preferred_media
 from app.use_cases.upload.video_library import scan_video_paths
 from app.domain.account_rules import is_sold_account
@@ -61,6 +66,11 @@ class BrowserEngineRequest(BaseModel):
 
 class LoginIdentifierRequest(BaseModel):
     # "email" hay "username" - danh sach that nam o login_settings.IDENTIFIER_ORDER
+    mode: str
+
+
+class VerifyMethodRequest(BaseModel):
+    # "2fa" hay "otp" - danh sach that nam o verify_settings.VERIFY_METHODS
     mode: str
 
 
@@ -167,6 +177,34 @@ async def set_login_identifier_mode(payload: LoginIdentifierRequest):
             "Đăng nhập sẽ gõ HỘP THƯ trước; username là đường lui."
             if mode == "email"
             else "Đăng nhập sẽ gõ USERNAME trước; hộp thư là đường lui."
+        ),
+    }
+
+
+@router.get("/verify-method")
+async def get_verify_method():
+    """Cách vượt màn xác minh: 2FA (authenticator) hay OTP email."""
+    return {
+        "mode": load_verify_method(),
+        "choices": sorted(VERIFY_METHODS),
+    }
+
+
+@router.post("/verify-method")
+async def set_verify_method_mode(payload: VerifyMethodRequest):
+    """Đổi NGAY (không cần restart). Lựa chọn được lưu nên restart vẫn giữ.
+    Có hiệu lực cho các phiên đăng nhập MỞ SAU đó."""
+    try:
+        mode = persist_verify_method(payload.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "status": "SUCCESS",
+        "mode": mode,
+        "message": (
+            "Nick có khoá 2FA sẽ đăng nhập bằng authenticator; không có khoá thì lui về OTP email."
+            if mode == "2fa"
+            else "Luôn đọc mã OTP từ hộp thư, bỏ qua khoá 2FA."
         ),
     }
 

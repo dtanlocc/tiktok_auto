@@ -12,6 +12,7 @@ from app.core.login_settings import IDENTIFIER_ORDER, load_login_identifier
 from app.domain.ports.email import IEmailService
 from app.use_cases.auth.totp import seconds_remaining, totp_now
 from app.use_cases.auth.clock import gio_chuan
+from app.core.verify_settings import load_verify_method, should_use_2fa
 from app.domain.entities.account import TikTokAccount
 from app.core.config import settings
 from app.core.exceptions import AccountBannedException, AuthenticationPageNotReady
@@ -403,7 +404,66 @@ async def _is_authenticator_screen(page) -> bool:
         text = await page.evaluate("() => (document.body.innerText || '').slice(0, 4000)")
     except Exception:
         return False
-    return bool(_AUTHENTICATOR_TEXT.search(str(text or "")))
+    text = str(text or "")
+    if not _AUTHENTICATOR_TEXT.search(text):
+        return False
+    # ⛔ MAN EMAIL CUNG CHUA CHU "authenticator" - o MOT DONG NHO "chuyen qua
+    # authenticator". Do 19/11/2026: dong do khien man EMAIL bi nham la man
+    # authenticator, va ma TOTP bi go vao O OTP EMAIL -> TikTok tu choi. Phan
+    # biet bang dia chi email che: man EMAIL co "g***@...", man authenticator
+    # that thi khong. Co email che => DAY LA MAN EMAIL, khong phai authenticator.
+    if _MASKED_EMAIL.search(text):
+        return False
+    return True
+
+
+async def _switch_to_authenticator(page, browser, otp_input, step_logger=None,
+                                    timeout_seconds: float = 25.0) -> bool:
+    """Bam "dong chuyen qua authenticator" roi doi o authenticator that hien ra.
+
+    ⛔ MAN MAC DINH LA OTP EMAIL. Nick co 2FA van thay man gui ma qua email
+    truoc, kem mot dong nho de doi sang authenticator. Phai BAM dong do -
+    khong thi o nhap van la o cho ma email, va mot ma TOTP go vao do bi tu choi.
+    """
+    candidates = page.locator(
+        'a, button, [role="button"], span, div'
+    ).filter(has_text=_AUTHENTICATOR_TEXT)
+    try:
+        n = await candidates.count()
+    except Exception:
+        n = 0
+    clicked = False
+    for i in range(min(n, 10)):
+        el = candidates.nth(i)
+        try:
+            if not await el.is_visible():
+                continue
+            txt = (await el.inner_text() or "").strip()
+            # Bo khoi text dai (tieu de/huong dan); chi bam DONG NGAN (cai link).
+            if not txt or len(txt) > 60:
+                continue
+            await el.click(timeout=5000)
+            clicked = True
+            if step_logger:
+                await step_logger(f'[2FA] Da bam chuyen qua authenticator: "{txt[:40]}"')
+            break
+        except Exception:
+            continue
+    if not clicked:
+        if step_logger:
+            await step_logger("[2FA] Khong thay dong chuyen qua authenticator.")
+        return False
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+    while loop.time() < deadline:
+        await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
+        if await _is_visible(otp_input) and await _is_authenticator_screen(page):
+            return True
+        await asyncio.sleep(1.0)
+    if step_logger:
+        await step_logger("[2FA] Da bam nhung o authenticator chua hien ra.")
+    return False
 
 
 #: The red line TikTok prints under the login form when it refuses a login.
@@ -1219,6 +1279,25 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
             is_email_channel_active = verify_screen == "email"
             is_direct_otp_active = verify_screen == "otp"
             is_authenticator_active = verify_screen == "authenticator"
+
+            # Nick co khoa 2FA: man mac dinh thuong la OTP email, kem mot dong
+            # nho de chuyen qua authenticator. Bam dong do truoc roi moi go
+            # TOTP (xem _switch_to_authenticator). Neu khong chuyen duoc thi de
+            # nguyen cac nhanh cu (doc OTP email) lam luoi an toan.
+            #
+            # Che do do nguoi van hanh chon (verify_settings): "2fa" uu tien
+            # authenticator khi co khoa; "otp" ep doc hom thu du co khoa.
+            _dung_2fa = should_use_2fa(
+                load_verify_method(), bool((getattr(account, "totp_secret", None) or "").strip())
+            )
+            if _dung_2fa and not is_authenticator_active:
+                if await _switch_to_authenticator(
+                    page, browser, direct_otp_locator, step_logger=step_logger
+                ):
+                    is_authenticator_active = True
+                    is_email_channel_active = False
+                    is_direct_otp_active = False
+
             if is_direct_otp_active:
                 # >>> MOC OTP (Nhanh B): man hinh nhap OTP da hien san khi
                 # phat hien duoc, nghia la TikTok da gui mail truoc/ngay luc
@@ -1356,7 +1435,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 otp_input = direct_otp_locator
                 await otp_input.first.wait_for(state="visible", timeout=10000)
 
-                secret = (account.totp_secret or "").strip()
+                secret = (getattr(account, "totp_secret", None) or "").strip()
                 if not secret:
                     # TikTok hoi ma authenticator ma tai khoan khong co khoa:
                     # khong co duong nao di tiep (khac email - email co the doc

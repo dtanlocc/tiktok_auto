@@ -72,6 +72,18 @@ def test_man_email_khong_bi_nham_la_authenticator():
     assert asyncio.run(L._is_authenticator_screen(page)) is False
 
 
+def test_man_email_co_dong_chuyen_authenticator_van_la_email():
+    # ⛔ LOI THAT 19/11/2026: man EMAIL co MOT DONG "Use authenticator app"
+    # -> khop chu authenticator -> bi nham la man authenticator -> ma TOTP go
+    # vao o OTP email -> TikTok tu choi. Dia chi email che la dau hieu phan
+    # biet: con email che => VAN la man email.
+    page = _FakePage(
+        "Enter the 6-digit code sent to g***1@hotmail.com\n"
+        "Use authenticator app instead"
+    )
+    assert asyncio.run(L._is_authenticator_screen(page)) is False
+
+
 def test_doc_chu_hong_thi_coi_nhu_khong_phai_authenticator():
     class _Broken:
         async def evaluate(self, _s, *a):
