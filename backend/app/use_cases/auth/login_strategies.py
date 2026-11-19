@@ -11,6 +11,7 @@ from app.domain.ports.browser import IBrowserService
 from app.core.login_settings import IDENTIFIER_ORDER, load_login_identifier
 from app.domain.ports.email import IEmailService
 from app.use_cases.auth.totp import seconds_remaining, totp_now
+from app.use_cases.auth.clock import gio_chuan
 from app.domain.entities.account import TikTokAccount
 from app.core.config import settings
 from app.core.exceptions import AccountBannedException, AuthenticationPageNotReady
@@ -1371,12 +1372,18 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                     return False
 
                 try:
+                    # ⛔ SINH MA THEO GIO CHUAN, KHONG THEO DONG HO MAY. Do
+                    # 19/11/2026 may cham +6.85s -> TikTok tu choi "code
+                    # expired or incorrect" du khoa dung. `gio_chuan()` hoi NTP
+                    # mot lan roi cache; NTP hong thi lui ve dong ho may.
+                    now = await asyncio.to_thread(gio_chuan)
                     # ⛔ DUNG SINH MA KHI CUA SO SAP DOI. Sinh o giay thu 29 roi
                     # go/submit mat 2-3 giay -> ma het han giua chung. Con duoi
                     # 3 giay thi doi sang cua so moi.
-                    if seconds_remaining() < 3:
-                        await asyncio.sleep(seconds_remaining() + 0.3)
-                    code = totp_now(secret)
+                    if seconds_remaining(at=now) < 3:
+                        await asyncio.sleep(seconds_remaining(at=now) + 0.3)
+                        now = await asyncio.to_thread(gio_chuan)
+                    code = totp_now(secret, at=now)
                 except Exception as exc:
                     if step_logger:
                         await step_logger(
