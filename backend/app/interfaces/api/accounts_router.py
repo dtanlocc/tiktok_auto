@@ -152,6 +152,7 @@ async def create_account(
             current_step=saved_account.current_step,
             proxy_id=saved_account.proxy_id,
             has_cookies=len(saved_account.cookies) > 0,
+            has_totp=bool((saved_account.totp_secret or '').strip() if getattr(saved_account, 'totp_secret', None) else False),
             country=saved_account.country,
             batch_tag=saved_account.batch_tag,
             created_at=saved_account.created_at,
@@ -181,6 +182,7 @@ async def list_accounts(
             current_step=acc.current_step,
             proxy_id=acc.proxy_id,
             has_cookies=len(acc.cookies) > 0,
+            has_totp=bool((acc.totp_secret or '').strip() if getattr(acc, 'totp_secret', None) else False),
             country=acc.country,  # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
             batch_tag=acc.batch_tag,  # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
             created_at=acc.created_at or "",  # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
@@ -627,6 +629,7 @@ async def bind_proxy_to_account(
         current_step=saved.current_step,
         proxy_id=saved.proxy_id,
         has_cookies=len(saved.cookies) > 0,
+        has_totp=bool((saved.totp_secret or '').strip() if getattr(saved, 'totp_secret', None) else False),
         country=saved.country,  # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
         batch_tag=saved.batch_tag,  # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
         created_at=saved.created_at or "",  # <-- ĐÃ ĐỒNG BỘ SỬA LỖI
@@ -933,6 +936,7 @@ async def update_account_fields(
         current_step=saved.current_step,
         proxy_id=saved.proxy_id,
         has_cookies=len(saved.cookies) > 0,
+        has_totp=bool((saved.totp_secret or '').strip() if getattr(saved, 'totp_secret', None) else False),
         country=saved.country,
         batch_tag=saved.batch_tag,
         created_at=saved.created_at or "",
@@ -1116,6 +1120,30 @@ async def clear_cookies(
     }
 
 
+def _account_to_export_line(acc) -> str:
+    """Mot dong account dinh dang import-lai-duoc.
+
+    ⛔ PHAI KEM KHOA 2FA, KHONG THI EXPORT LAM MAT NO. Export xoa nick khoi
+    DB sau khi xuat; neu dong xuat ra khong co totp_secret thi khoa 2FA bien
+    mat vinh vien (do 19/11/2026). Them totp lam truong 8 khi co - import phan
+    loai truong 7+ theo HINH DANG (base32 vs cookie) nen vi tri khong quan
+    trong, va nick khong co 2FA van giu dung 7 truong nhu cu.
+    """
+    fields = [
+        acc.username or "",
+        acc.password or "",
+        acc.email or "",
+        acc.email_password or "",
+        acc.refresh_token or "",
+        acc.client_id or "",
+        cookies_to_string(acc.cookies or []),
+    ]
+    totp = (getattr(acc, "totp_secret", "") or "").strip()
+    if totp:
+        fields.append(totp)
+    return "|".join(fields)
+
+
 @router.post("/export", status_code=status.HTTP_200_OK)
 async def export_accounts(
     account_ids: List[str] = Body(..., embed=True),
@@ -1129,8 +1157,8 @@ async def export_accounts(
       Neu N > so acc co san -> lay HET so co san (co co took_all_available=True).
 
     Tra ve noi dung file + so lieu de UI hien popup (da lay bao nhieu / con lai bao nhieu).
-    File dinh dang: username|password|email|email_password|refresh_token|client_id|cookies
-    (cookies xuat ra dang CHUOI 'name=value; name=value; ...' giong file test_cookies.txt).
+    File dinh dang: username|password|email|email_password|refresh_token|client_id|cookies[|totp_secret]
+    (cookies dang CHUOI 'name=value; ...'; totp_secret chi co khi nick bat 2FA).
     """
     # 1. Loc ra cac account hop le (con ton tai trong DB), giu dung thu tu truyen vao.
     pool = []
@@ -1156,21 +1184,7 @@ async def export_accounts(
     # 3. Dung noi dung file (dinh dang day du = giong format import).
     #    Cookies xuat ra dang CHUOI 'name=value; ...' (giong file test_cookies.txt),
     #    KHONG phai JSON. Import chap nhan lai duoc (parse_cookies_any nhan ca 2 dang).
-    lines = []
-    for acc in take:
-        cookies_str = cookies_to_string(acc.cookies or [])
-        line = "|".join(
-            [
-                acc.username or "",
-                acc.password or "",
-                acc.email or "",
-                acc.email_password or "",
-                acc.refresh_token or "",
-                acc.client_id or "",
-                cookies_str,
-            ]
-        )
-        lines.append(line)
+    lines = [_account_to_export_line(acc) for acc in take]
     content = "\n".join(lines)
 
     # 4. XOA cac account da xuat khoi DB (theo lua chon: xuat = lay ra khoi kho).
@@ -1203,27 +1217,15 @@ async def copy_accounts(
 ):
     """COPY account ra chuoi (GIONG format export) NHUNG KHONG XOA khoi DB.
     Dung de sao chep acc ra clipboard ma van GIU acc trong app.
-    Dinh dang moi dong: username|password|email|email_password|refresh_token|client_id|cookies
-    (cookies dang chuoi 'name=value; ...' giong test_cookies.txt)."""
+    Dinh dang moi dong: username|password|email|email_password|refresh_token|client_id|cookies[|totp_secret]
+    (cookies dang chuoi 'name=value; ...'; totp_secret chi co khi nick bat 2FA)."""
     lines = []
     count = 0
     for aid in account_ids:
         acc = account_repo.get_by_id(aid)
         if not acc:
             continue
-        cookies_str = cookies_to_string(acc.cookies or [])
-        line = "|".join(
-            [
-                acc.username or "",
-                acc.password or "",
-                acc.email or "",
-                acc.email_password or "",
-                acc.refresh_token or "",
-                acc.client_id or "",
-                cookies_str,
-            ]
-        )
-        lines.append(line)
+        lines.append(_account_to_export_line(acc))
         count += 1
     if count == 0:
         raise HTTPException(

@@ -20,6 +20,7 @@ class AccountOut(BaseModel):
     current_step: str = "Chưa kích hoạt"
     proxy_id: Optional[str] = None
     has_cookies: bool = False
+    has_totp: bool = False          # nick co khoa 2FA (khong lo khoa, chi co/khong)
     
     # CÁC CỘT PHÂN LÔ MỚI CÓ GIÁ TRỊ MẶC ĐỊNH
     country: str = "US"                     # Mặc định phòng thủ
