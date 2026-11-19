@@ -122,6 +122,7 @@ class SQLiteAccountRepository(IAccountRepository):
         db_row.email_password = account.email_password
         db_row.refresh_token = account.refresh_token       
         db_row.client_id = account.client_id               
+        db_row.totp_secret = account.totp_secret
         db_row.status = account.status
         db_row.health_status = account.health_status
         db_row.profile_status = account.profile_status
@@ -247,6 +248,7 @@ class SQLiteAccountRepository(IAccountRepository):
             email_password=db_row.email_password,
             refresh_token=db_row.refresh_token,             
             client_id=db_row.client_id,                     
+            totp_secret=getattr(db_row, 'totp_secret', None),
             cookies=json.loads(db_row.cookies_json or "[]"),
             status=db_row.status or "IDLE",
             health_status=db_row.health_status or "ALIVE",

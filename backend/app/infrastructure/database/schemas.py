@@ -55,6 +55,8 @@ class AccountDbTable(SQLModel, table=True):
     refresh_token: Optional[str] = Field(default=None)
     client_id: Optional[str] = Field(default=None)
     cookies_json: str = Field(default="[]")
+    # Khoa 2FA (TOTP, base32) - xem entity. Nullable: nick cu khong co.
+    totp_secret: Optional[str] = Field(default=None)
     
     # 3 CỘT TRẠNG THÁI PHÂN RÃ CHUẨN THƯƠNG MẠI
     status: str = Field(default="IDLE")                  # Phiên chạy

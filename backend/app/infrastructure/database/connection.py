@@ -219,6 +219,16 @@ def _legacy_sqlite_catch_up() -> None:
                 session.commit()
                 print("[+] Tự động di cư thêm cột 'note' thành công!")
 
+            # Khoa 2FA (TOTP). Them o day de nick cu co ngay cot nay;
+            # nullable vi nick khong bat 2FA thi de trong.
+            if "totp_secret" not in existing_columns:
+                session.execute(text(
+                    "ALTER TABLE accounts ADD COLUMN totp_secret VARCHAR"
+                ))
+                session.commit()
+                existing_columns.append("totp_secret")
+                print("[+] Tu dong di cu them cot 'totp_secret' thanh cong!")
+
             # Dữ liệu hiệu suất đăng và snapshot thống kê TikTok. Các chỉ số
             # chưa thu thập dùng NULL để UI phân biệt với giá trị thật bằng 0.
             performance_columns = {

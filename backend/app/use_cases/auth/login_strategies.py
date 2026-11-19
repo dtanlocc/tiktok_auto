@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 from app.domain.ports.browser import IBrowserService
 from app.core.login_settings import IDENTIFIER_ORDER, load_login_identifier
 from app.domain.ports.email import IEmailService
+from app.use_cases.auth.totp import seconds_remaining, totp_now
 from app.domain.entities.account import TikTokAccount
 from app.core.config import settings
 from app.core.exceptions import AccountBannedException, AuthenticationPageNotReady
@@ -376,6 +377,32 @@ async def _otp_destination(page) -> str:
         return ""
     match = _MASKED_EMAIL.search(str(text or ""))
     return match.group(1) if match else ""
+
+
+#: ⛔ MAN HINH AUTHENTICATOR VA MAN HINH EMAIL-OTP TRONG GIONG NHAU: ca hai co
+#: o nhap 6 chu so. Thu PHAN BIET duy nhat la chu tren man hinh - authenticator
+#: ghi "code from your authenticator app", con email ghi "sent to g***@...".
+#: Nen "co o nhap ma" mot minh KHONG du de biet dung khoa 2FA hay doc mail;
+#: phai doc chu. `authenticat` phu ca "authenticator" lan "authentication".
+_AUTHENTICATOR_TEXT = re.compile(
+    r"authenticat|authentication app|google authenticator|"
+    r"t[rř]ình x[aá]c th[uự]c|[uứ]ng d[uụ]ng x[aá]c th[uự]c",
+    re.I,
+)
+
+
+async def _is_authenticator_screen(page) -> bool:
+    """Man hinh dang hien co phai la man nhap ma AUTHENTICATOR khong.
+
+    ⛔ Doc chu, khong doan theo o nhap. Mot nick bat 2FA authenticator se thay
+    man nay NGAY (khong qua buoc chon hom thu). Neu nham no thanh email-OTP thi
+    tool di doc hom thu mot ma khong bao gio toi.
+    """
+    try:
+        text = await page.evaluate("() => (document.body.innerText || '').slice(0, 4000)")
+    except Exception:
+        return False
+    return bool(_AUTHENTICATOR_TEXT.search(str(text or "")))
 
 
 #: The red line TikTok prints under the login form when it refuses a login.
@@ -804,6 +831,12 @@ async def _wait_verification_screen(
                     continue
             except Exception:
                 pass
+        # ⛔ AUTHENTICATOR TRUOC EMAIL. Man authenticator cung co o nhap ma va
+        # co the kem lua chon hom thu; neu kiem "email" truoc thi mot nick 2FA
+        # authenticator bi loi ve nhanh doc mail. Chi nhan khi CO o nhap ma VA
+        # chu tren man la cua authenticator.
+        if await _is_visible(otp_input) and await _is_authenticator_screen(page):
+            return "authenticator"
         if await _is_visible(email_channel):
             return "email"
         if await _is_visible(otp_input):
@@ -1184,6 +1217,7 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                 return False
             is_email_channel_active = verify_screen == "email"
             is_direct_otp_active = verify_screen == "otp"
+            is_authenticator_active = verify_screen == "authenticator"
             if is_direct_otp_active:
                 # >>> MOC OTP (Nhanh B): man hinh nhap OTP da hien san khi
                 # phat hien duoc, nghia la TikTok da gui mail truoc/ngay luc
@@ -1311,6 +1345,75 @@ class CredentialEmailOtpLoginStrategy(ITikTokLoginStrategy):
                     if step_logger:
                         await step_logger(f"[-] TikTok tu choi ma OTP {otp_code}: {otp_error}")
                     logger.error("[-] TikTok tu choi ma OTP cua %s: %s", account.username, otp_error)
+                    return False
+
+            # 8.3 XU LY NHANH C: ma 2FA tu KHOA AUTHENTICATOR (khong doc hom thu)
+            # ⛔ KHONG IN MA RA LOG. Ma nay 30 giay doi mot lan nhung van la san
+            # pham cua ca yeu to thu hai; khac voi nhanh email o tren (co in ma),
+            # o day chi noi "da sinh ma", khong noi ma la gi.
+            if is_authenticator_active:
+                otp_input = direct_otp_locator
+                await otp_input.first.wait_for(state="visible", timeout=10000)
+
+                secret = (account.totp_secret or "").strip()
+                if not secret:
+                    # TikTok hoi ma authenticator ma tai khoan khong co khoa:
+                    # khong co duong nao di tiep (khac email - email co the doc
+                    # tu hom thu, con authenticator thi chi khoa nay sinh duoc).
+                    if step_logger:
+                        await step_logger(
+                            "[-] TikTok hoi ma authenticator nhung tai khoan chua "
+                            "luu khoa 2FA (truong thu 7 cua dong import)."
+                        )
+                    self.last_refusal = (
+                        "TikTok hoi ma authenticator nhung tai khoan khong co khoa 2FA."
+                    )
+                    return False
+
+                try:
+                    # ⛔ DUNG SINH MA KHI CUA SO SAP DOI. Sinh o giay thu 29 roi
+                    # go/submit mat 2-3 giay -> ma het han giua chung. Con duoi
+                    # 3 giay thi doi sang cua so moi.
+                    if seconds_remaining() < 3:
+                        await asyncio.sleep(seconds_remaining() + 0.3)
+                    code = totp_now(secret)
+                except Exception as exc:
+                    if step_logger:
+                        await step_logger(
+                            "[-] Khoa 2FA khong hop le (khong phai base32), "
+                            "khong sinh duoc ma."
+                        )
+                    self.last_refusal = "Khoa 2FA khong hop le (khong phai base32)."
+                    logger.error("[Login] Khoa 2FA hong cho %s: %s", account.username, exc)
+                    return False
+
+                if step_logger:
+                    await step_logger(
+                        "[+] Da sinh ma 2FA tu khoa authenticator. Dang go xac minh..."
+                    )
+                await otp_input.first.click()
+                await asyncio.sleep(0.8)
+                # Khong `delay=`: nhip go rieng cua tung phien (nhu nhanh email).
+                await otp_input.first.press_sequentially(code)
+                await asyncio.sleep(2.0)
+
+                if step_logger:
+                    await step_logger("Dang nhan Next de hoan tat xac minh...")
+                next_btn = page.locator(
+                    'button.tux-button__element-ZBq38f:has-text("Next"):visible, '
+                    'button:has-text("Next"):visible'
+                )
+                await next_btn.first.click(timeout=10000)
+                await asyncio.sleep(3)
+                await browser.wait_captcha_cleared(timeout=120, step_logger=step_logger)
+                otp_error = await _await_otp_result(page, otp_input)
+                if otp_error:
+                    self.last_refusal = f"TikTok tu choi ma 2FA: {otp_error}"
+                    if step_logger:
+                        await step_logger(f"[-] TikTok tu choi ma 2FA: {otp_error}")
+                    logger.error(
+                        "[-] TikTok tu choi ma 2FA cua %s: %s", account.username, otp_error
+                    )
                     return False
 
             try:

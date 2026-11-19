@@ -10,6 +10,9 @@ class TikTokAccount:
     email_password: Optional[str] = None
     refresh_token: Optional[str] = None
     client_id: Optional[str] = None
+    # Khoa 2FA (TOTP, base32). Co thi login bang ma authenticator tu sinh,
+    # khong doc OTP tu hom thu nua. None = nick khong bat 2FA kieu nay.
+    totp_secret: Optional[str] = None
     cookies: List[Dict[str, Any]] = field(default_factory=list)
     status: str = "IDLE"                  # Phiên chạy (IDLE, QUEUED, RUNNING, SUCCESS, ERROR)
     health_status: str = "UNKNOWN"          # Sức khỏe vật lý (ALIVE, BANNED)

@@ -18,6 +18,7 @@ from app.interfaces.api.deps import (
 from app.interfaces.dto.account_dto import AccountCreateIn, AccountOut
 from app.infrastructure.websocket.socket_manager import ws_manager
 from app.core.cookie_utils import parse_cookies_any, cookies_to_string
+from app.use_cases.auth.totp import looks_like_totp_secret
 from app.core.proxy_allocation import plan_round_robin_proxy_assignments
 from app.domain.account_rules import is_sold_account
 from app.infrastructure.database.connection import engine
@@ -221,6 +222,7 @@ def _merge_into_existing(
     cookies,
     country,
     batch_tag,
+    totp_secret=None,
 ):
     """Cap nhat account DA CO bang du lieu moi import, GIU LAI nhung gi quy hon.
 
@@ -243,6 +245,9 @@ def _merge_into_existing(
         existing.client_id = client_id
     if cookies:
         existing.cookies = cookies
+    # Khoa 2FA: chi ghi de khi file co; file khong co thi giu khoa cu.
+    if totp_secret:
+        existing.totp_secret = totp_secret
     if country:
         existing.country = country
     if batch_tag:
@@ -276,7 +281,19 @@ async def import_raw_account(
         email_password = parts[3].strip()
         refresh_token = parts[4].strip()
         client_id = parts[5].strip()
-        cookies_raw = parts[6].strip() if len(parts) > 6 else ""
+
+        # Truong 7+ phan loai theo hinh dang (xem import-file): base32 -> khoa
+        # 2FA, con lai -> cookies. Mot tep co the co ca hai.
+        cookies_raw = ""
+        totp_secret = ""
+        for extra in parts[6:]:
+            extra = extra.strip()
+            if not extra:
+                continue
+            if not totp_secret and looks_like_totp_secret(extra):
+                totp_secret = extra
+            elif not cookies_raw:
+                cookies_raw = extra
 
         # Chap nhan CA 2 dang: JSON (mang Playwright) HOAC chuoi 'a=b; c=d'.
         cookies = parse_cookies_any(cookies_raw)
@@ -298,6 +315,7 @@ async def import_raw_account(
                 refresh_token=refresh_token,
                 client_id=client_id,
                 cookies=cookies,
+                totp_secret=totp_secret or None,
                 country=country.upper().strip(),
                 batch_tag=batch_tag.strip(),
             )
@@ -340,6 +358,7 @@ async def import_raw_account(
             refresh_token=refresh_token,
             client_id=client_id,
             cookies=cookies,
+            totp_secret=totp_secret or None,
             status="IDLE",
             health_status="UNKNOWN",
             profile_status="PENDING",
@@ -437,7 +456,24 @@ async def import_accounts_from_files(
                 email_password = parts[3].strip()
                 refresh_token = parts[4].strip()
                 client_id = parts[5].strip()
-                cookies_raw = parts[6].strip() if len(parts) > 6 else ""
+
+                # ⛔ TRUONG 7+ KHONG CON CHI LA COOKIES. Tep cu: truong 7 la
+                # cookies. Tep moi (nick bat 2FA): truong 7 la khoa TOTP base32.
+                # Phan biet theo HINH DANG, khong theo vi tri - mot khoa 2FA la
+                # base32 lien tuc, cookie thi co '[' / '=' / ';'. Nhan nham khoa
+                # thanh cookie la nick mat 2FA (va khoa chui vao cot cookies);
+                # nhan nham cookie thanh khoa la nick mat cookie. Nen duyet moi
+                # truong du va gan theo dang that cua no - tep co the co ca hai.
+                cookies_raw = ""
+                totp_secret = ""
+                for extra in parts[6:]:
+                    extra = extra.strip()
+                    if not extra:
+                        continue
+                    if not totp_secret and looks_like_totp_secret(extra):
+                        totp_secret = extra
+                    elif not cookies_raw:
+                        cookies_raw = extra
 
                 canonical_email = email.lower()
                 canonical_username = username.lower()
@@ -477,6 +513,7 @@ async def import_accounts_from_files(
                     refresh_token=refresh_token,
                     client_id=client_id,
                     cookies=cookies,
+                    totp_secret=totp_secret or None,
                     status="IDLE",
                     health_status="UNKNOWN",
                     profile_status="PENDING",
